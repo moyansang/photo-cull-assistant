@@ -1,0 +1,32 @@
+name: Build Windows Portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build portable app
+        shell: pwsh
+        run: |
+          .\build_exe.ps1
+          .\make_portable_zip.ps1
+      - name: Verify portable executable
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath '.\dist\AI选片助手\AI选片助手.exe' -ArgumentList '--self-test', 'smoke-test.json' -WindowStyle Hidden -Wait -PassThru
+          if ($app.ExitCode -ne 0) { throw 'Portable smoke test failed' }
+          $report = Get-Content smoke-test.json -Raw | ConvertFrom-Json
+          if (-not $report.ok) { throw 'Portable smoke test failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI选片助手-v0.3-Windows-portable
+          path: dist/AI选片助手-v0.3-portable.zip

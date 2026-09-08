@@ -1,1 +1,288 @@
-# photo-cull-assistant
+# AI 选片助手 v0.3
+
+面向 **漫展 / Coser / 人像 / 舞台** 的 Windows 本地批量选片工具。
+
+当前工作流：
+
+1. 扫描照片目录
+2. 合并同名 `RAW + JPG` 为一张逻辑照片
+3. 提取 RAW/JPG 预览
+4. 按时间 + dHash 自动生成“选片组”
+5. 可人工拆组 / 合组，并保存到 `groups.json`
+6. **仅对可靠检测到的人物主体做“明显虚焦 / 严重抖动”保守粗筛**
+7. 高置信度技术废片写为 Lightroom **弃置旗标**：`xmpDM:pick = -1`、`xmpDM:good = false`
+8. 生成适合上传给 ChatGPT 的主联系表 + 弃置复核表
+9. ChatGPT 负责表情、动作、构图、重复度等真正的审美选片
+10. 把 ChatGPT 评级粘贴回来，写入 Lightroom XMP 星级
+
+> v0.3 的自动粗筛 **不处理重复片、不判断表情、不挑同组最佳、不删除原片**。
+
+---
+
+## v0.3 新增
+
+### 1. 人物主体技术粗筛
+
+主界面默认开启：
+
+```text
+人物主体明显虚焦/严重抖动 → Lightroom 弃置（保守模式）
+```
+
+逻辑：
+
+```text
+预览图
+  ↓
+检测可靠人物脸部
+  ↓
+检测不到脸 / 不够确定
+  → 不处理
+
+找到主要人物脸部
+  ↓
+只分析人物脸部区域清晰度
+  ↓
+只有“非常明显的虚焦 / 严重抖动”
+  → Lightroom 弃置旗标（xmpDM:pick=-1）
+其他情况
+  → 不处理
+```
+
+主目标是 **宁可漏掉一部分废片，也尽量不误杀正常照片**。
+
+每次扫描还会保存：
+
+```text
+工作区/
+  screening_results.json
+```
+
+里面记录每张照片是否检测到可靠人物主体、是否自动弃置以及清晰度分数，方便排查误判。
+
+### 2. 联系表针对 ChatGPT 优化
+
+默认：
+
+- 4 列
+- 默认每页最多 16 张（可调 8～60）；小组选片过多时会为了控制页面高度自动提前分页
+- 页面宽度约 2024 px，且会把页面高度控制在约 2800 px 内，适合聊天上传
+- 缩略图保持原始比例，不裁切人物
+- 同组选片尽量不跨页
+- 每组顶部显示 `Gxxx · N photos`
+- 大组跨页时显示 `part 1/2`、`part 2/2`
+- 照片只保留醒目的文件名、组号、组内序号
+- 不显示拍摄时间等干扰信息
+
+输出结构：
+
+```text
+工作区/
+  contact_sheets/
+    main/
+      sheet_001_G001-G005_P1111597-P1111630.jpg
+      ...
+    rejected_review/
+      sheet_001_G003-G010_P1111602-P1111701.jpg
+      ...
+```
+
+`main/`：正常上传给 ChatGPT 选片。
+
+`rejected_review/`：只放自动弃置的技术废片，供人工快速复核。
+
+自动弃置的照片默认不进入 `main/`，减少上传量。
+
+### 3. Windows 便携 EXE 构建
+
+推荐 **PyInstaller one-folder**，而不是 one-file。
+
+Windows 上最省事：
+
+```text
+双击 build_portable.bat
+```
+
+会生成：
+
+```text
+dist/
+  AI选片助手/
+    AI选片助手.exe
+    _internal/
+    README-快速开始.txt
+
+  AI选片助手-v0.3-portable.zip
+```
+
+把便携 ZIP 发到另一台 Windows 电脑，完整解压后双击 `AI选片助手.exe` 即可；目标电脑无需安装 Python。
+
+详细说明见：[BUILD-WINDOWS.md](BUILD-WINDOWS.md)
+
+---
+
+## 普通 Windows 用户怎么用
+
+如果拿到已经打好的便携包：
+
+1. 完整解压 ZIP
+2. 双击 `AI选片助手.exe`
+3. 选择照片文件夹
+4. 默认保持技术粗筛开启
+5. 点击 **扫描并生成联系表**
+6. 需要时进入 **编辑选片组**，人工拆组 / 合组
+7. 点击 **重新生成联系表**
+8. 把 `contact_sheets/main/` 上传给 ChatGPT
+9. 把 ChatGPT 返回的评级粘贴回程序
+10. 点击 **应用选片结果**
+11. Lightroom Classic：`元数据 → 从文件读取元数据`
+
+---
+
+## 源码运行
+
+推荐 Windows Python 3.12。
+
+```bash
+pip install -e ".[raw]"
+aicull
+```
+
+或者 Windows 直接双击：
+
+```text
+run_windows.bat
+```
+
+依赖包括：
+
+- Pillow
+- OpenCV（人物脸部检测 + 技术模糊判断）
+- rawpy / LibRaw（RW2 等 RAW）
+- ExifRead
+
+---
+
+## 人工拆组 / 合组
+
+扫描后点击：
+
+```text
+编辑选片组
+```
+
+可以：
+
+- 从所选照片开始拆为新组
+- 与上一组合并
+- 与下一组合并
+
+人工结果自动写入：
+
+```text
+groups.json
+```
+
+下次打开同一个照片目录 + 工作区会优先恢复人工分组。
+
+点击 **重新自动分组** 才会明确覆盖人工分组。
+
+---
+
+## 联系表上传给 ChatGPT 的推荐提示词
+
+```text
+请按组选片。
+同组主要比较：眼神、表情、动作完成度、手脚姿态、头发/服装状态、构图和重复度。
+优先每组选 1 张最佳，必要时再留 1 张备选。
+只按以下格式输出：
+文件名,星级
+```
+
+例如：
+
+```text
+P1111599,5
+P1111598,4
+P1111604,5
+P1111608,5
+P1111607,4
+```
+
+也支持：
+
+```text
+S: P1111599 P1111604 P1111608
+A: P1111598 P1111607
+B: P1111597
+```
+
+映射：
+
+- S → 5 星
+- A → 4 星
+- B → 3 星
+- C / REJECT → 1 星
+
+自动技术弃置使用：
+
+- `xmpDM:pick = -1` + `xmpDM:good = false`（Lightroom Classic 13.2+ 弃置旗标）
+- 不会占用或覆盖 0～5 星评级
+
+---
+
+## 自动分组
+
+### standard（推荐）
+
+- 相邻照片 ≤ 1.2 秒：倾向同组
+- 1.2～4 秒：结合 dHash 相似度判断
+- > 4 秒：默认新组
+
+这里的“组”定义为：
+
+> 应该放在一起互相比较，最后挑最好照片的一组选片候选。
+
+---
+
+## 项目结构
+
+```text
+src/ai_cull_assistant/
+  app.py               主界面
+  scanner.py           文件扫描、RAW+JPG 配对
+  preview.py           RAW/JPG 预览生成
+  exif_utils.py        EXIF 拍摄时间
+  grouping.py          自动 / 人工分组逻辑
+  group_editor.py      拆组 / 合组界面
+  group_store.py       groups.json
+  screening.py         人物主体明显虚焦 / 严重抖动粗筛
+  contact_sheet.py     主联系表 + 弃置复核表
+  selection_parser.py  ChatGPT 结果解析
+  xmp.py               Lightroom Rating / Reject
+  exporter.py          精选照片复制
+  workflow.py          主工作流
+```
+
+Windows 构建：
+
+```text
+build_exe.ps1
+make_portable_zip.ps1
+build_portable.bat
+README-快速开始.txt
+BUILD-WINDOWS.md
+.github/workflows/build-windows.yml
+```
+
+---
+
+## 当前限制
+
+- 人物检测第一版使用 OpenCV 正脸检测，侧脸、背脸、遮挡严重或人物太小时会选择“不处理”，而不是冒险弃置。
+- 技术粗筛阈值刻意设置得很保守，因此会漏掉一些轻微虚焦片。
+- 还没有闭眼检测。
+- 还没有人体姿态识别。
+- 不自动处理重复片；重复照片仍由 ChatGPT 按组选片。
+- 没有直接调用 ChatGPT API，目前仍是“上传联系表 + 粘贴评级结果”的方式。
+- PyInstaller 不能跨平台生成 Windows EXE；Windows EXE 必须在 Windows 本机 / VM / GitHub Actions Windows runner 构建。
