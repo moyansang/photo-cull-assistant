@@ -6,3 +6,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+settings.json
+settings.json.tmp
+工作区/
+精选/

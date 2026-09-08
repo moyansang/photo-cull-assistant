@@ -17,13 +17,25 @@ def run(report_path: str) -> None:
         from .workflow import run_scan, apply_selection_text
 
         assert not _face_cascade().empty(), "Missing face detector data"
-        app = App()
-        app.withdraw()
-        app.update()
-        report["window_title"] = app.title()
-        app.destroy()
         with tempfile.TemporaryDirectory(prefix="aicull-smoke-") as folder:
             root = Path(folder)
+            app = App(settings_dir=root)
+            app.withdraw()
+            app.update()
+            report["window_title"] = app.title()
+            assert app.workspace_var.get() == str(root / "工作区")
+            assert app.export_var.get() == str(root / "精选")
+            app.input_var.set(str(root / "测试照片"))
+            app.workspace_var.set(str(root / "自选工作区"))
+            app.export_var.set(str(root / "自选精选"))
+            app._close()
+            reopened = App(settings_dir=root)
+            reopened.withdraw()
+            assert reopened.input_var.get() == str(root / "测试照片")
+            assert reopened.workspace_var.get() == str(root / "自选工作区")
+            assert reopened.export_var.get() == str(root / "自选精选")
+            reopened._close()
+            report["directory_persistence"] = True
             photos = root / "photos"
             photos.mkdir()
             Image.new("RGB", (640, 480), "silver").save(photos / "TEST001.jpg")

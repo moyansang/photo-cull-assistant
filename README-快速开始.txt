@@ -1,4 +1,4 @@
-AI 选片助手 v0.3 — Windows 64 位便携版
+﻿AI 选片助手 v0.3.1 — Windows 64 位便携版
 
 1. 完整解压 ZIP，保留 AI选片助手.exe 和 _internal 文件夹在一起。
 2. 双击 AI选片助手.exe，无需安装 Python。
@@ -13,3 +13,7 @@ AI 选片助手 v0.3 — Windows 64 位便携版
 程序不删除原片；评级和弃置信息写入 XMP。操作重要照片前建议备份已有 XMP。
 RAW 预览所需 rawpy/LibRaw 和人物检测数据已随程序打包。
 当前不直接调用 ChatGPT API，仍需手动上传联系表并粘贴评级。
+
+目录设置会在关闭程序时保存到 EXE 旁的 settings.json，下次启动自动恢复。
+首次默认工作区为 EXE 旁的 工作区 文件夹，精选导出目录为 EXE 旁的 精选 文件夹。
+更新版本时，可将旧版 settings.json 复制到新版 EXE 旁以保留设置。

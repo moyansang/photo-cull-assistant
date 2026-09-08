@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .group_editor import GroupEditor
+from .settings import application_dir, load_paths, save_paths
 from .workflow import (
     ScanResult,
     apply_selection_text,
@@ -17,20 +18,34 @@ from .workflow import (
 
 
 class App(tk.Tk):
-    def __init__(self) -> None:
+    def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
-        self.title("AI 选片助手 v0.3")
+        self.title("AI 选片助手 v0.3.1")
         self.geometry("980x780")
         self.scan_result: ScanResult | None = None
+        self.settings_dir = settings_dir if settings_dir is not None else application_dir()
+        self.saved_paths = load_paths(self.settings_dir)
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._close)
+
+    def _close(self) -> None:
+        try:
+            save_paths(self.settings_dir, {
+                "input": self.input_var.get(),
+                "workspace": self.workspace_var.get(),
+                "export": self.export_var.get(),
+            })
+        except OSError as exc:
+            messagebox.showwarning("目录未保存", f"无法保存目录设置，请将程序解压到可写入的文件夹。\n{exc}")
+        self.destroy()
 
     def _build_ui(self) -> None:
         frame = ttk.Frame(self, padding=12)
         frame.pack(fill="both", expand=True)
 
-        self.input_var = tk.StringVar()
-        self.workspace_var = tk.StringVar(value=str(Path.home() / "AI选片助手工作区"))
-        self.export_var = tk.StringVar(value=str(Path.home() / "AI选片助手工作区" / "精选"))
+        self.input_var = tk.StringVar(value=self.saved_paths["input"])
+        self.workspace_var = tk.StringVar(value=self.saved_paths["workspace"])
+        self.export_var = tk.StringVar(value=self.saved_paths["export"])
         self.preset_var = tk.StringVar(value="standard")
         self.per_page_var = tk.IntVar(value=16)
         self.columns_var = tk.IntVar(value=4)
