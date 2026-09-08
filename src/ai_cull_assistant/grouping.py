@@ -7,19 +7,20 @@ from typing import Iterable
 from PIL import Image, ImageOps
 
 from .models import PhotoAsset
+from .subject import SubjectFeatures, features
 
 
 @dataclass(slots=True)
 class GroupingConfig:
-    strong_same_group_seconds: float = 1.2
-    maybe_same_group_seconds: float = 4.0
+    strong_same_group_seconds: float = 0.8
+    maybe_same_group_seconds: float = 2.5
     hash_distance_threshold: int = 10
 
 
 PRESETS = {
-    "strict": GroupingConfig(1.0, 2.0, 8),
-    "standard": GroupingConfig(1.2, 4.0, 10),
-    "loose": GroupingConfig(2.0, 8.0, 12),
+    "strict": GroupingConfig(0.5, 1.5, 8),
+    "standard": GroupingConfig(0.8, 2.5, 10),
+    "loose": GroupingConfig(1.2, 4.0, 12),
 }
 
 
@@ -30,26 +31,46 @@ def assign_groups(assets: list[PhotoAsset], preset: str = "standard") -> list[Ph
 
     current_group = 1
     assets[0].group_id = current_group
+    anchor = assets[0]
+    visual = {id(a): features(Path(a.preview_path)) if a.preview_path else None for a in assets}
     for prev, curr in zip(assets, assets[1:]):
         delta = (curr.captured_at - prev.captured_at).total_seconds()
         same_group = False
-        if delta <= cfg.strong_same_group_seconds:
-            same_group = True
-        elif delta <= cfg.maybe_same_group_seconds:
-            prev_hash = _ensure_dhash(prev)
-            curr_hash = _ensure_dhash(curr)
-            if prev_hash is not None and curr_hash is not None:
-                same_group = hamming_distance(prev_hash, curr_hash) <= cfg.hash_distance_threshold
-            else:
-                same_group = True
-        else:
-            same_group = False
+        if 0 <= delta <= cfg.maybe_same_group_seconds:
+            short = delta <= cfg.strong_same_group_seconds
+            same_group = _similar(prev, curr, visual, cfg, short=short)
+            # Compare against the group's first photo to prevent gradual pose drift.
+            if same_group and anchor is not prev:
+                same_group = _similar(anchor, curr, visual, cfg, short=short)
 
         if not same_group:
             current_group += 1
+            anchor = curr
         curr.group_id = current_group
 
     return assets
+
+
+def _similar(a: PhotoAsset, b: PhotoAsset, visual: dict, cfg: GroupingConfig, *, short: bool) -> bool:
+    left: SubjectFeatures | None = visual[id(a)]
+    right: SubjectFeatures | None = visual[id(b)]
+    threshold = cfg.hash_distance_threshold + (3 if short else 0)
+    if left and right:
+        if left.face and right.face and left.body and right.body:
+            lx, ly, lw, lh = left.face
+            rx, ry, rw, rh = right.face
+            displacement = ((lx + lw / 2 - rx - rw / 2) ** 2 + (ly + lh / 2 - ry - rh / 2) ** 2) ** .5
+            size_ratio = max(lw * lh, rw * rh) / max(1e-9, min(lw * lh, rw * rh))
+            return (displacement <= .10 and size_ratio <= 1.8
+                    and hamming_distance(left.body, right.body) <= threshold
+                    and hamming_distance(left.whole, right.whole) <= threshold + 8)
+        # Missing detections are not evidence of a pose change. Use both views.
+        return (hamming_distance(left.whole, right.whole) <= threshold
+                and hamming_distance(left.center, right.center) <= threshold)
+    ah, bh = _ensure_dhash(a), _ensure_dhash(b)
+    if ah is not None and bh is not None:
+        return hamming_distance(ah, bh) <= threshold
+    return short
 
 
 def _ensure_dhash(asset: PhotoAsset) -> str | None:

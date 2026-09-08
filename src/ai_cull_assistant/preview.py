@@ -13,10 +13,13 @@ except Exception:  # pragma: no cover - optional dependency
     rawpy = None
 
 
-THUMB_SIZE = (640, 640)
+THUMB_SIZE = (1600, 1600)
 
 
 def build_preview(asset: PhotoAsset, cache_dir: Path) -> Path:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    # Separate cache prevents old 640px previews from limiting face detail.
+    cache_dir = cache_dir / "v04"
     cache_dir.mkdir(parents=True, exist_ok=True)
     out_path = cache_dir / f"{asset.stem}.jpg"
     if out_path.exists():
@@ -34,8 +37,8 @@ def build_preview(asset: PhotoAsset, cache_dir: Path) -> Path:
     if img is None:
         raise RuntimeError(f"Unable to build preview for {asset.primary_path}")
 
-    img.thumbnail(THUMB_SIZE)
     img = ImageOps.exif_transpose(img)
+    img.thumbnail(THUMB_SIZE)
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
     img.save(out_path, "JPEG", quality=88)

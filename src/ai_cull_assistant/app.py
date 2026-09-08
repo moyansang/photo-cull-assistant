@@ -20,7 +20,7 @@ from .workflow import (
 class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
-        self.title("AI 选片助手 v0.3.1")
+        self.title("AI 选片助手 v0.4.0")
         self.geometry("980x780")
         self.scan_result: ScanResult | None = None
         self.settings_dir = settings_dir if settings_dir is not None else application_dir()
@@ -145,6 +145,7 @@ class App(tk.Tk):
             self._log(f"扫描完成：共 {len(result.assets)} 张逻辑照片")
             if result.groups_loaded_from_store:
                 self._log("已读取工作区 groups.json，保留上次人工分组。")
+                self._log("如需使用新版分组算法，请点击“重新自动分组”（会覆盖人工分组）。")
             else:
                 self._log("未找到可用的保存分组，已按当前灵敏度自动分组。")
             self._log(f"主联系表：{result.contact_dir / 'main'}")

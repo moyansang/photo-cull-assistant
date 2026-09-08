@@ -8,13 +8,14 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .models import PhotoAsset
+from .subject import features, face_crop
 
 PAGE_BG = "white"
 TEXT_COLOR = "black"
 GROUP_BG = (236, 236, 236)
 REJECT_BG = (250, 232, 232)
 # Four columns -> ~2024 px wide, close to the 2048 px target for chat upload.
-THUMB_BOX = (456, 350)
+THUMB_BOX = (456, 380)
 CELL_W = 490
 CELL_H = 452
 GROUP_HEADER_H = 48
@@ -294,23 +295,38 @@ def _draw_cell(
     if asset.preview_path and Path(asset.preview_path).exists():
         with Image.open(asset.preview_path) as img:
             img = ImageOps.exif_transpose(img)
-            thumb = ImageOps.contain(img.convert("RGB"), THUMB_BOX)
-            paste_x = x0 + (CELL_W - thumb.width) // 2
+            img = img.convert("RGB")
+            subject = features(Path(asset.preview_path))
+            face = subject.face if subject else None
+            photo_box = (330, THUMB_BOX[1]) if face else THUMB_BOX
+            thumb = ImageOps.contain(img, photo_box)
+            paste_x = x0 + 10 + (photo_box[0] - thumb.width) // 2
             paste_y = y0 + 8
             canvas.paste(thumb, (paste_x, paste_y))
+            if face:
+                crop = ImageOps.contain(face_crop(img, face), (124, 150))
+                inset_x = x0 + 350
+                inset_y = y0 + 30
+                draw.text((inset_x, y0 + 7), "FACE", fill=TEXT_COLOR, font=small_font)
+                canvas.paste(crop, (inset_x + (124 - crop.width) // 2, inset_y))
+                draw.rectangle([inset_x - 2, inset_y - 2, inset_x + 126, inset_y + crop.height + 2], outline=(100, 100, 100), width=2)
             bottom = paste_y + thumb.height
     else:
         draw.rectangle([x0 + 10, y0 + 10, x0 + CELL_W - 18, y0 + THUMB_BOX[1]], outline=(180, 0, 0))
         draw.text((x0 + 20, y0 + 20), "Preview unavailable", fill=(180, 0, 0), font=small_font)
 
     text_y = max(y0 + THUMB_BOX[1] + 10, bottom + 8)
-    draw.text((x0 + 12, text_y), asset.stem, fill=TEXT_COLOR, font=filename_font)
-    meta = f"#{group_index:02d}   G{asset.group_id:03d}"
+    label = f"{asset.stem} · #{group_index:02d}"
+    label_size = 25
+    while draw.textbbox((0, 0), label, font=filename_font)[2] > CELL_W - 28 and label_size > 10:
+        label_size -= 1
+        filename_font = _load_font(label_size)
+    draw.text((x0 + 12, text_y), label, fill=TEXT_COLOR, font=filename_font)
     if review_mode:
-        meta += "   AUTO REJECT"
-    draw.text((x0 + 12, text_y + 31), meta, fill=TEXT_COLOR, font=small_font)
-    if review_mode and asset.focus_score is not None:
-        draw.text((x0 + 12, text_y + 55), f"focus score: {asset.focus_score:.2f}", fill=TEXT_COLOR, font=small_font)
+        meta = "AUTO REJECT"
+        if asset.focus_score is not None:
+            meta += f" · focus: {asset.focus_score:.2f}"
+        draw.text((x0 + 12, text_y + 29), meta, fill=TEXT_COLOR, font=small_font)
 
 
 def _load_font(size: int) -> ImageFont.ImageFont:
