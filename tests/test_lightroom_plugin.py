@@ -56,7 +56,7 @@ def test_lua_catalog_import_validation_and_metadata_scope():
 def test_lua_entrypoint_confirmation_and_catalog_gate(answer,expected):
     from lupa.lua51 import LuaRuntime
     lua=LuaRuntime(unpack_returned_tuples=True)
-    lua.globals().read_file=lambda path: ((PLUGIN/path.rsplit('/',1)[-1]).read_text('utf-8') if not path.endswith('results.json') else json.dumps({'format':'photo-cull-assistant','version':1,'photos':[{'path':'/照片/a.RW2','rating':5}]}))
+    lua.globals().read_file=lambda path: ((PLUGIN/path.rsplit('/',1)[-1]).read_text('utf-8') if not path.endswith('results.json') else json.dumps({'format':'photo-cull-assistant','version':1,'export_id':'review-export-1','photos':[{'path':'/照片/a.RW2','rating':5}]}))
     lua.globals().answer=answer
     lua.execute('''
         _PLUGIN={path='/中文插件/PhotoCullAssistant.lrplugin'}
@@ -85,4 +85,5 @@ def test_lua_entrypoint_confirmation_and_catalog_gate(answer,expected):
     report=json.loads(lua.globals().report)
     assert report['status']==('applied' if answer=='ok' else 'not_applied')
     assert report['changes'][0]['before_rating']==2
+    assert report['export_id']=='review-export-1'
     lua.execute('assert(loadstring(...))',(PLUGIN/'ViewReport.lua').read_text('utf-8'))

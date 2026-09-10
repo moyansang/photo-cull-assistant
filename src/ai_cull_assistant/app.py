@@ -15,7 +15,6 @@ from .crop_dialog import CropDialog
 from dataclasses import asdict
 from .workflow import (
     ScanResult,
-    apply_selection_text,
     persist_manual_groups,
     regenerate_contact_sheet_sets,
     reset_auto_groups,
@@ -31,6 +30,7 @@ class App(tk.Tk):
         super().__init__()
         self.title(f"AI 选片助手 v{VERSION}")
         self.geometry("980x780")
+        self.review_project = None
         self.scan_result: ScanResult | None = None
         self.settings_dir = settings_dir if settings_dir is not None else application_dir()
         self.saved_paths = load_paths(self.settings_dir)
@@ -78,9 +78,15 @@ class App(tk.Tk):
             self._log(f"设置保存失败：{exc}")
 
     def _close(self) -> None:
+        for child in self.winfo_children():
+            if getattr(child, '_api_active', False):
+                child._close()
+                return
         if self._settings_pending:
             self.after_cancel(self._settings_pending)
         self._save_preferences()
+        for timer in self.tk.splitlist(self.tk.call('after', 'info')):
+            self.after_cancel(timer)
         self.destroy()
 
     def _build_ui(self) -> None:
@@ -133,16 +139,14 @@ class App(tk.Tk):
         row += 1
         lr_frame = ttk.Frame(frame)
         lr_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
-        ttk.Button(lr_frame, text="导出 Lightroom 结果", command=self._export_lightroom_results).pack(side="left", padx=(0, 8))
+        ttk.Button(lr_frame, text="复核并导出 Lightroom 结果", command=self._open_ai_review).pack(side="left", padx=(0, 8))
         ttk.Button(lr_frame, text="LR 插件", command=self._open_lr_plugin).pack(side="left")
         ttk.Button(lr_frame, text="检查更新", command=lambda: self.updates.check(True)).pack(side="left", padx=12)
         ttk.Checkbutton(lr_frame, text="不再自动检查更新", variable=self.no_updates_var, command=self._save_preferences).pack(side="left")
 
         row += 1
-        ttk.Label(frame, text="把 ChatGPT 返回的选片结果粘贴到这里：").grid(row=row, column=0, columnspan=6, sticky="w")
-        row += 1
-        self.selection_text = tk.Text(frame, height=16, wrap="word")
-        self.selection_text.grid(row=row, column=0, columnspan=6, sticky="nsew")
+        ttk.Label(frame, text="流程：准备照片 → 分组与人脸修正 → AI 选片 → 人工复核 → Lightroom 应用").grid(row=row, column=0, columnspan=6, sticky="w", pady=8)
+        ttk.Button(second_btn_frame, text="AI 选片与人工复核", command=self._open_ai_review).pack(side="left", padx=8)
         row += 1
         ttk.Label(frame, text="日志：").grid(row=row, column=0, columnspan=6, sticky="w", pady=(8, 0))
         row += 1
@@ -193,6 +197,7 @@ class App(tk.Tk):
                 crop_settings=self.crop_settings,
             )
             self.scan_result = result
+            self.review_project = None
             self._log(f"扫描完成：共 {len(result.assets)} 张逻辑照片")
             if result.groups_loaded_from_store:
                 self._log("已读取工作区 groups.json，保留上次人工分组。")
@@ -205,7 +210,7 @@ class App(tk.Tk):
                 self._log(f"弃置复核表：{result.contact_dir / 'rejected_review'}")
                 if result.screening_results_path:
                     self._log(f"技术筛选报告：{result.screening_results_path}")
-            self._log(f"LR 结果文件：{result.workspace_dir / 'lightroom_results.json'}（需在 LR 插件导入后生效）")
+            self._log("扫描仅生成技术建议；请进入 AI 选片与人工复核，确认后再导出 LR 结果。")
             self._log("可先进入“编辑选片组”人工拆分/合并，再重新生成联系表。")
         except Exception as exc:
             self._log(f"扫描失败：{exc}")
@@ -297,19 +302,21 @@ class App(tk.Tk):
         except Exception:
             messagebox.showinfo("联系表目录", str(path))
 
-    def _export_lightroom_results(self):
+    def _open_ai_review(self):
+        if self.updates.busy or (getattr(self, '_scan_thread', None) and self._scan_thread.is_alive()):
+            messagebox.showinfo("提示", "请等待扫描或更新结束。", parent=self)
+            return
         if not self.scan_result:
-            messagebox.showinfo("提示", "请先扫描照片。")
+            messagebox.showinfo("提示", "请先扫描照片；同一工作区会恢复保存的 AI 任务与人工结果。", parent=self)
             return
         try:
-            # Export flags plus any explicitly pasted ratings, without copying photos.
-            path = self.scan_result.workspace_dir / "lightroom_results.json"
-            apply_selection_text(self.scan_result.assets, self.selection_text.get("1.0", "end"), results_path=path)
-            import os
-            os.startfile(path.parent)
-            self._log(f"LR 结果已导出：{path}。请在 Lightroom 插件中导入。")
+            from .ai_project import ReviewProject
+            from .ai_review_ui import ReviewDialog
+            self.review_project = ReviewProject(self.scan_result.workspace_dir)
+            self.review_project.refresh(self.scan_result.assets,self.crop_settings)
+            ReviewDialog(self,self.review_project,self.scan_result.assets,self.crop_settings,self.settings_dir)
         except Exception as exc:
-            messagebox.showerror("导出失败", str(exc), parent=self)
+            messagebox.showerror("AI 选片",str(exc),parent=self)
 
     def _open_lr_plugin(self):
         import os

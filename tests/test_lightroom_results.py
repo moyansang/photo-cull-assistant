@@ -48,6 +48,6 @@ def test_scan_produces_result_not_xmp(tmp_path):
     a=asset(tmp_path/'photos','TEST01')
     before=a.primary_path.read_bytes()
     result=run_scan(a.primary_path.parent,tmp_path/'work')
-    assert (result.workspace_dir/'lightroom_results.json').exists()
+    assert not (result.workspace_dir/'lightroom_results.json').exists()
     assert not list(a.primary_path.parent.glob('*.xmp'))
     assert before==a.primary_path.read_bytes()

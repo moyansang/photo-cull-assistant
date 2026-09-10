@@ -1,0 +1,1082 @@
+from __future__ import annotations
+
+import copy
+import os
+import queue
+import threading
+from pathlib import Path
+import tkinter as tk
+from tkinter import messagebox, ttk
+from typing import Any, Callable, Iterable
+
+from PIL import Image, ImageOps, ImageTk
+
+
+RATING_UNSET = "未指定 / 不修改"
+PICK_LABELS = {
+    "保持原标记": None,
+    "留用": 1,
+    "无标记": 0,
+    "弃置": -1,
+}
+PICK_VALUES = {value: label for label, value in PICK_LABELS.items()}
+DONE_STATUSES = {"completed", "complete", "done", "已完成"}
+STATUS_LABELS = {
+    "pending": "待发送",
+    "awaiting_response": "待粘贴",
+    "running": "提交中",
+    "completed": "已完成",
+    "complete": "已完成",
+    "done": "已完成",
+    "failed": "失败",
+    "invalid": "需要修正",
+}
+
+
+def _state(project: Any) -> dict[str, Any]:
+    """Return the project's public JSON state while tolerating common wrappers."""
+    for name in ("data", "state", "project"):
+        value = getattr(project, name, None)
+        if isinstance(value, dict):
+            return value
+    if isinstance(project, dict):
+        return project
+    raise AttributeError("项目对象没有可读取的 data/state JSON")
+
+
+def _task_id(task: dict[str, Any]) -> str:
+    return str(task.get("id", ""))
+
+
+def _batch_id(batch: dict[str, Any]) -> str:
+    return str(batch.get("id", ""))
+
+
+def _is_done(batch: dict[str, Any]) -> bool:
+    return str(batch.get("status", "pending")).lower() in DONE_STATUSES
+
+
+def _asset_value(asset: Any, name: str, default: Any = None) -> Any:
+    if isinstance(asset, dict):
+        return asset.get(name, default)
+    return getattr(asset, name, default)
+
+
+class PasteResponseDialog(tk.Toplevel):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        on_submit: Callable[[str], bool],
+        on_legacy: Callable[[str], bool] | None = None,
+        *,
+        title: str = "粘贴模型回答",
+        instruction: str = "粘贴模型返回的完整内容（可包含 JSON 代码块）：",
+        submit_text: str = "校验并保存 JSON",
+    ) -> None:
+        super().__init__(parent)
+        self.title(title)
+        self.geometry("760x560")
+        self.transient(parent)
+        self.on_submit = on_submit
+        self.on_legacy = on_legacy
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text=instruction).pack(anchor="w")
+        text_frame = ttk.Frame(body)
+        text_frame.pack(fill="both", expand=True, pady=(6, 10))
+        self.text = tk.Text(text_frame, wrap="word", undo=True)
+        scroll = ttk.Scrollbar(text_frame, orient="vertical", command=self.text.yview)
+        self.text.configure(yscrollcommand=scroll.set)
+        self.text.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        row = ttk.Frame(body)
+        row.pack(fill="x")
+        ttk.Button(row, text="取消", command=self.destroy).pack(side="right")
+        ttk.Button(row, text=submit_text, command=self._submit).pack(side="right", padx=(0, 8))
+        if on_legacy is not None:
+            ttk.Button(row, text="导入简化评级（文件名,星级）", command=self._submit_legacy).pack(side="right", padx=(0, 8))
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.grab_set()
+        self.text.focus_set()
+
+    def _submit(self) -> None:
+        raw = self.text.get("1.0", "end-1c")
+        if not raw.strip():
+            messagebox.showinfo("模型回答", "请先粘贴模型回答。", parent=self)
+            return
+        if self.on_submit(raw):
+            self.destroy()
+
+    def _submit_legacy(self) -> None:
+        raw = self.text.get("1.0", "end-1c")
+        if not raw.strip():
+            messagebox.showinfo("简化评级", "请先粘贴“文件名,星级”内容。", parent=self)
+            return
+        if self.on_legacy is not None and self.on_legacy(raw):
+            self.destroy()
+
+
+class RawResponsesDialog(tk.Toplevel):
+    def __init__(self, parent: tk.Misc, responses: Iterable[Any]) -> None:
+        super().__init__(parent)
+        self.title("原始回答")
+        self.geometry("900x620")
+        self.transient(parent)
+        self.responses = list(responses)
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        left = ttk.Frame(body)
+        left.pack(side="left", fill="y", padx=(0, 10))
+        self.listbox = tk.Listbox(left, width=26, exportselection=False)
+        self.listbox.pack(fill="both", expand=True)
+        for index, response in enumerate(self.responses, 1):
+            source = None
+            if isinstance(response, dict):
+                profile = response.get("api_profile") or {}
+                source = response.get("format") or profile.get("model")
+            self.listbox.insert("end", f"第 {index} 次{f' · {source}' if source else ''}")
+        self.text = tk.Text(body, wrap="word", state="disabled")
+        self.text.pack(side="left", fill="both", expand=True)
+        self.listbox.bind("<<ListboxSelect>>", self._select)
+        if self.responses:
+            self.listbox.selection_set(0)
+            self._select()
+        else:
+            self._show("本批尚无保存的原始回答。")
+        ttk.Button(self, text="关闭", command=self.destroy).pack(pady=(0, 10))
+        self.grab_set()
+
+    def _select(self, _event: Any = None) -> None:
+        selected = self.listbox.curselection()
+        if not selected:
+            return
+        response = self.responses[selected[0]]
+        if isinstance(response, dict):
+            value = response.get("text", "")
+        else:
+            value = str(response)
+        self._show(str(value))
+
+    def _show(self, value: str) -> None:
+        self.text.configure(state="normal")
+        self.text.delete("1.0", "end")
+        self.text.insert("1.0", value)
+        self.text.configure(state="disabled")
+
+
+class ReviewDialog(tk.Toplevel):
+    """AI task submission and explicit human review workflow."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        project: Any,
+        assets: Iterable[Any],
+        crop_settings: Any,
+        settings_dir: str | Path,
+    ) -> None:
+        super().__init__(parent)
+        self.title("AI 选片与人工复核")
+        self.geometry("1180x820")
+        self.minsize(980, 680)
+        self.resizable(True, True)
+        self.transient(parent)
+        self.project = project
+        self.assets = list(assets)
+        self.crop_settings = crop_settings
+        self.settings_dir = Path(settings_dir)
+        self._asset_by_stem = {str(_asset_value(a, "stem", "")): a for a in self.assets}
+        self._photo_ids: list[str] = []
+        self._task_labels: dict[str, str] = {}
+        self._profile_labels: dict[str, dict[str, Any]] = {}
+        self._tree_photos: list[ImageTk.PhotoImage] = []
+        self._preview_photo: ImageTk.PhotoImage | None = None
+        self._api_queue: queue.Queue[tuple[Any, ...]] = queue.Queue()
+        self._api_pending: list[dict[str, Any]] = []
+        self._api_active = False
+        self._pause_requested = False
+        self._closing_requested = False
+        self._poll_token: str | None = None
+
+        self.preference_vars = {
+            "intensity": tk.StringVar(value="均衡保留"),
+            "strategy": tk.StringVar(value="允许保留多个不同动作"),
+            "focus": tk.StringVar(value="综合判断"),
+            "target": tk.StringVar(value="不限制"),
+            "extra": tk.StringVar(value=""),
+        }
+        self.task_var = tk.StringVar()
+        self.profile_var = tk.StringVar()
+        self.filter_var = tk.StringVar(value="全部")
+        self.rating_var = tk.StringVar(value=RATING_UNSET)
+        self.pick_var = tk.StringVar(value="保持原标记")
+        self.status_var = tk.StringVar(value="就绪")
+        self.export_status_var = tk.StringVar(value="")
+        self.review_caption_var = tk.StringVar(value="请选择照片")
+        self._build_ui()
+        self._load_saved_preferences()
+        self._load_ui_settings()
+        self._refresh_profiles()
+        self._refresh_tasks(select_current=True)
+        self._refresh_review()
+        self._refresh_export_status()
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.bind("<Left>", lambda _e: self._navigate_photo(-1))
+        self.bind("<Right>", lambda _e: self._navigate_photo(1))
+        self._poll_token = self.after(120, self._poll_api)
+        self.grab_set()
+
+    # ---- layout ---------------------------------------------------------
+    def _build_ui(self) -> None:
+        outer = ttk.Frame(self, padding=12)
+        outer.pack(fill="both", expand=True)
+        notebook = ttk.Notebook(outer)
+        notebook.pack(fill="both", expand=True)
+        self.task_tab = ttk.Frame(notebook, padding=12)
+        self.review_tab = ttk.Frame(notebook, padding=10)
+        notebook.add(self.task_tab, text="任务与提交")
+        notebook.add(self.review_tab, text="人工复核")
+        self._build_task_tab()
+        self._build_review_tab()
+        footer = ttk.Frame(outer)
+        footer.pack(fill="x", pady=(8, 0))
+        ttk.Label(footer, textvariable=self.status_var).pack(side="left")
+        ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
+
+    def _build_task_tab(self) -> None:
+        tab = self.task_tab
+        selector = ttk.LabelFrame(tab, text="评审任务", padding=10)
+        selector.pack(fill="x")
+        ttk.Label(selector, text="任务历史").grid(row=0, column=0, sticky="w")
+        self.task_combo = ttk.Combobox(selector, textvariable=self.task_var, state="readonly", width=52)
+        self.task_combo.grid(row=0, column=1, sticky="ew", padx=8)
+        self.task_combo.bind("<<ComboboxSelected>>", lambda _e: self._select_task())
+        ttk.Button(selector, text="刷新照片状态", command=self._refresh_project).grid(row=0, column=2, padx=(0, 6))
+        selector.columnconfigure(1, weight=1)
+
+        prefs = ttk.LabelFrame(tab, text="本轮选片偏好", padding=10)
+        prefs.pack(fill="x", pady=10)
+        fields = (
+            ("选片力度", "intensity", ("少量精选", "均衡保留", "多留备选")),
+            ("同组策略", "strategy", ("通常保留一张", "允许保留多个不同动作")),
+            ("评价重点", "focus", ("表情优先", "动作优先", "综合判断")),
+        )
+        for col, (label, key, values) in enumerate(fields):
+            ttk.Label(prefs, text=label).grid(row=0, column=col * 2, sticky="w", padx=(0, 4))
+            ttk.Combobox(prefs, textvariable=self.preference_vars[key], values=values, state="readonly", width=20).grid(
+                row=0, column=col * 2 + 1, sticky="ew", padx=(0, 12)
+            )
+        ttk.Label(prefs, text="目标数量").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(prefs, textvariable=self.preference_vars["target"], width=22).grid(row=1, column=1, sticky="ew", padx=(0, 12), pady=(8, 0))
+        ttk.Label(prefs, text="补充要求").grid(row=1, column=2, sticky="w", pady=(8, 0))
+        ttk.Entry(prefs, textvariable=self.preference_vars["extra"]).grid(row=1, column=3, columnspan=3, sticky="ew", pady=(8, 0))
+        for col in (1, 3, 5):
+            prefs.columnconfigure(col, weight=1)
+        create = ttk.Frame(prefs)
+        create.grid(row=2, column=0, columnspan=6, sticky="w", pady=(10, 0))
+        ttk.Button(create, text="新建全量初选", command=self._create_initial).pack(side="left", padx=(0, 8))
+        ttk.Button(create, text="重新评审所选组", command=self._create_group_review).pack(side="left", padx=(0, 8))
+        ttk.Button(create, text="跨组精简候选", command=self._create_refine).pack(side="left", padx=(0, 8))
+        ttk.Button(create, text="拆小本批重试", command=self._split_selected_batch).pack(side="left")
+
+        batches = ttk.LabelFrame(tab, text="批次", padding=8)
+        batches.pack(fill="both", expand=True)
+        columns = ("status", "photos", "images", "error")
+        self.batch_tree = ttk.Treeview(batches, columns=columns, show="tree headings", height=11, selectmode="browse")
+        self.batch_tree.heading("#0", text="批次")
+        self.batch_tree.heading("status", text="状态")
+        self.batch_tree.heading("photos", text="照片")
+        self.batch_tree.heading("images", text="图片")
+        self.batch_tree.heading("error", text="说明")
+        self.batch_tree.column("#0", width=180, stretch=True)
+        self.batch_tree.column("status", width=90, anchor="center")
+        self.batch_tree.column("photos", width=65, anchor="center")
+        self.batch_tree.column("images", width=65, anchor="center")
+        self.batch_tree.column("error", width=390, stretch=True)
+        scroll = ttk.Scrollbar(batches, orient="vertical", command=self.batch_tree.yview)
+        self.batch_tree.configure(yscrollcommand=scroll.set)
+        self.batch_tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+
+        manual = ttk.Frame(tab)
+        manual.pack(fill="x", pady=(10, 0))
+        ttk.Button(manual, text="复制本批提示词", command=self._copy_prompt).pack(side="left", padx=(0, 8))
+        ttk.Button(manual, text="打开本批图片目录", command=self._open_batch_folder).pack(side="left", padx=(0, 8))
+        ttk.Button(manual, text="粘贴模型回答", command=self._paste_response).pack(side="left", padx=(0, 8))
+        ttk.Button(manual, text="查看原始回答", command=self._show_raw_responses).pack(side="left")
+
+        api = ttk.LabelFrame(tab, text="API 自动提交", padding=8)
+        api.pack(fill="x", pady=(10, 0))
+        ttk.Label(api, text="配置").pack(side="left")
+        self.profile_combo = ttk.Combobox(api, textvariable=self.profile_var, state="readonly", width=34)
+        self.profile_combo.pack(side="left", padx=8)
+        self.profile_combo.bind("<<ComboboxSelected>>", lambda _e: self._save_ui_settings())
+        ttk.Button(api, text="配置 API", command=self._configure_api).pack(side="left", padx=(0, 8))
+        self.run_button = ttk.Button(api, text="开始 / 继续未完成批次", command=self._start_api)
+        self.run_button.pack(side="left", padx=(0, 8))
+        self.pause_button = ttk.Button(api, text="完成当前批后暂停", command=self._pause_api, state="disabled")
+        self.pause_button.pack(side="left")
+
+    def _build_review_tab(self) -> None:
+        bar = ttk.Frame(self.review_tab)
+        bar.pack(fill="x", pady=(0, 8))
+        ttk.Label(bar, text="筛选").pack(side="left")
+        filters = ("全部", "尚未确认", "待复核", "AI 建议弃置", "4～5 星", "结果已过时", "回答缺失或异常")
+        combo = ttk.Combobox(bar, textvariable=self.filter_var, values=filters, state="readonly", width=20)
+        combo.pack(side="left", padx=8)
+        combo.bind("<<ComboboxSelected>>", lambda _e: (self._refresh_review(), self._save_ui_settings()))
+        ttk.Button(bar, text="导入 LR 回执", command=self._import_receipt).pack(side="right")
+        ttk.Button(bar, text="导出已确认结果", command=self._export_final).pack(side="right", padx=(0, 8))
+        ttk.Label(bar, textvariable=self.export_status_var, foreground="#555555").pack(side="right", padx=12)
+
+        pane = ttk.Panedwindow(self.review_tab, orient="horizontal")
+        pane.pack(fill="both", expand=True)
+        left = ttk.Frame(pane)
+        right = ttk.Frame(pane, padding=(12, 0, 0, 0))
+        pane.add(left, weight=3)
+        pane.add(right, weight=2)
+
+        columns = ("name", "group", "ai", "final", "flag", "review", "confirmed")
+        self.review_tree = ttk.Treeview(left, columns=columns, show="tree headings", selectmode="browse")
+        headings = {"#0": "预览", "name": "文件名", "group": "分组", "ai": "AI", "final": "最终", "flag": "状态", "review": "待复核", "confirmed": "确认"}
+        widths = {"#0": 58, "name": 150, "group": 55, "ai": 42, "final": 45, "flag": 62, "review": 150, "confirmed": 48}
+        for key, label in headings.items():
+            self.review_tree.heading(key, text=label)
+            self.review_tree.column(key, width=widths[key], stretch=key in {"name", "review"})
+        review_scroll = ttk.Scrollbar(left, orient="vertical", command=self.review_tree.yview)
+        self.review_tree.configure(yscrollcommand=review_scroll.set)
+        self.review_tree.pack(side="left", fill="both", expand=True)
+        review_scroll.pack(side="right", fill="y")
+        self.review_tree.bind("<<TreeviewSelect>>", self._show_selected_photo)
+        self.review_tree.bind("<Double-1>", lambda _e: self._open_original())
+
+        ttk.Label(right, textvariable=self.review_caption_var, font=("TkDefaultFont", 11, "bold")).pack(anchor="w")
+        self.preview_label = ttk.Label(right, text="无预览", anchor="center")
+        self.preview_label.pack(fill="both", expand=True, pady=8)
+        ttk.Button(right, text="打开原图", command=self._open_original).pack(anchor="w")
+        details_frame = ttk.LabelFrame(right, text="AI 与技术说明", padding=8)
+        details_frame.pack(fill="x", pady=8)
+        self.details = tk.Text(details_frame, height=8, wrap="word", state="disabled")
+        self.details.pack(fill="x")
+        final = ttk.LabelFrame(right, text="人工最终结果", padding=8)
+        final.pack(fill="x")
+        ttk.Label(final, text="星级").grid(row=0, column=0, sticky="w")
+        ttk.Combobox(final, textvariable=self.rating_var, values=(RATING_UNSET, "1", "2", "3", "4", "5"), state="readonly", width=18).grid(row=0, column=1, sticky="w", padx=(6, 18))
+        ttk.Label(final, text="旗标").grid(row=0, column=2, sticky="w")
+        ttk.Combobox(final, textvariable=self.pick_var, values=tuple(PICK_LABELS), state="readonly", width=12).grid(row=0, column=3, sticky="w", padx=6)
+        ttk.Button(final, text="确认并保存", command=self._confirm_photo).grid(row=1, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        nav = ttk.Frame(right)
+        nav.pack(fill="x", pady=(8, 0))
+        ttk.Button(nav, text="上一张", command=lambda: self._navigate_photo(-1)).pack(side="left")
+        ttk.Button(nav, text="下一张", command=lambda: self._navigate_photo(1)).pack(side="left", padx=8)
+
+    # ---- project/task helpers ------------------------------------------
+    def _photos(self) -> dict[str, dict[str, Any]]:
+        photos = _state(self.project).get("photos", {})
+        return photos if isinstance(photos, dict) else {}
+
+    def _tasks(self) -> list[dict[str, Any]]:
+        tasks = _state(self.project).get("tasks", [])
+        return tasks if isinstance(tasks, list) else []
+
+    def _preferences(self) -> dict[str, str]:
+        return {key: variable.get().strip() for key, variable in self.preference_vars.items()}
+
+    def _load_saved_preferences(self) -> None:
+        saved = _state(self.project).get("preferences", {})
+        if not isinstance(saved, dict):
+            return
+        for key, variable in self.preference_vars.items():
+            if saved.get(key) is not None:
+                variable.set(str(saved[key]))
+
+    def _load_ui_settings(self) -> None:
+        saved = _state(self.project).get("ui_settings", {})
+        if not isinstance(saved, dict):
+            return
+        if saved.get("review_filter"):
+            self.filter_var.set(str(saved["review_filter"]))
+
+    def _save_ui_settings(self) -> None:
+        data = _state(self.project)
+        profile = self._profile_labels.get(self.profile_var.get())
+        data["preferences"] = self._preferences()
+        data["ui_settings"] = {
+            "review_filter": self.filter_var.get(),
+            "api_profile_id": profile.get("id") if profile else None,
+        }
+        self._safe_save()
+
+    def _current_task(self) -> dict[str, Any] | None:
+        wanted = self._task_labels.get(self.task_var.get())
+        if wanted:
+            return next((task for task in self._tasks() if _task_id(task) == wanted), None)
+        try:
+            task = self.project.current_task()
+            return task if isinstance(task, dict) else None
+        except Exception:
+            return self._tasks()[-1] if self._tasks() else None
+
+    def _selected_batch(self) -> dict[str, Any] | None:
+        task = self._current_task()
+        selection = self.batch_tree.selection()
+        if not task or not selection:
+            return None
+        wanted = selection[0]
+        return next((batch for batch in task.get("batches", []) if _batch_id(batch) == wanted), None)
+
+    def _refresh_tasks(self, select_current: bool = False, selected_id: str | None = None) -> None:
+        tasks = self._tasks()
+        self._task_labels.clear()
+        values: list[str] = []
+        for index, task in enumerate(tasks, 1):
+            kind = "跨组精简" if task.get("kind") == "refine" else "组内初选"
+            label = f"{index}. {kind} · {_task_id(task)}"
+            self._task_labels[label] = _task_id(task)
+            values.append(label)
+        self.task_combo.configure(values=values)
+        wanted = selected_id
+        if select_current and not wanted:
+            try:
+                current = self.project.current_task()
+                wanted = _task_id(current) if isinstance(current, dict) else None
+            except Exception:
+                wanted = None
+        chosen = next((label for label, value in self._task_labels.items() if value == wanted), None)
+        if chosen:
+            self.task_var.set(chosen)
+        elif values and self.task_var.get() not in values:
+            self.task_var.set(values[-1])
+        elif not values:
+            self.task_var.set("")
+        self._refresh_batches()
+
+    def _select_task(self) -> None:
+        task = self._current_task()
+        if task and isinstance(task.get("preferences"), dict):
+            for key, variable in self.preference_vars.items():
+                if key in task["preferences"]:
+                    variable.set(str(task["preferences"][key]))
+        self._refresh_batches()
+
+    def _refresh_batches(self, select_id: str | None = None) -> None:
+        old = select_id or (self.batch_tree.selection()[0] if self.batch_tree.selection() else None)
+        self.batch_tree.delete(*self.batch_tree.get_children())
+        task = self._current_task()
+        if not task:
+            return
+        for batch in task.get("batches", []):
+            batch_id = _batch_id(batch)
+            status = str(batch.get("status", "pending"))
+            images = batch.get("image_paths", [])
+            self.batch_tree.insert(
+                "", "end", iid=batch_id, text=batch_id,
+                values=(STATUS_LABELS.get(status.lower(), status), len(batch.get("photo_ids", [])), len(images), str(batch.get("error", ""))),
+            )
+        children = self.batch_tree.get_children()
+        if old in children:
+            self.batch_tree.selection_set(old)
+        elif children:
+            self.batch_tree.selection_set(children[0])
+
+    def _create_task(self, kind: str, photo_ids: list[str] | None = None) -> None:
+        if self._api_active:
+            messagebox.showinfo("新建任务", "请先等待当前 API 请求结束或暂停。", parent=self)
+            return
+        if not self.assets:
+            messagebox.showinfo("新建任务", "当前没有可评审的照片。", parent=self)
+            return
+        if photo_ids is not None and not photo_ids:
+            messagebox.showinfo("新建任务", "当前范围没有符合条件的照片。", parent=self)
+            return
+        try:
+            task = self.project.create_task(
+                self.assets, self.crop_settings, self._preferences(), kind=kind, photo_ids=photo_ids
+            )
+            self.project.save()
+        except Exception as exc:
+            messagebox.showerror("新建任务失败", str(exc), parent=self)
+            return
+        self._refresh_tasks(selected_id=_task_id(task))
+        self._refresh_review()
+        self.status_var.set(f"已创建任务 {_task_id(task)}，共 {len(task.get('batches', []))} 批。")
+
+    def _create_initial(self) -> None:
+        self._create_task("initial")
+
+    def _create_group_review(self) -> None:
+        photo_id = self._selected_photo_id()
+        if not photo_id:
+            messagebox.showinfo("重新评审所选组", "请先在“人工复核”中选择一张照片。", parent=self)
+            return
+        selected = self._photos().get(photo_id, {})
+        group_id = selected.get("group_id")
+        ids = [pid for pid, photo in self._photos().items() if photo.get("group_id") == group_id]
+        self._create_task("initial", ids)
+
+    def _create_refine(self) -> None:
+        ids: list[str] = []
+        for photo_id, photo in self._photos().items():
+            if photo.get("stale"):
+                continue
+            final = photo.get("final") or {}
+            ai = photo.get("ai") or {}
+            if final.get("confirmed"):
+                selected = (final.get("rating") or 0) >= 4 and final.get("pick_status") != -1
+            else:
+                selected = (ai.get("rating") or 0) >= 4
+            if selected:
+                ids.append(photo_id)
+        self._create_task("refine", ids)
+
+    def _split_selected_batch(self) -> None:
+        if self._api_active:
+            messagebox.showinfo("拆小本批", "请先等待当前 API 请求结束或暂停。", parent=self)
+            return
+        task, batch = self._current_task(), self._selected_batch()
+        if not task or not batch:
+            messagebox.showinfo("拆小本批", "请先选择需要拆分的批次。", parent=self)
+            return
+        photo_ids = list(batch.get("photo_ids", []))
+        if len(photo_ids) <= 1:
+            messagebox.showinfo("拆小本批", "本批只有一张照片，无法继续拆分。", parent=self)
+            return
+        preferences = dict(task.get("preferences") or self._preferences())
+        preferences["_split_limit"] = max(1, len(photo_ids) // 2)
+        try:
+            created = self.project.create_task(
+                self.assets,
+                self.crop_settings,
+                preferences,
+                kind=str(task.get("kind", "initial")),
+                photo_ids=photo_ids,
+            )
+            self.project.save()
+        except Exception as exc:
+            messagebox.showerror("拆分失败", str(exc), parent=self)
+            return
+        self._refresh_tasks(selected_id=_task_id(created))
+        self.status_var.set(f"已把批次 {_batch_id(batch)} 拆成更小的新任务；原任务记录仍保留。")
+
+    def _refresh_project(self) -> None:
+        if self._api_active:
+            messagebox.showinfo("刷新照片状态", "请先等待当前 API 请求结束或暂停。", parent=self)
+            return
+        try:
+            self.project.refresh(self.assets, self.crop_settings)
+            self.project.save()
+        except Exception as exc:
+            messagebox.showerror("刷新失败", str(exc), parent=self)
+            return
+        self._refresh_tasks()
+        self._refresh_review()
+        self.status_var.set("已按当前照片、分组和裁切设置刷新；变化项会显示为结果已过时。")
+
+    # ---- manual and API submission ------------------------------------
+    def _copy_prompt(self) -> None:
+        task, batch = self._current_task(), self._selected_batch()
+        if not task or not batch:
+            messagebox.showinfo("复制提示词", "请先创建任务并选择批次。", parent=self)
+            return
+        try:
+            self._batch_images(task, batch)
+            prompt = self.project.prompt(task, batch)
+            self.clipboard_clear()
+            self.clipboard_append(str(prompt))
+            self.update_idletasks()
+        except Exception as exc:
+            messagebox.showerror("复制失败", str(exc), parent=self)
+            return
+        self.status_var.set(f"已复制批次 {_batch_id(batch)} 的提示词。")
+
+    def _batch_images(self, task: dict[str, Any], batch: dict[str, Any]) -> list[Path]:
+        return [Path(path) for path in self.project.batch_images(task, batch)]
+
+    def _open_batch_folder(self) -> None:
+        task, batch = self._current_task(), self._selected_batch()
+        if not task or not batch:
+            messagebox.showinfo("批次图片", "请先选择批次。", parent=self)
+            return
+        try:
+            images = self._batch_images(task, batch)
+            if not images:
+                raise FileNotFoundError("本批没有可打开的图片")
+            os.startfile(str(images[0].parent))  # type: ignore[attr-defined]
+        except Exception as exc:
+            messagebox.showerror("打开失败", str(exc), parent=self)
+
+    def _paste_response(self) -> None:
+        if self._api_active:
+            messagebox.showinfo("粘贴回答", "请先等待当前 API 请求结束或暂停，避免同时修改当前批次。", parent=self)
+            return
+        task, batch = self._current_task(), self._selected_batch()
+        if not task or not batch:
+            messagebox.showinfo("粘贴回答", "请先选择批次。", parent=self)
+            return
+
+        def store(raw: str, legacy: bool = False) -> bool:
+            try:
+                method = self.project.ingest_legacy if legacy else self.project.ingest
+                issues = method(task, batch, raw)
+                self.project.save()
+            except Exception as exc:
+                messagebox.showerror("校验失败", str(exc), parent=self)
+                return False
+            self._refresh_batches(select_id=_batch_id(batch))
+            self._refresh_review()
+            if issues:
+                messagebox.showwarning("已保存，存在异常", "\n".join(map(str, issues)), parent=self)
+            else:
+                messagebox.showinfo("模型回答", "校验通过并已保存。", parent=self)
+            return True
+
+        PasteResponseDialog(self, store, lambda raw: store(raw, True))
+
+    def _show_raw_responses(self) -> None:
+        batch = self._selected_batch()
+        if not batch:
+            messagebox.showinfo("原始回答", "请先选择批次。", parent=self)
+            return
+        RawResponsesDialog(self, batch.get("raw_responses", []))
+
+    def _refresh_profiles(self, *_args: Any) -> None:
+        try:
+            from .ai_api import load_profiles
+
+            profiles = load_profiles(self.settings_dir)
+        except Exception as exc:
+            profiles = []
+            self.status_var.set(f"API 配置读取失败：{exc}")
+        self._profile_labels.clear()
+        values = []
+        for profile in profiles:
+            label = f"{profile.get('name') or profile.get('id', '未命名')} · {profile.get('model', '')}"
+            self._profile_labels[label] = profile
+            values.append(label)
+        self.profile_combo.configure(values=values)
+        saved_ui = _state(self.project).get("ui_settings", {})
+        saved_id = saved_ui.get("api_profile_id") if isinstance(saved_ui, dict) else None
+        saved_label = next((label for label, profile in self._profile_labels.items() if profile.get("id") == saved_id), None)
+        if saved_label:
+            self.profile_var.set(saved_label)
+        elif values and self.profile_var.get() not in values:
+            self.profile_var.set(values[0])
+        elif not values:
+            self.profile_var.set("")
+
+    def _configure_api(self) -> None:
+        try:
+            from .ai_api_dialog import ApiConfigDialog
+
+            ApiConfigDialog(self, self.settings_dir, on_saved=self._refresh_profiles)
+        except Exception as exc:
+            messagebox.showerror("API 配置", str(exc), parent=self)
+
+    def _start_api(self) -> None:
+        if self._api_active:
+            return
+        task = self._current_task()
+        profile = self._profile_labels.get(self.profile_var.get())
+        if not task:
+            messagebox.showinfo("API 提交", "请先创建或选择任务。", parent=self)
+            return
+        if not profile:
+            messagebox.showinfo("API 提交", "请先保存并选择 API 配置。", parent=self)
+            return
+        pending: list[dict[str, Any]] = []
+        try:
+            for batch in task.get("batches", []):
+                if _is_done(batch):
+                    continue
+                images = self._batch_images(task, batch)
+                pending.append({
+                    "task": task,
+                    "task_id": _task_id(task),
+                    "batch": batch,
+                    "batch_id": _batch_id(batch),
+                    "profile": copy.deepcopy(profile),
+                    "prompt": str(self.project.prompt(task, batch)),
+                    "image_paths": tuple(str(path) for path in images),
+                    "photo_count": len(batch.get("photo_ids", [])),
+                })
+        except Exception as exc:
+            messagebox.showerror("无法准备 API 请求", str(exc), parent=self)
+            return
+        if not pending:
+            messagebox.showinfo("API 提交", "此任务的批次均已完成，不会重复提交。", parent=self)
+            return
+        photo_count = sum(item["photo_count"] for item in pending)
+        image_count = sum(len(item["image_paths"]) for item in pending)
+        summary = (
+            f"配置：{profile.get('name', profile.get('id', '未命名'))}\n"
+            f"接口：{profile.get('base_url', '')}\n"
+            f"模型：{profile.get('model', '')}\n\n"
+            f"将提交 {len(pending)} 个未完成批次，涉及 {photo_count} 张照片、{image_count} 张批次图片。\n"
+            "确认开始联网提交吗？"
+        )
+        if not messagebox.askyesno("确认 API 提交范围", summary, parent=self):
+            return
+        self._api_pending = pending
+        self._pause_requested = False
+        self._api_active = True
+        self.run_button.configure(state="disabled")
+        self.pause_button.configure(state="normal")
+        self.task_combo.configure(state="disabled")
+        self._start_next_api_batch()
+
+    def _start_next_api_batch(self) -> None:
+        if self._pause_requested or not self._api_pending:
+            self._finish_api("已暂停，可稍后继续未完成批次。" if self._pause_requested else "API 提交完成。")
+            return
+        request = self._api_pending.pop(0)
+        batch = request["batch"]
+        batch["api_profile"] = {
+            key: request["profile"].get(key)
+            for key in ("id", "name", "base_url", "model", "timeout")
+        }
+        batch["status"] = "running"
+        batch.pop("error", None)
+        try:
+            self.project.save()
+        except Exception as exc:
+            self._finish_api(f"保存批次状态失败：{exc}")
+            return
+        self._refresh_batches(select_id=request["batch_id"])
+        self.status_var.set(f"正在提交批次 {request['batch_id']}…")
+
+        def work(snapshot: dict[str, Any]) -> None:
+            try:
+                from .ai_api import call_model
+
+                result = call_model(
+                    snapshot["profile"], snapshot["prompt"],
+                    [Path(path) for path in snapshot["image_paths"]],
+                )
+                if not isinstance(result, dict) or not isinstance(result.get("text"), str):
+                    raise ValueError("API 返回缺少文本结果")
+                self._api_queue.put(("success", snapshot["task_id"], snapshot["batch_id"], result.get("text", ""), result.get("usage")))
+            except Exception as exc:
+                self._api_queue.put(("error", snapshot["task_id"], snapshot["batch_id"], str(exc)))
+
+        immutable = {key: request[key] for key in ("task_id", "batch_id", "profile", "prompt", "image_paths")}
+        threading.Thread(target=work, args=(immutable,), daemon=True).start()
+
+    def _pause_api(self) -> None:
+        if self._api_active:
+            self._pause_requested = True
+            self.pause_button.configure(state="disabled")
+            self.status_var.set("已请求暂停；当前批次完成后不会提交下一批。")
+
+    def _poll_api(self) -> None:
+        try:
+            while True:
+                event = self._api_queue.get_nowait()
+                self._handle_api_event(event)
+        except queue.Empty:
+            pass
+        try:
+            if self.winfo_exists():
+                self._poll_token = self.after(120, self._poll_api)
+        except tk.TclError:
+            self._poll_token = None
+
+    def _find_task_batch(self, task_id: str, batch_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        task = next((item for item in self._tasks() if _task_id(item) == task_id), None)
+        batch = next((item for item in task.get("batches", []) if _batch_id(item) == batch_id), None) if task else None
+        return task, batch
+
+    def _handle_api_event(self, event: tuple[Any, ...]) -> None:
+        kind, task_id, batch_id = event[:3]
+        task, batch = self._find_task_batch(task_id, batch_id)
+        if not task or not batch:
+            self._finish_api("任务状态已变化，已停止提交。")
+            return
+        if kind == "success":
+            text, usage = event[3], event[4]
+            try:
+                issues = self.project.ingest(task, batch, text)
+                if usage is not None:
+                    batch["usage"] = usage
+                if batch.get("raw_responses"):
+                    response = batch["raw_responses"][-1]
+                    if isinstance(response, dict):
+                        response["api_profile"] = copy.deepcopy(batch.get("api_profile", {}))
+                        response["usage"] = usage if usage is not None else {}
+                self.project.save()
+            except Exception as exc:
+                batch["status"] = "failed"
+                batch["error"] = f"返回结果保存失败：{exc}"
+                self._safe_save()
+                self._finish_api(f"批次 {batch_id} 保存失败，已停止：{exc}")
+                self._refresh_batches(select_id=batch_id)
+                return
+            self._refresh_batches(select_id=batch_id)
+            self._refresh_review()
+            if issues:
+                self.status_var.set(f"批次 {batch_id} 已保存，发现 {len(issues)} 项异常；继续下一批。")
+            self._start_next_api_batch()
+        else:
+            error = str(event[3])
+            batch["status"] = "failed"
+            batch["error"] = error
+            self._safe_save()
+            self._refresh_batches(select_id=batch_id)
+            self._finish_api(f"批次 {batch_id} 失败，已停止；修正后可继续未完成批次。")
+            if not self._closing_requested:
+                hint = ""
+                if "413" in error or "大小" in error or "图片" in error:
+                    hint = "\n\n可选择“拆小本批重试”创建更小批次；软件不会自动重复请求。"
+                messagebox.showerror("API 批次失败", f"批次 {batch_id}：{error}{hint}", parent=self)
+
+    def _safe_save(self) -> None:
+        try:
+            self.project.save()
+        except Exception as exc:
+            self.status_var.set(f"项目保存失败：{exc}")
+
+    def _finish_api(self, message: str) -> None:
+        self._api_active = False
+        self._api_pending.clear()
+        self.run_button.configure(state="normal")
+        self.pause_button.configure(state="disabled")
+        self.task_combo.configure(state="readonly")
+        self.status_var.set(message)
+        if self._closing_requested:
+            self._save_ui_settings()
+            self._destroy_now()
+
+    # ---- human review --------------------------------------------------
+    def _matches_filter(self, photo: dict[str, Any]) -> bool:
+        selected = self.filter_var.get()
+        ai = photo.get("ai") or {}
+        final = photo.get("final") or {}
+        if selected == "尚未确认":
+            return not bool(final.get("confirmed"))
+        if selected == "待复核":
+            return bool(ai.get("review_items"))
+        if selected == "AI 建议弃置":
+            return ai.get("suggest_reject") is True
+        if selected == "4～5 星":
+            return isinstance(ai.get("rating"), int) and ai["rating"] >= 4
+        if selected == "结果已过时":
+            return photo.get("stale") is True
+        if selected == "回答缺失或异常":
+            return bool(photo.get("error")) or not isinstance(photo.get("ai"), dict) or not photo.get("ai")
+        return True
+
+    def _asset_for_photo(self, photo: dict[str, Any]) -> Any | None:
+        stem = str(photo.get("stem", ""))
+        if stem in self._asset_by_stem:
+            return self._asset_by_stem[stem]
+        path = photo.get("path")
+        if path:
+            wanted = str(Path(path))
+            return next((asset for asset in self.assets if str(_asset_value(asset, "primary_path", _asset_value(asset, "path", ""))) == wanted), None)
+        return None
+
+    def _preview_path(self, photo: dict[str, Any]) -> Path | None:
+        value = photo.get("preview_path")
+        if value:
+            return Path(value)
+        asset = self._asset_for_photo(photo)
+        value = _asset_value(asset, "preview_path") if asset is not None else None
+        return Path(value) if value else None
+
+    def _make_thumb(self, photo: dict[str, Any], size: tuple[int, int]) -> ImageTk.PhotoImage | None:
+        path = self._preview_path(photo)
+        if not path:
+            return None
+        try:
+            with Image.open(path) as source:
+                image = ImageOps.exif_transpose(source).convert("RGB")
+                image.thumbnail(size, Image.Resampling.LANCZOS)
+                tile = Image.new("RGB", size, "#eeeeee")
+                tile.paste(image, ((size[0] - image.width) // 2, (size[1] - image.height) // 2))
+            return ImageTk.PhotoImage(tile, master=self)
+        except (OSError, ValueError):
+            return None
+
+    def _refresh_review(self, select_id: str | None = None) -> None:
+        old = select_id or self._selected_photo_id()
+        self.review_tree.delete(*self.review_tree.get_children())
+        self._tree_photos.clear()
+        self._photo_ids.clear()
+        for photo_id, photo in self._photos().items():
+            if not self._matches_filter(photo):
+                continue
+            ai = photo.get("ai") or {}
+            final = photo.get("final") or {}
+            review_items = ai.get("review_items") or []
+            thumb = self._make_thumb(photo, (46, 46))
+            if thumb:
+                self._tree_photos.append(thumb)
+            flag = PICK_VALUES.get(final.get("pick_status"), "保持原标记")
+            self.review_tree.insert(
+                "", "end", iid=str(photo_id), image=thumb or "",
+                values=(
+                    photo.get("stem") or Path(str(photo.get("path", ""))).stem,
+                    str(photo.get("group_id", "")),
+                    "" if ai.get("rating") is None else ai.get("rating"),
+                    "" if final.get("rating") is None else final.get("rating"),
+                    flag,
+                    "；".join(map(str, review_items)),
+                    "是" if final.get("confirmed") else "否",
+                ),
+                tags=("stale",) if photo.get("stale") else (),
+            )
+            self._photo_ids.append(str(photo_id))
+        self.review_tree.tag_configure("stale", foreground="#b05a00")
+        if old and old in self._photo_ids:
+            self.review_tree.selection_set(old)
+            self.review_tree.see(old)
+        elif self._photo_ids:
+            self.review_tree.selection_set(self._photo_ids[0])
+        self._show_selected_photo()
+
+    def _selected_photo_id(self) -> str | None:
+        if not hasattr(self, "review_tree"):
+            return None
+        selected = self.review_tree.selection()
+        return selected[0] if selected else None
+
+    def _show_selected_photo(self, _event: Any = None) -> None:
+        photo_id = self._selected_photo_id()
+        photo = self._photos().get(photo_id or "")
+        if not photo:
+            self.review_caption_var.set("当前筛选没有照片")
+            self.preview_label.configure(image="", text="无预览")
+            self._preview_photo = None
+            self._set_details("")
+            self.rating_var.set(RATING_UNSET)
+            self.pick_var.set("保持原标记")
+            return
+        final = photo.get("final") or {}
+        ai = photo.get("ai") or {}
+        self.review_caption_var.set(f"{photo.get('stem', photo_id)}  ·  分组 {photo.get('group_id', '')}{'  ·  结果已过时' if photo.get('stale') else ''}")
+        suggested_rating = ai.get("rating") if not final.get("confirmed") else None
+        visible_rating = final.get("rating") if final.get("rating") is not None else suggested_rating
+        self.rating_var.set(RATING_UNSET if visible_rating is None else str(visible_rating))
+        self.pick_var.set(PICK_VALUES.get(final.get("pick_status"), "保持原标记"))
+        review = "；".join(map(str, ai.get("review_items") or [])) or "无"
+        details = (
+            f"AI 建议：{'未评分' if ai.get('rating') is None else str(ai.get('rating')) + ' 星'}"
+            f"；{'建议弃置' if ai.get('suggest_reject') else '未建议弃置'}\n"
+            f"理由：{ai.get('reason') or '无 AI 回答'}\n"
+            f"待复核：{review}\n"
+            f"技术检查：{photo.get('technical_reason') or '无'}\n"
+            f"解析异常：{photo.get('error') or '无'}"
+        )
+        self._set_details(details)
+        thumb = self._make_thumb(photo, (430, 430))
+        self._preview_photo = thumb
+        self.preview_label.configure(image=thumb or "", text="" if thumb else "预览不可用")
+
+    def _set_details(self, value: str) -> None:
+        self.details.configure(state="normal")
+        self.details.delete("1.0", "end")
+        self.details.insert("1.0", value)
+        self.details.configure(state="disabled")
+
+    def _confirm_photo(self) -> None:
+        photo_id = self._selected_photo_id()
+        if not photo_id:
+            messagebox.showinfo("人工确认", "请先选择照片。", parent=self)
+            return
+        try:
+            rating = None if self.rating_var.get() == RATING_UNSET else int(self.rating_var.get())
+            pick_status = PICK_LABELS[self.pick_var.get()]
+            self.project.confirm(photo_id, rating, pick_status)
+            self.project.save()
+        except Exception as exc:
+            messagebox.showerror("保存失败", str(exc), parent=self)
+            return
+        current_index = self._photo_ids.index(photo_id) if photo_id in self._photo_ids else -1
+        self._refresh_review(select_id=photo_id)
+        self._refresh_export_status()
+        if photo_id not in self._photo_ids and self._photo_ids:
+            self.review_tree.selection_set(self._photo_ids[min(current_index, len(self._photo_ids) - 1)])
+            self._show_selected_photo()
+        self.status_var.set(f"已确认 {photo_id}；AI 建议仍保留作为参考。")
+
+    def _navigate_photo(self, step: int) -> None:
+        if not self._photo_ids:
+            return
+        selected = self._selected_photo_id()
+        index = self._photo_ids.index(selected) if selected in self._photo_ids else 0
+        target = self._photo_ids[(index + step) % len(self._photo_ids)]
+        self.review_tree.selection_set(target)
+        self.review_tree.focus(target)
+        self.review_tree.see(target)
+        self._show_selected_photo()
+
+    def _open_original(self) -> None:
+        photo_id = self._selected_photo_id()
+        photo = self._photos().get(photo_id or "")
+        if not photo:
+            return
+        path = photo.get("path")
+        if not path:
+            asset = self._asset_for_photo(photo)
+            path = _asset_value(asset, "primary_path") if asset is not None else None
+        try:
+            if not path or not Path(path).exists():
+                raise FileNotFoundError(f"原图不存在：{path or '未记录路径'}")
+            os.startfile(str(Path(path)))  # type: ignore[attr-defined]
+        except Exception as exc:
+            messagebox.showerror("打开原图失败", str(exc), parent=self)
+
+    def _export_final(self) -> None:
+        try:
+            path = Path(self.project.export_final())
+            count = len(_state(self.project).get("last_export_rows", []))
+            os.startfile(str(path.parent))  # type: ignore[attr-defined]
+        except Exception as exc:
+            messagebox.showerror("导出失败", str(exc), parent=self)
+            return
+        messagebox.showinfo("结果已导出", f"已导出 {count} 张已确认且未过时的照片。\n{path}", parent=self)
+        self._refresh_export_status()
+        self.status_var.set(f"已导出 {count} 张确认结果；仍需在 Lightroom 中导入应用。")
+
+    def _refresh_export_status(self) -> None:
+        self.export_status_var.set("导出状态：" + str(_state(self.project).get("export_status", "未导出")))
+
+    def _import_receipt(self) -> None:
+        def submit(raw: str) -> bool:
+            try:
+                status = self.project.import_receipt(raw)
+            except Exception as exc:
+                messagebox.showerror("导入 Lightroom 回执失败", str(exc), parent=self)
+                return False
+            self._refresh_export_status()
+            self.status_var.set(str(status))
+            messagebox.showinfo("Lightroom 回执", str(status), parent=self)
+            return True
+
+        PasteResponseDialog(
+            self,
+            submit,
+            title="导入 Lightroom 回执",
+            instruction="粘贴 Lightroom 插件“查看上次导入报告”中的完整 JSON：",
+            submit_text="校验并导入回执",
+        )
+
+    # ---- lifetime ------------------------------------------------------
+    def _close(self) -> None:
+        if self._api_active:
+            self._pause_requested = True
+            self._closing_requested = True
+            self.pause_button.configure(state="disabled")
+            messagebox.showinfo("正在完成当前请求", "已请求暂停。当前 API 请求完成后窗口会关闭，不会提交下一批。", parent=self)
+            return
+        self._save_ui_settings()
+        self._destroy_now()
+
+    def _destroy_now(self) -> None:
+        if self._poll_token:
+            try:
+                self.after_cancel(self._poll_token)
+            except tk.TclError:
+                pass
+            self._poll_token = None
+        self.grab_release()
+        super().destroy()

@@ -16,7 +16,7 @@ def run(report_path: str) -> None:
         from .screening import _face_cascade
         from .yunet import detect
         import numpy as np
-        from .workflow import run_scan, apply_selection_text
+        from .workflow import run_scan
 
         assert not _face_cascade().empty(), "Missing face detector data"
         assert detect(np.zeros((320, 320, 3), np.uint8)) == []
@@ -73,9 +73,30 @@ def run(report_path: str) -> None:
             assert check_app.crop_settings.for_asset(result.assets[0]) == CropSettings(1.25, -.15, '1:1', .75)
             check_app._close()
             report['crop_settings_dialog_and_persistence'] = True
-            apply_selection_text(result.assets, "TEST001,5", results_path=root / "lightroom_results.json")
+            from .ai_project import ReviewProject, photo_id
+            from .ai_review_ui import ReviewDialog
+            ui_app = App(settings_dir=root)
+            ui_app.withdraw()
+            project = ReviewProject(root / 'workspace')
+            task = project.create_task(result.assets, ui_app.crop_settings, {'intensity':'均衡保留'})
+            batch = task['batches'][0]
+            response = json.dumps(dict(task_id=task['id'], batch_id=batch['id'], photos=[dict(
+                photo_id=photo_id(result.assets[0]), rating=4, suggest_reject=False,
+                reason='合成测试', review_items=['原图复核'])]))
+            assert project.ingest(task, batch, response) == []
+            review = ReviewDialog(ui_app, project, result.assets, ui_app.crop_settings, root)
+            review.update()
+            assert len(review.review_tree.get_children()) == 1
+            review.rating_var.set('5')
+            review.pick_var.set('保持原标记')
+            review._confirm_photo()
+            export = project.export_final()
+            assert project.data['photos'][photo_id(result.assets[0])]['final']['rating'] == 5
+            review._close()
+            ui_app._close()
+            report['ai_task_review_and_confirmation'] = True
             assert not (photos / "TEST001.xmp").exists()
-            payload = json.loads((root / "lightroom_results.json").read_text(encoding="utf-8"))
+            payload = json.loads(export.read_text(encoding="utf-8"))
             assert any(p.get("rating") == 5 for p in payload["photos"])
             report["lightroom_export_without_xmp"] = True
         report.update(ok=True, opencv=cv2.__version__, rawpy=rawpy.__version__)

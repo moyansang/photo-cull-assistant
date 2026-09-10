@@ -16,10 +16,11 @@ Tasks.startAsyncTask(function()
         local text=Files.readFile(path)
         assert(text and #text<=20*1024*1024, '结果文件无法读取或超过 20 MB')
         text=text:gsub('^\239\187\191','')
-        local rows=Core.validate(json.decode(text))
+        local payload=json.decode(text)
+        local rows=Core.validate(payload)
         local catalog=Application.activeCatalog()
         local matched, missing, changes=Core.plan(rows,catalog)
-        local report={ catalog=catalog:getPath(), source=path, status='not_applied', changes=changes, missing=missing }
+        local report={ catalog=catalog:getPath(), source=path, export_id=payload.export_id, status='not_applied', changes=changes, missing=missing }
         local reportStatus=catalog:withPrivateWriteAccessDo(function()
             catalog:setPropertyForPlugin(_PLUGIN, 'lastImportReport', json.encode(report))
         end,{timeout=30})

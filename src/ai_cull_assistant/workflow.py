@@ -68,7 +68,6 @@ def run_scan(
             asset.focus_score = None
             asset.face_found = False
 
-    write_lightroom_results(assets, workspace / "lightroom_results.json")
     sheets = generate_contact_sheet_sets(
         assets,
         contact_dir,
