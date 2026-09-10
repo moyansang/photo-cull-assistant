@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import uuid
 
 from .contact_sheet import generate_contact_sheets
@@ -87,6 +88,7 @@ class ReviewProject:
         else:
             self.data=dict(version=1,photos={},tasks=[],preferences={},export_status='未导出')
         for task in self.data['tasks']:
+            task.setdefault('web_submissions',[])
             for batch in task['batches']:
                 if batch['status']=='running':batch.update(status='failed',error='上次请求未完成，可重试')
         self._assets=[];self._crops=None
@@ -130,7 +132,7 @@ class ReviewProject:
         self.refresh(assets,crop_settings)
         chosen=[a for a in assets if photo_ids is None or photo_id(a) in photo_ids]
         if not chosen:raise ValueError('没有可评审的照片')
-        task=dict(id=uuid.uuid4().hex,kind=kind,preferences=dict(preferences),created_at=datetime.now(timezone.utc).isoformat(),batches=[])
+        task=dict(id=uuid.uuid4().hex,kind=kind,preferences=dict(preferences),created_at=datetime.now(timezone.utc).isoformat(),batches=[],web_submissions=[])
         groups=OrderedDict()
         for a in chosen:groups.setdefault(a.group_id,[]).append(a)
         limit=max(1,min(120,int(preferences.get('_split_limit',24))))
@@ -173,6 +175,135 @@ class ReviewProject:
             if not image.is_file() or hashlib.sha256(image.read_bytes()).hexdigest()!=sha:
                 raise ValueError('联系表快照丢失或被修改，请创建新任务')
         return images
+
+    def create_web_submission(self,task,batch_ids):
+        """Freeze several existing review batches into one manual web submission."""
+        if task not in self.data['tasks']:
+            raise ValueError('评审任务不存在')
+        requested=list(batch_ids)
+        if not requested:
+            raise ValueError('请至少选择一个批次')
+        if len(requested)!=len(set(requested)):
+            raise ValueError('网页提交中不能重复选择同一批次')
+        batches_by_id={batch['id']:batch for batch in task['batches']}
+        unknown=[bid for bid in requested if bid not in batches_by_id]
+        if unknown:
+            raise ValueError('找不到批次：'+', '.join(unknown))
+        batches=[batches_by_id[bid] for bid in requested]
+
+        # Validate every source before writing any submission state or staged files.
+        sources=[]
+        photo_ids=[]
+        photo_batches={}
+        fingerprints={}
+        for batch in batches:
+            images=self.batch_images(task,batch)
+            sources.extend((batch['id'],index,path) for index,path in enumerate(images,1))
+            for pid in batch['photo_ids']:
+                if pid in photo_batches:
+                    raise ValueError(f'多个批次包含同一照片：{pid}')
+                if pid not in self.data['photos']:
+                    raise ValueError(f'照片已不在当前项目中：{pid}')
+                photo_ids.append(pid)
+                photo_batches[pid]=batch['id']
+                fingerprints[pid]=batch['fingerprints'][pid]
+
+        submissions=task.setdefault('web_submissions',[])
+        web_root=self.workspace/'ai_tasks'/task['id']/'web'
+        used={item.get('id') for item in submissions}
+        number=1
+        while f'W{number:03d}' in used or (web_root/f'W{number:03d}').exists():number+=1
+        sid=f'W{number:03d}'
+        manifest='\n'.join(
+            f"{pid} | 文件名：{Path(self.data['photos'][pid]['path']).name} | G{self.data['photos'][pid]['group_id']:03d} | 来源批次：{photo_batches[pid]}"
+            for pid in photo_ids
+        )
+        kind=('合并多个批次进行跨组精选，减少重复并统一优先级'
+              if task.get('kind')=='refine' else '合并多个批次进行组内初选，请按组比较，并统一各组之间的优先级')
+        prompt=PROMPT.format(
+            kind=kind,
+            preferences=json.dumps({k:v for k,v in task.get('preferences',{}).items() if not k.startswith('_')},ensure_ascii=False),
+            task_id=task['id'],batch_id=sid,manifest=manifest,
+        )
+
+        folder=web_root/sid
+        temporary=web_root/f'.{sid}-{uuid.uuid4().hex}.tmp'
+        image_folder=temporary/'images'
+        image_folder.mkdir(parents=True,exist_ok=False)
+        staged=[]
+        try:
+            for bid,index,source in sources:
+                target=image_folder/f'{bid}_sheet_{index:03d}{source.suffix.lower()}'
+                shutil.copy2(source,target)
+                staged.append(target)
+            (temporary/'prompt.txt').write_text(prompt,encoding='utf-8')
+            temporary.replace(folder)
+        except Exception:
+            shutil.rmtree(temporary,ignore_errors=True)
+            raise
+        image_paths=[str((folder/'images'/p.name).resolve()) for p in staged]
+        image_hashes=[hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in image_paths]
+        submission=dict(id=sid,created_at=datetime.now(timezone.utc).isoformat(),batch_ids=requested,
+            photo_ids=photo_ids,photo_batches=photo_batches,prompt=prompt,image_paths=image_paths,
+            image_hashes=image_hashes,fingerprints=fingerprints,status='pending',error='',raw_responses=[])
+        submissions.append(submission)
+        try:self.save()
+        except Exception:
+            submissions.remove(submission)
+            shutil.rmtree(folder,ignore_errors=True)
+            raise
+        return submission
+
+    def web_images(self,task,submission):
+        if submission not in task.get('web_submissions',[]):
+            raise ValueError('网页提交不存在')
+        if self._crops is not None:self.refresh(self._assets,self._crops)
+        for pid,fp in submission['fingerprints'].items():
+            if self.data['photos'].get(pid,{}).get('fingerprint')!=fp:
+                raise ValueError('网页提交中的照片或分组/裁切已改变，请重新创建评审任务')
+        images=[Path(path) for path in submission['image_paths']]
+        if len(images)!=len(submission['image_hashes']):
+            raise ValueError('网页提交联系表清单异常')
+        for image,sha in zip(images,submission['image_hashes']):
+            if not image.is_file() or hashlib.sha256(image.read_bytes()).hexdigest()!=sha:
+                raise ValueError('网页提交联系表快照丢失或被修改，请重新创建提交')
+        return images
+
+    def ingest_web(self,task,submission,text):
+        """Apply a merged answer only when every expected photo is valid and current."""
+        response=dict(text=text,received_at=datetime.now(timezone.utc).isoformat())
+        submission['raw_responses'].append(response)
+        try:
+            self.web_images(task,submission)
+            valid,issues=parse_answer(text,task['id'],submission['id'],submission['photo_ids'])
+        except (ValueError,OSError) as exc:
+            error=str(exc)
+            submission.update(status='invalid',error=error)
+            response['issues']=[error]
+            self.save()
+            return [error]
+        if issues:
+            submission.update(status='invalid',error='\n'.join(issues))
+            response['issues']=issues
+            self.save()
+            return issues
+
+        for pid in submission['photo_ids']:
+            proposal=valid[pid]
+            photo=self.data['photos'][pid]
+            if photo.get('ai'):photo['history'].append(photo['ai'])
+            photo['ai']=dict(proposal,task_id=task['id'],batch_id=submission['photo_batches'][pid],
+                web_submission_id=submission['id'],fingerprint=submission['fingerprints'][pid])
+            photo['error']=''
+            if not photo['final']['confirmed']:photo['stale']=False
+        selected=set(submission['batch_ids'])
+        for batch in task['batches']:
+            if batch['id'] in selected:
+                batch.update(status='complete',error='')
+        submission.update(status='complete',error='')
+        response['issues']=[]
+        self.save()
+        return []
 
     def ingest(self,task,batch,text):
         response=dict(text=text,received_at=datetime.now(timezone.utc).isoformat())

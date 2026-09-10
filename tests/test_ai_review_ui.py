@@ -67,3 +67,39 @@ def test_api_failure_stops_without_retry_and_keeps_confirmed(ui,monkeypatch):
     dialog._start_api();drive(root,dialog)
     assert errors and batch['status']=='failed' and len(calls)==1
     assert project.data['photos'][pid]['final']['rating']==5
+
+
+def test_web_tabs_prepare_and_restore(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    assert [dialog.notebook.tab(t, 'text') for t in dialog.notebook.tabs()] == ['API 提交', '网页提交', '人工复核']
+    opened = []
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
+    dialog.notebook.select(1)
+    dialog._web_select_pending()
+    dialog._prepare_web()
+    assert not errors
+    submission = task['web_submissions'][0]
+    assert submission['prompt'] == dialog.clipboard_get()
+    assert opened and all(p.parent == opened[0] for p in project.web_images(task, submission))
+    assert task['current_web_submission_id'] == submission['id']
+    dialog._save_ui_settings()
+    dialog._refresh_web()
+    assert dialog._current_web()[1]['id'] == submission['id']
+    assert project.data['ui_settings']['submission_tab'] == 1
+
+
+def test_web_import_dispatch_and_api_guard(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    submission = project.create_web_submission(task, [batch['id']])
+    dialog._refresh_web(submission['id'])
+    callbacks = []
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.PasteResponseDialog', lambda parent, callback, **kw: callbacks.append(callback))
+    dialog._api_active = True
+    dialog._paste_web_response()
+    assert not callbacks
+    dialog._api_active = False
+    dialog._paste_web_response()
+    assert callbacks[0](answer(task, submission))
+    assert batch['status'] == 'complete'
+    assert all(project.data['photos'][pid]['ai']['batch_id'] == batch['id'] for pid in batch['photo_ids'])
+    assert not errors

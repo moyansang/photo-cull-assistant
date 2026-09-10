@@ -113,3 +113,90 @@ def test_explicit_split_retry_leaves_old_task_and_human_results(tmp_path):
     assert len(small['batches'])==2 and len(task['batches'])==1
     assert project.data['photos'][photo_id(assets[0])]['final']['rating']==5
     assert '同组可能未完整提供' in small['batches'][0]['prompt']
+
+
+def setup_merged_web_submission(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    task=project.create_task(assets,CropSettings(),{'intensity':'均衡保留','_split_limit':1})
+    submission=project.create_web_submission(task,[batch['id'] for batch in task['batches']])
+    return project,assets,task,submission
+
+
+def web_answer(task,submission,rating=4):
+    return json.dumps(dict(task_id=task['id'],batch_id=submission['id'],photos=[
+        dict(photo_id=pid,rating=rating,suggest_reject=False,reason='合并比较后保留',review_items=[])
+        for pid in submission['photo_ids']
+    ]))
+
+
+def test_web_submission_combines_batches_and_persists_immutable_snapshots(tmp_path):
+    project,assets,task,submission=setup_merged_web_submission(tmp_path)
+    assert submission['id']=='W001'
+    assert submission['batch_ids']==['B001','B002']
+    assert submission['photo_ids']==[photo_id(asset) for asset in assets]
+    assert all(pid in submission['prompt'] for pid in submission['photo_ids'])
+    assert f'"batch_id":"{submission["id"]}"' in submission['prompt']
+    images=project.web_images(task,submission)
+    assert len(images)==2 and len({image.name for image in images})==2
+    assert all(image.parent.name=='images' and image.parent.parent.name=='W001' for image in images)
+    assert (images[0].parent.parent/'prompt.txt').read_text('utf-8')==submission['prompt']
+
+    loaded=ReviewProject(project.workspace)
+    restored=loaded.current_task()['web_submissions'][0]
+    assert restored['id']=='W001'
+    assert [path.name for path in loaded.web_images(loaded.current_task(),restored)]==[path.name for path in images]
+
+
+def test_web_submission_applies_all_batches_and_preserves_human_decisions(tmp_path):
+    project,assets,task,submission=setup_merged_web_submission(tmp_path)
+    decided=photo_id(assets[0])
+    project.confirm(decided,5,1)
+    assert project.ingest_web(task,submission,web_answer(task,submission,3))==[]
+    assert submission['status']=='complete'
+    assert all(batch['status']=='complete' for batch in task['batches'])
+    for pid in submission['photo_ids']:
+        result=project.data['photos'][pid]['ai']
+        assert result['web_submission_id']=='W001'
+        assert result['batch_id']==submission['photo_batches'][pid]
+    assert project.data['photos'][decided]['final']==dict(
+        rating=5,pick_status=1,confirmed=True,fingerprint=project.data['photos'][decided]['fingerprint'])
+
+
+@pytest.mark.parametrize('damage', ['missing','duplicate'])
+def test_web_submission_rejects_incomplete_answer_without_partial_results(tmp_path,damage):
+    project,assets,task,submission=setup_merged_web_submission(tmp_path)
+    payload=json.loads(web_answer(task,submission))
+    if damage=='missing':
+        payload['photos'].pop()
+    else:
+        payload['photos'].append(dict(payload['photos'][0]))
+    issues=project.ingest_web(task,submission,json.dumps(payload))
+    assert issues and submission['status']=='invalid'
+    assert all('ai' not in project.data['photos'][pid] for pid in submission['photo_ids'])
+    assert all(batch['status']=='pending' for batch in task['batches'])
+
+
+def test_web_submission_rejects_duplicates_and_stale_photos(tmp_path):
+    project,assets,task,submission=setup_merged_web_submission(tmp_path)
+    with pytest.raises(ValueError,match='重复选择'):
+        project.create_web_submission(task,['B001','B001'])
+    assets[0].group_id=2
+    project.refresh(assets,CropSettings())
+    issues=project.ingest_web(task,submission,web_answer(task,submission))
+    assert issues and '改变' in issues[0]
+    assert all('ai' not in project.data['photos'][pid] for pid in submission['photo_ids'])
+    assert all(batch['status']=='pending' for batch in task['batches'])
+
+
+def test_web_submission_preserves_refine_intent_and_recovers_failed_save(tmp_path,monkeypatch):
+    project,assets,task,_=setup_project(tmp_path)
+    task=project.create_task(assets,CropSettings(),{'_split_limit':1},kind='refine')
+    real_save=project.save
+    monkeypatch.setattr(project,'save',lambda: (_ for _ in ()).throw(OSError('disk full')))
+    with pytest.raises(OSError,match='disk full'):
+        project.create_web_submission(task,['B001','B002'])
+    assert not (project.workspace/'ai_tasks'/task['id']/'web'/'W001').exists()
+    monkeypatch.setattr(project,'save',real_save)
+    submission=project.create_web_submission(task,['B001','B002'])
+    assert submission['id']=='W001'
+    assert '跨组精选，减少重复并统一优先级' in submission['prompt']

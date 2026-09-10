@@ -230,13 +230,18 @@ class ReviewDialog(tk.Toplevel):
     def _build_ui(self) -> None:
         outer = ttk.Frame(self, padding=12)
         outer.pack(fill="both", expand=True)
-        notebook = ttk.Notebook(outer)
+        self.common_tasks = ttk.Frame(outer)
+        self.common_tasks.pack(fill="x")
+        notebook = self.notebook = ttk.Notebook(outer)
         notebook.pack(fill="both", expand=True)
         self.task_tab = ttk.Frame(notebook, padding=12)
         self.review_tab = ttk.Frame(notebook, padding=10)
-        notebook.add(self.task_tab, text="任务与提交")
+        self.web_tab = ttk.Frame(notebook, padding=12)
+        notebook.add(self.task_tab, text="API 提交")
+        notebook.add(self.web_tab, text="网页提交")
         notebook.add(self.review_tab, text="人工复核")
         self._build_task_tab()
+        self._build_web_tab()
         self._build_review_tab()
         footer = ttk.Frame(outer)
         footer.pack(fill="x", pady=(8, 0))
@@ -245,7 +250,7 @@ class ReviewDialog(tk.Toplevel):
 
     def _build_task_tab(self) -> None:
         tab = self.task_tab
-        selector = ttk.LabelFrame(tab, text="评审任务", padding=10)
+        selector = ttk.LabelFrame(self.common_tasks, text="评审任务", padding=10)
         selector.pack(fill="x")
         ttk.Label(selector, text="任务历史").grid(row=0, column=0, sticky="w")
         self.task_combo = ttk.Combobox(selector, textvariable=self.task_var, state="readonly", width=52)
@@ -254,7 +259,7 @@ class ReviewDialog(tk.Toplevel):
         ttk.Button(selector, text="刷新照片状态", command=self._refresh_project).grid(row=0, column=2, padx=(0, 6))
         selector.columnconfigure(1, weight=1)
 
-        prefs = ttk.LabelFrame(tab, text="本轮选片偏好", padding=10)
+        prefs = ttk.LabelFrame(self.common_tasks, text="本轮选片偏好", padding=10)
         prefs.pack(fill="x", pady=10)
         fields = (
             ("选片力度", "intensity", ("少量精选", "均衡保留", "多留备选")),
@@ -298,13 +303,6 @@ class ReviewDialog(tk.Toplevel):
         self.batch_tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
-        manual = ttk.Frame(tab)
-        manual.pack(fill="x", pady=(10, 0))
-        ttk.Button(manual, text="复制本批提示词", command=self._copy_prompt).pack(side="left", padx=(0, 8))
-        ttk.Button(manual, text="打开本批图片目录", command=self._open_batch_folder).pack(side="left", padx=(0, 8))
-        ttk.Button(manual, text="粘贴模型回答", command=self._paste_response).pack(side="left", padx=(0, 8))
-        ttk.Button(manual, text="查看原始回答", command=self._show_raw_responses).pack(side="left")
-
         api = ttk.LabelFrame(tab, text="API 自动提交", padding=8)
         api.pack(fill="x", pady=(10, 0))
         ttk.Label(api, text="配置").pack(side="left")
@@ -316,6 +314,156 @@ class ReviewDialog(tk.Toplevel):
         self.run_button.pack(side="left", padx=(0, 8))
         self.pause_button = ttk.Button(api, text="完成当前批后暂停", command=self._pause_api, state="disabled")
         self.pause_button.pack(side="left")
+        ttk.Button(tab, text="查看所选批次原始回答", command=self._show_raw_responses).pack(anchor="w", pady=(8, 0))
+
+    def _build_web_tab(self) -> None:
+        tab = self.web_tab
+        ttk.Label(tab, text="选择多个批次合并提交：一次上传多张联系表，使用一份完整提示词，整份回答一次导入。\n照片分组保持不变；按 Ctrl / Shift 多选，也可全选未完成批次。").pack(anchor="w")
+        actions = ttk.Frame(tab)
+        actions.pack(fill="x", pady=8)
+        ttk.Button(actions, text="全选未完成批次", command=self._web_select_pending).pack(side="left")
+        ttk.Button(actions, text="全选", command=lambda: self.web_tree.selection_set(self.web_tree.get_children())).pack(side="left", padx=8)
+        ttk.Button(actions, text="合并准备所选批次", command=self._prepare_web).pack(side="left")
+        self.web_summary = tk.StringVar()
+        ttk.Label(actions, textvariable=self.web_summary).pack(side="left", padx=12)
+        frame = ttk.Frame(tab)
+        frame.pack(fill="both", expand=True)
+        self.web_tree = ttk.Treeview(frame, columns=("status", "photos", "images"), show="tree headings", selectmode="extended", height=7)
+        for key, title in (("#0", "可合并批次"), ("status", "状态"), ("photos", "照片数"), ("images", "联系表数")):
+            self.web_tree.heading(key, text=title)
+            self.web_tree.column(key, width=160, anchor="center")
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.web_tree.yview)
+        self.web_tree.configure(yscrollcommand=scrollbar.set)
+        self.web_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        self.web_tree.bind("<<TreeviewSelect>>", lambda _e: self._web_selection_summary())
+        history = ttk.LabelFrame(tab, text="已准备的网页提交（关闭后可继续）", padding=8)
+        history.pack(fill="x", pady=(10, 0))
+        self.web_history_var = tk.StringVar()
+        self.web_history = ttk.Combobox(history, textvariable=self.web_history_var, state="readonly")
+        self.web_history.pack(fill="x")
+        self.web_history.bind("<<ComboboxSelected>>", lambda _e: self._remember_web())
+        buttons = ttk.Frame(history)
+        buttons.pack(fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="复制完整提示词", command=self._copy_web_prompt).pack(side="left")
+        ttk.Button(buttons, text="打开全部联系表目录", command=self._open_web_folder).pack(side="left", padx=8)
+        ttk.Button(buttons, text="导入整份回答", command=self._paste_web_response).pack(side="left")
+        ttk.Button(buttons, text="查看原始回答", command=self._show_web_raw).pack(side="left", padx=8)
+        self._web_labels = {}
+
+    def _web_selection_summary(self) -> None:
+        task = self._current_task() or {}
+        chosen = set(self.web_tree.selection())
+        batches = [b for b in task.get("batches", []) if b["id"] in chosen]
+        self.web_summary.set(f"已选 {len(batches)} 批 / {sum(len(b['photo_ids']) for b in batches)} 张照片 / {sum(len(b['image_paths']) for b in batches)} 张联系表")
+
+    def _web_select_pending(self) -> None:
+        task = self._current_task() or {}
+        self.web_tree.selection_set([b["id"] for b in task.get("batches", []) if not _is_done(b)])
+        self._web_selection_summary()
+
+    def _refresh_web(self, selected_id: str | None = None) -> None:
+        old = set(self.web_tree.selection())
+        self.web_tree.delete(*self.web_tree.get_children())
+        task = self._current_task() or {}
+        for b in task.get("batches", []):
+            self.web_tree.insert("", "end", iid=b["id"], text=b["id"], values=(STATUS_LABELS.get(b["status"], b["status"]), len(b["photo_ids"]), len(b["image_paths"])))
+        self.web_tree.selection_set([bid for bid in self.web_tree.get_children() if bid in old])
+        self._web_labels = {}
+        for item in task.get("web_submissions", []):
+            label = f"{item['id']} · {len(item['batch_ids'])} 批 / {len(item['photo_ids'])} 张照片 · {STATUS_LABELS.get(item['status'], item['status'])}"
+            self._web_labels[label] = item["id"]
+        self.web_history.configure(values=list(self._web_labels))
+        wanted = selected_id or task.get("current_web_submission_id")
+        label = next((k for k, v in self._web_labels.items() if v == wanted), None)
+        self.web_history_var.set(label or next(reversed(self._web_labels), ""))
+        self._web_selection_summary()
+
+    def _current_web(self) -> tuple[Any, Any]:
+        task = self._current_task()
+        wanted = self._web_labels.get(self.web_history_var.get())
+        submission = next((s for s in (task or {}).get("web_submissions", []) if s["id"] == wanted), None)
+        return task, submission
+
+    def _remember_web(self) -> None:
+        task, submission = self._current_web()
+        if task and submission:
+            task["current_web_submission_id"] = submission["id"]
+            self._safe_save()
+
+    def _prepare_web(self) -> None:
+        if self._api_active:
+            messagebox.showinfo("网页提交", "请先暂停并等待当前 API 请求结束。", parent=self)
+            return
+        task = self._current_task()
+        if not task or not self.web_tree.selection():
+            messagebox.showinfo("网页提交", "请先创建任务并选择要合并的批次。", parent=self)
+            return
+        try:
+            submission = self.project.create_web_submission(task, list(self.web_tree.selection()))
+            task["current_web_submission_id"] = submission["id"]
+            self.project.save()
+            self._refresh_web(submission["id"])
+            self._copy_web_prompt()
+            self._open_web_folder()
+        except Exception as exc:
+            messagebox.showerror("准备失败", str(exc), parent=self)
+
+    def _copy_web_prompt(self) -> None:
+        task, submission = self._current_web()
+        if not submission:
+            messagebox.showinfo("网页提交", "请先合并准备批次，或选择历史提交。", parent=self)
+            return
+        try:
+            images = self.project.web_images(task, submission)
+            self.clipboard_clear()
+            self.clipboard_append(submission["prompt"])
+            self.update_idletasks()
+            if submission["status"] == "pending":
+                submission["status"] = "awaiting_response"
+                self.project.save()
+                self._refresh_web(submission["id"])
+            self.status_var.set(f"已复制完整提示词，请在网页上传目录中的 {len(images)} 张联系表并粘贴提示词。")
+        except Exception as exc:
+            messagebox.showerror("复制失败", str(exc), parent=self)
+
+    def _open_web_folder(self) -> None:
+        task, submission = self._current_web()
+        if not submission:
+            return
+        try:
+            images = self.project.web_images(task, submission)
+            os.startfile(str(Path(images[0]).parent))
+        except Exception as exc:
+            messagebox.showerror("打开失败", str(exc), parent=self)
+
+    def _paste_web_response(self) -> None:
+        if self._api_active:
+            messagebox.showinfo("网页提交", "请先暂停并等待当前 API 请求结束。", parent=self)
+            return
+        task, submission = self._current_web()
+        if not submission:
+            messagebox.showinfo("网页提交", "请先选择已准备的网页提交。", parent=self)
+            return
+        def store(raw: str) -> bool:
+            try:
+                issues = self.project.ingest_web(task, submission, raw)
+            except Exception as exc:
+                messagebox.showerror("导入失败", str(exc), parent=self)
+                return False
+            self._refresh_batches()
+            self._refresh_review()
+            if issues:
+                messagebox.showwarning("回答需要修正", "原始回答已保存，选片结果未应用。\n" + "\n".join(issues), parent=self)
+                return False
+            self.status_var.set(f"网页提交 {submission['id']} 的 {len(submission['photo_ids'])} 张照片已导入，请到人工复核查看。")
+            return True
+        PasteResponseDialog(self, store, title="导入合并提交的完整回答", instruction=f"粘贴网页提交 {submission['id']} 的完整 JSON 回答，软件会自动分配到各批次：")
+
+    def _show_web_raw(self) -> None:
+        _, submission = self._current_web()
+        if submission:
+            RawResponsesDialog(self, submission.get("raw_responses", []))
 
     def _build_review_tab(self) -> None:
         bar = ttk.Frame(self.review_tab)
@@ -396,6 +544,9 @@ class ReviewDialog(tk.Toplevel):
             return
         if saved.get("review_filter"):
             self.filter_var.set(str(saved["review_filter"]))
+        tab = saved.get("submission_tab", 0)
+        if tab in (0, 1, 2):
+            self.notebook.select(tab)
 
     def _save_ui_settings(self) -> None:
         data = _state(self.project)
@@ -403,6 +554,7 @@ class ReviewDialog(tk.Toplevel):
         data["preferences"] = self._preferences()
         data["ui_settings"] = {
             "review_filter": self.filter_var.get(),
+            "submission_tab": self.notebook.index(self.notebook.select()),
             "api_profile_id": profile.get("id") if profile else None,
         }
         self._safe_save()
@@ -464,6 +616,7 @@ class ReviewDialog(tk.Toplevel):
         self.batch_tree.delete(*self.batch_tree.get_children())
         task = self._current_task()
         if not task:
+            self._refresh_web()
             return
         for batch in task.get("batches", []):
             batch_id = _batch_id(batch)
@@ -478,6 +631,7 @@ class ReviewDialog(tk.Toplevel):
             self.batch_tree.selection_set(old)
         elif children:
             self.batch_tree.selection_set(children[0])
+        self._refresh_web()
 
     def _create_task(self, kind: str, photo_ids: list[str] | None = None) -> None:
         if self._api_active:
