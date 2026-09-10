@@ -40,7 +40,7 @@ class App(tk.Tk):
             self.saved_options = {}
         self._settings_pending = None
         self._build_ui()
-        for variable in (self.input_var, self.workspace_var, self.export_var, self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.no_updates_var):
+        for variable in (self.input_var, self.workspace_var, self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.no_updates_var):
             variable.trace_add("write", self._schedule_settings_save)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.updates = UpdateController(self)
@@ -72,7 +72,7 @@ class App(tk.Tk):
             except tk.TclError:
                 pass  # Keep the previous valid value while a spinbox is being edited.
         try:
-            save_values(self.settings_dir, dict(input=self.input_var.get(), workspace=self.workspace_var.get(), export=self.export_var.get(), options=options))
+            save_values(self.settings_dir, dict(input=self.input_var.get(), workspace=self.workspace_var.get(), options=options))
             self.saved_options = options
         except OSError as exc:
             self._log(f"设置保存失败：{exc}")
@@ -89,7 +89,6 @@ class App(tk.Tk):
 
         self.input_var = tk.StringVar(value=self.saved_paths["input"])
         self.workspace_var = tk.StringVar(value=self.saved_paths["workspace"])
-        self.export_var = tk.StringVar(value=self.saved_paths["export"])
         self.preset_var = tk.StringVar(value=self.saved_options.get("grouping") if self.saved_options.get("grouping") in GROUPING_LABELS else "标准")
         self.per_page_var = tk.IntVar(value=self._option_int("per_page", 16, 8, 60))
         self.columns_var = tk.IntVar(value=self._option_int("columns", 4, 2, 6))
@@ -100,8 +99,6 @@ class App(tk.Tk):
         self._path_row(frame, row, "照片文件夹", self.input_var, self._choose_input)
         row += 1
         self._path_row(frame, row, "工作区", self.workspace_var, self._choose_workspace)
-        row += 1
-        self._path_row(frame, row, "精选导出目录", self.export_var, self._choose_export)
         row += 1
 
         ttk.Label(frame, text="分组灵敏度").grid(row=row, column=0, sticky="w", pady=6)
@@ -130,7 +127,6 @@ class App(tk.Tk):
         second_btn_frame = ttk.Frame(frame)
         second_btn_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
         ttk.Button(second_btn_frame, text="打开联系表目录", command=self._open_contact_dir).pack(side="left", padx=(0, 8))
-        ttk.Button(second_btn_frame, text="2. 导出评级与精选", command=self._apply_selection).pack(side="left", padx=(0, 8))
 
         ttk.Button(second_btn_frame, text="人脸细节设置", command=self._open_crop_settings).pack(side="left", padx=(0, 8))
 
@@ -172,11 +168,6 @@ class App(tk.Tk):
         path = filedialog.askdirectory(title="选择工作区")
         if path:
             self.workspace_var.set(path)
-
-    def _choose_export(self) -> None:
-        path = filedialog.askdirectory(title="选择精选导出目录")
-        if path:
-            self.export_var.set(path)
 
     def _run_scan_thread(self) -> None:
         if self.updates.busy:
@@ -327,31 +318,6 @@ class App(tk.Tk):
             os.startfile(path)
         else:
             messagebox.showinfo("Lightroom 插件", "请使用完整便携包中的 lightroom 文件夹。", parent=self)
-
-    def _apply_selection(self) -> None:
-        if not self.scan_result:
-            messagebox.showwarning("提示", "请先扫描并生成联系表")
-            return
-        text = self.selection_text.get("1.0", "end").strip()
-        if not text:
-            messagebox.showwarning("提示", "请先粘贴选片结果")
-            return
-        try:
-            applied, missing, rating_map = apply_selection_text(
-                self.scan_result.assets,
-                text,
-                export_dir=self.export_var.get().strip() or None,
-                results_path=self.scan_result.workspace_dir / "lightroom_results.json",
-            )
-            self._log(f"已导出评级：{applied} 张；未匹配：{missing} 张")
-            self._log(f"精选导出目录：{self.export_var.get()}")
-            self._log("请在 Lightroom Classic 插件中导入工作区 lightroom_results.json；不会生成 XMP。")
-            if rating_map:
-                top = list(rating_map.items())[:10]
-                self._log("示例评级：" + ", ".join(f"{stem}={rating}" for stem, rating in top))
-        except Exception as exc:
-            self._log(f"应用失败：{exc}")
-            messagebox.showerror("应用失败", str(exc))
 
     def _log(self, text: str) -> None:
         def append() -> None:

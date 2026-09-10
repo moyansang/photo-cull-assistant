@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .contact_sheet import ContactSheetSet, generate_contact_sheet_sets
-from .exporter import copy_selected
 from .grouping import assign_groups
 from .group_store import load_groups, save_groups
 from .models import PhotoAsset
@@ -113,8 +112,6 @@ def apply_auto_rejects(
 def apply_selection_text(
     assets: list[PhotoAsset],
     selection_text: str,
-    export_dir: str | Path | None = None,
-    copy_min_rating: int = 4,
     *,
     results_path: str | Path,
 ) -> tuple[int, int, dict[str, int]]:
@@ -131,8 +128,6 @@ def apply_selection_text(
         applied += 1
 
     write_lightroom_results(assets, results_path, stem_to_rating)
-    if export_dir:
-        copy_selected(assets, stem_to_rating, export_dir, min_rating=copy_min_rating)
 
     return applied, missing, stem_to_rating
 

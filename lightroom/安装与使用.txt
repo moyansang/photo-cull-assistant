@@ -8,7 +8,7 @@ AI选片助手 Lightroom Classic 插件
 
 每次使用：
 1. EXE 扫描完成后，在工作区生成 lightroom_results.json，包含建议弃置状态。
-2. 如果需要星级，把评级结果粘贴回 EXE，点击“导出 Lightroom 结果”；需要复制精选则点击“导出评级与精选”。
+2. 如果需要星级，把评级结果粘贴回 EXE，点击“导出 Lightroom 结果”；不复制或移动任何照片。
 3. 在 LR 插件选择本次 lightroom_results.json，检查匹配数量后应用。
 4. LR 会显示星级/弃置；不必执行“从文件读取元数据”。
 
