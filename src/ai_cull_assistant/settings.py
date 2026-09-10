@@ -11,7 +11,7 @@ def application_dir() -> Path:
 
 
 def load_paths(base: Path) -> dict[str, str]:
-    defaults = {"input": "", "workspace": str(base / "工作区"), "export": str(base / "精选")}
+    defaults = {"input": "", "workspace": str(base), "export": str(base)}
     try:
         saved = json.loads((base / "settings.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
