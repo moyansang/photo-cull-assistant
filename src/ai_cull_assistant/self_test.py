@@ -27,6 +27,9 @@ def run(report_path: str) -> None:
             app.withdraw()
             app.update()
             report["window_title"] = app.title()
+            from .app import GROUPING_LABELS
+            assert app.preset_var.get() == "标准"
+            assert list(GROUPING_LABELS.values()) == ["strict", "standard", "loose"]
             assert app.workspace_var.get() == str(root)
             assert app.export_var.get() == str(root)
             app.input_var.set(str(root / "测试照片"))

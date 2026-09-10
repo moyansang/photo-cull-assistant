@@ -20,10 +20,13 @@ from .workflow import (
 )
 
 
+GROUPING_LABELS = {"严格": "strict", "标准": "standard", "宽松": "loose"}
+
+
 class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
-        self.title("AI 选片助手 v0.4.3")
+        self.title("AI 选片助手 v0.4.4")
         self.geometry("980x780")
         self.scan_result: ScanResult | None = None
         self.settings_dir = settings_dir if settings_dir is not None else application_dir()
@@ -50,7 +53,7 @@ class App(tk.Tk):
         self.input_var = tk.StringVar(value=self.saved_paths["input"])
         self.workspace_var = tk.StringVar(value=self.saved_paths["workspace"])
         self.export_var = tk.StringVar(value=self.saved_paths["export"])
-        self.preset_var = tk.StringVar(value="standard")
+        self.preset_var = tk.StringVar(value="标准")
         self.per_page_var = tk.IntVar(value=16)
         self.columns_var = tk.IntVar(value=4)
         self.screening_var = tk.BooleanVar(value=True)
@@ -64,7 +67,7 @@ class App(tk.Tk):
         row += 1
 
         ttk.Label(frame, text="分组灵敏度").grid(row=row, column=0, sticky="w", pady=6)
-        ttk.Combobox(frame, textvariable=self.preset_var, values=["strict", "standard", "loose"], state="readonly", width=12).grid(row=row, column=1, sticky="w")
+        ttk.Combobox(frame, textvariable=self.preset_var, values=list(GROUPING_LABELS), state="readonly", width=12).grid(row=row, column=1, sticky="w")
         ttk.Label(frame, text="每页照片数").grid(row=row, column=2, sticky="e")
         ttk.Spinbox(frame, from_=8, to=60, textvariable=self.per_page_var, width=8).grid(row=row, column=3, sticky="w")
         ttk.Label(frame, text="列数").grid(row=row, column=4, sticky="e")
@@ -142,7 +145,7 @@ class App(tk.Tk):
             result = run_scan(
                 self.input_var.get(),
                 self.workspace_var.get(),
-                grouping_preset=self.preset_var.get(),
+                grouping_preset=GROUPING_LABELS[self.preset_var.get()],
                 photos_per_page=self.per_page_var.get(),
                 columns=self.columns_var.get(),
                 technical_screening=self.screening_var.get(),
@@ -220,7 +223,7 @@ class App(tk.Tk):
         if not confirmed:
             return
         try:
-            reset_auto_groups(self.scan_result, self.preset_var.get())
+            reset_auto_groups(self.scan_result, GROUPING_LABELS[self.preset_var.get()])
             sheets = regenerate_contact_sheet_sets(
                 self.scan_result,
                 photos_per_page=self.per_page_var.get(),
