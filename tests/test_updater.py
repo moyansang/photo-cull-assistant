@@ -90,3 +90,30 @@ def test_prepare_download_checksum_and_file_inventory(tmp_path,monkeypatch):
     assert (old/u.EXE).read_bytes()==b'old'
     release['sha256']='0'*64
     with pytest.raises(ValueError,match='校验'):u.prepare_update(release,old)
+
+
+def test_rate_limit_falls_back_and_caches(monkeypatch,tmp_path):
+    import io,urllib.error
+    info=dict(version='v99.0.0',url=f'https://github.com/{u.REPO}/releases/download/v99.0.0/AI-Photo-Cull-v99.0.0-Windows-x64-portable.zip',sha256='a'*64,size=20)
+    calls=[]
+    def request(url):
+        calls.append(url)
+        if 'api.github.com' in url:raise urllib.error.HTTPError(url,403,'rate limit exceeded',{},None)
+        return io.BytesIO(json.dumps(info).encode())
+    monkeypatch.setattr(u,'request',request)
+    cache=tmp_path/'cache.json'
+    assert u.latest_release(cache)==info
+    assert len(calls)==2
+    assert u.latest_release(cache)==info and len(calls)==2
+    assert u.latest_release(cache,force=True)==info and len(calls)==4
+    info['url']='https://example.com/unsafe.zip'
+    with pytest.raises(ValueError):u.latest_release(cache,force=True)
+
+
+def test_update_cache_expires(monkeypatch,tmp_path):
+    cache=tmp_path/'cache.json'
+    cache.write_text(json.dumps(dict(client_version=u.VERSION,checked_at=0,release=None)),encoding='utf-8')
+    calls=[]
+    monkeypatch.setattr(u,'api_release',lambda:calls.append(True))
+    assert u.latest_release(cache) is None and calls==[True]
+    assert u.latest_release(cache) is None and calls==[True]

@@ -1,4 +1,4 @@
-# AI选片助手 v0.4.10
+# AI选片助手 v0.4.11
 
 Windows 便携选片工具：本地扫描照片、分组、生成联系表、修正人脸小窗；通过 Lightroom Classic 插件把评级和弃置状态写入 Catalog。
 
@@ -73,3 +73,5 @@ SDK 参考： https://developer.adobe.com/lightroom-classic 及 Adobe SDK 文档
 v0.4.8 及更早版本没有更新器，首次需手动升级到 v0.4.9 或更新版本；此后可通过程序更新。
 
 选片仅改变 Lightroom 中的星级与标记：不复制、移动或删除原照片。旧版生成的精选文件夹不会自动清理。
+
+更新接口遇到 GitHub 限流或网络错误时，自动尝试 Releases 的 update.json 备用通道。成功检查缓存 6 小时；手动检查始终重新查询。发布新版本时须将 make_portable_zip.ps1 生成的 update.json 与 ZIP 一起上传。

@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+import urllib.error
+import time
 import zipfile
 
 from .version import VERSION
@@ -30,7 +32,7 @@ def request(url):
     return urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'PhotoCullAssistant/'+VERSION}), timeout=25)
 
 
-def latest_release():
+def api_release():
     with request(f'https://api.github.com/repos/{REPO}/releases/latest') as response:
         data = json.load(response)
     if data.get('draft') or data.get('prerelease') or version_tuple(data['tag_name']) <= version_tuple(VERSION):
@@ -43,6 +45,39 @@ def latest_release():
     if asset['browser_download_url'] != expected_url:
         raise ValueError('更新下载地址不匹配')
     return dict(version=data['tag_name'], url=expected_url, sha256=asset['digest'][7:].lower(), size=asset['size'])
+
+
+def checked_release(info):
+    if info is None: return None
+    version_tuple(info['version'])
+    name=f"AI-Photo-Cull-{info['version']}-Windows-x64-portable.zip"
+    expected=f"https://github.com/{REPO}/releases/download/{info['version']}/{name}"
+    if info.get('url')!=expected or not re.fullmatch('[0-9a-f]{64}',info.get('sha256','')) or type(info.get('size')) is not int or not 0<info['size']<=1024*1024*1024:
+        raise ValueError('更新信息校验失败')
+    return info if version_tuple(info['version'])>version_tuple(VERSION) else None
+
+
+def latest_release(cache_path=None, force=False):
+    if cache_path and not force:
+        try:
+            cache=json.loads(Path(cache_path).read_text('utf-8'))
+            if cache['client_version']==VERSION and 0<=time.time()-cache['checked_at']<21600:
+                return checked_release(cache['release'])
+        except (OSError,ValueError,KeyError,TypeError): pass
+    try:
+        release=api_release()
+    except (urllib.error.URLError,TimeoutError):
+        # Public release assets use the GitHub web/CDN route, not REST quota.
+        with request(f'https://github.com/{REPO}/releases/latest/download/update.json') as response:
+            release=checked_release(json.load(response))
+    if cache_path:
+        try:
+            path=Path(cache_path)
+            temporary=path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(dict(client_version=VERSION,checked_at=time.time(),release=release)),encoding='utf-8')
+            temporary.replace(path)
+        except OSError: pass
+    return release
 
 
 def digest(path):

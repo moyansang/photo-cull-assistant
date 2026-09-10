@@ -19,7 +19,7 @@ class UpdateController:
         if self.busy: return
         self.busy=True
         def work():
-            try: self.events.put(('release',updater.latest_release(),manual))
+            try: self.events.put(('release',updater.latest_release(self.app.settings_dir / "update-cache.json", force=manual),manual))
             except Exception as exc: self.events.put(('error',str(exc),manual))
         threading.Thread(target=work,daemon=True).start()
 
