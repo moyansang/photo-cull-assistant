@@ -6,7 +6,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .group_editor import GroupEditor
-from .settings import application_dir, load_paths, save_paths
+from .settings import application_dir, load_paths, save_paths, read_values, save_values
+from .crop_settings import CropSettings
+from .crop_dialog import CropDialog
+from dataclasses import asdict
 from .workflow import (
     ScanResult,
     apply_selection_text,
@@ -20,11 +23,12 @@ from .workflow import (
 class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
-        self.title("AI 选片助手 v0.4.1")
+        self.title("AI 选片助手 v0.4.2")
         self.geometry("980x780")
         self.scan_result: ScanResult | None = None
         self.settings_dir = settings_dir if settings_dir is not None else application_dir()
         self.saved_paths = load_paths(self.settings_dir)
+        self.crop_settings = CropSettings.from_dict(read_values(self.settings_dir).get("face_crop", {}))
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._close)
 
@@ -87,6 +91,8 @@ class App(tk.Tk):
         ttk.Button(second_btn_frame, text="打开联系表目录", command=self._open_contact_dir).pack(side="left", padx=(0, 8))
         ttk.Button(second_btn_frame, text="2. 应用选片结果", command=self._apply_selection).pack(side="left", padx=(0, 8))
 
+        ttk.Button(second_btn_frame, text="人脸细节设置", command=self._open_crop_settings).pack(side="left", padx=(0, 8))
+
         row += 1
         ttk.Label(frame, text="把 ChatGPT 返回的选片结果粘贴到这里：").grid(row=row, column=0, columnspan=6, sticky="w")
         row += 1
@@ -140,6 +146,7 @@ class App(tk.Tk):
                 photos_per_page=self.per_page_var.get(),
                 columns=self.columns_var.get(),
                 technical_screening=self.screening_var.get(),
+                crop_settings=self.crop_settings,
             )
             self.scan_result = result
             self._log(f"扫描完成：共 {len(result.assets)} 张逻辑照片")
@@ -158,6 +165,19 @@ class App(tk.Tk):
         except Exception as exc:
             self._log(f"扫描失败：{exc}")
             messagebox.showerror("扫描失败", str(exc))
+
+    def _open_crop_settings(self) -> None:
+        assets = self.scan_result.assets if self.scan_result else []
+        CropDialog(self, assets, self.crop_settings, self._save_crop_settings)
+
+    def _save_crop_settings(self, settings: CropSettings) -> None:
+        save_values(self.settings_dir, {"face_crop": asdict(settings)})
+        self.crop_settings = settings
+        if self.scan_result:
+            sheets = regenerate_contact_sheet_sets(self.scan_result, photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), crop_settings=settings)
+            self._log(f"人脸细节设置已保存；已生成主表 {len(sheets.main_pages)} 页、复核表 {len(sheets.rejected_pages)} 页。")
+        else:
+            self._log("人脸细节设置已保存，下次生成联系表时使用。")
 
     def _open_group_editor(self) -> None:
         if not self.scan_result:
@@ -181,6 +201,7 @@ class App(tk.Tk):
                 self.scan_result,
                 photos_per_page=self.per_page_var.get(),
                 columns=self.columns_var.get(),
+                crop_settings=self.crop_settings,
             )
             self._log(f"联系表已重新生成：主表 {len(sheets.main_pages)} 页；弃置复核 {len(sheets.rejected_pages)} 页。")
             self._log(f"主联系表目录：{self.scan_result.contact_dir / 'main'}")
@@ -204,6 +225,7 @@ class App(tk.Tk):
                 self.scan_result,
                 photos_per_page=self.per_page_var.get(),
                 columns=self.columns_var.get(),
+                crop_settings=self.crop_settings,
             )
             self._log(f"已重新自动分组并覆盖 groups.json；主联系表 {len(sheets.main_pages)} 页。")
         except Exception as exc:

@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .models import PhotoAsset
 from .subject import features, face_crop
+from .crop_settings import CropSettings
 
 PAGE_BG = "white"
 TEXT_COLOR = "black"
@@ -134,6 +135,7 @@ def generate_contact_sheet_sets(
     out_dir: str | Path,
     photos_per_page: int = 20,
     columns: int = 4,
+    crop_settings: CropSettings = CropSettings(),
 ) -> ContactSheetSet:
     root = Path(out_dir)
     main_dir = root / "main"
@@ -147,6 +149,7 @@ def generate_contact_sheet_sets(
         photos_per_page=photos_per_page,
         columns=columns,
         review_mode=False,
+        crop_settings=crop_settings,
     )
     rejected_pages = generate_contact_sheets(
         rejected_assets,
@@ -154,6 +157,7 @@ def generate_contact_sheet_sets(
         photos_per_page=photos_per_page,
         columns=columns,
         review_mode=True,
+        crop_settings=crop_settings,
     )
     # Remove legacy root pages from older versions so users do not upload stale sheets.
     for pattern in ("contact_sheet_*.jpg", "sheet_*.jpg"):
@@ -172,6 +176,7 @@ def generate_contact_sheets(
     columns: int = 4,
     *,
     review_mode: bool = False,
+    crop_settings: CropSettings = CropSettings(),
 ) -> list[Path]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -250,6 +255,7 @@ def generate_contact_sheets(
                     filename_font,
                     small_font,
                     review_mode=review_mode,
+                    crop_settings=crop_settings,
                 )
             y_cursor += ceil(len(group_assets) / columns) * CELL_H
 
@@ -287,6 +293,7 @@ def _draw_cell(
     small_font: ImageFont.ImageFont,
     *,
     review_mode: bool = False,
+    crop_settings: CropSettings = CropSettings(),
 ) -> None:
     border = (190, 90, 90) if review_mode else (180, 180, 180)
     draw.rectangle([x0, y0, x0 + CELL_W - 8, y0 + CELL_H - 8], outline=border, width=1)
@@ -296,7 +303,10 @@ def _draw_cell(
         with Image.open(asset.preview_path) as img:
             img = ImageOps.exif_transpose(img)
             img = img.convert("RGB")
-            subject = features(Path(asset.preview_path))
+            if not asset.subject_checked:
+                asset.subject_features = features(Path(asset.preview_path))
+                asset.subject_checked = True
+            subject = asset.subject_features
             face = subject.face if subject else None
             photo_box = (330, THUMB_BOX[1]) if face else THUMB_BOX
             thumb = ImageOps.contain(img, photo_box)
@@ -304,12 +314,14 @@ def _draw_cell(
             paste_y = y0 + 8
             canvas.paste(thumb, (paste_x, paste_y))
             if face:
-                crop = ImageOps.contain(face_crop(img, face, subject.head), (124, 150))
+                crop = ImageOps.contain(face_crop(img, face, subject.head, crop_settings), (124, 150))
+                tile = Image.new("RGB", (124, 150), "white")
+                tile.paste(crop, ((124 - crop.width) // 2, (150 - crop.height) // 2))
                 inset_x = x0 + 350
                 inset_y = y0 + 30
                 draw.text((inset_x, y0 + 7), "FACE", fill=TEXT_COLOR, font=small_font)
-                canvas.paste(crop, (inset_x + (124 - crop.width) // 2, inset_y))
-                draw.rectangle([inset_x - 2, inset_y - 2, inset_x + 126, inset_y + crop.height + 2], outline=(100, 100, 100), width=2)
+                canvas.paste(tile, (inset_x, inset_y))
+                draw.rectangle([inset_x - 2, inset_y - 2, inset_x + 126, inset_y + 152], outline=(100, 100, 100), width=2)
             bottom = paste_y + thumb.height
     else:
         draw.rectangle([x0 + 10, y0 + 10, x0 + CELL_W - 18, y0 + THUMB_BOX[1]], outline=(180, 0, 0))

@@ -22,6 +22,20 @@ def load_paths(base: Path) -> dict[str, str]:
 
 
 def save_paths(base: Path, paths: dict[str, str]) -> None:
+    save_values(base, paths)
+
+
+def read_values(base: Path) -> dict:
+    try:
+        value = json.loads((base / "settings.json").read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_values(base: Path, values: dict) -> None:
+    saved = read_values(base)
+    saved.update(values)
     temporary = base / "settings.json.tmp"
-    temporary.write_text(json.dumps(paths, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.replace(base / "settings.json")

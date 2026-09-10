@@ -8,6 +8,7 @@ from .exporter import copy_selected
 from .grouping import assign_groups
 from .group_store import load_groups, save_groups
 from .models import PhotoAsset
+from .crop_settings import CropSettings
 from .preview import build_preview
 from .scanner import scan_folder
 from .screening import ScreeningResult, save_screening_results, screen_assets
@@ -38,6 +39,7 @@ def run_scan(
     columns: int = 4,
     *,
     technical_screening: bool = True,
+    crop_settings: CropSettings = CropSettings(),
 ) -> ScanResult:
     workspace = Path(workspace_dir)
     preview_dir = workspace / "previews"
@@ -72,6 +74,7 @@ def run_scan(
         contact_dir,
         photos_per_page=photos_per_page,
         columns=columns,
+        crop_settings=crop_settings,
     )
     return ScanResult(
         assets=assets,
@@ -147,12 +150,14 @@ def regenerate_contact_sheet_sets(
     result: ScanResult,
     photos_per_page: int = 20,
     columns: int = 4,
+    crop_settings: CropSettings = CropSettings(),
 ) -> ContactSheetSet:
     sheets = generate_contact_sheet_sets(
         result.assets,
         result.contact_dir,
         photos_per_page=photos_per_page,
         columns=columns,
+        crop_settings=crop_settings,
     )
     result.main_pages = sheets.main_pages
     result.rejected_pages = sheets.rejected_pages

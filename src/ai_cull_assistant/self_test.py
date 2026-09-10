@@ -46,6 +46,28 @@ def run(report_path: str) -> None:
             result = run_scan(photos, root / "workspace")
             assert len(result.assets) == 1
             assert result.main_pages and all(p.exists() for p in result.main_pages)
+            from .crop_dialog import CropDialog
+            from .crop_settings import CropSettings
+            from .subject import SubjectFeatures
+            test_app = App(settings_dir=root)
+            test_app.withdraw()
+            test_app.scan_result = result
+            result.assets[0].subject_checked = True
+            result.assets[0].subject_features = SubjectFeatures('0', '0', '0', (.3,.2,.2,.2), (.2,.1,.4,.4))
+            dialog = CropDialog(test_app, result.assets, test_app.crop_settings, test_app._save_crop_settings)
+            dialog.scale.set(1.25)
+            dialog.shift.set(-.15)
+            dialog.ratio.set('1:1')
+            dialog.render()
+            assert len(dialog.photos) == 2
+            dialog.navigate(1)
+            dialog.save()
+            test_app._close()
+            check_app = App(settings_dir=root)
+            check_app.withdraw()
+            assert check_app.crop_settings == CropSettings(1.25, -.15, '1:1')
+            check_app._close()
+            report['crop_settings_dialog_and_persistence'] = True
             apply_selection_text(result.assets, "TEST001,5", root / "selected")
             assert (photos / "TEST001.xmp").exists()
         report.update(ok=True, opencv=cv2.__version__, rawpy=rawpy.__version__)

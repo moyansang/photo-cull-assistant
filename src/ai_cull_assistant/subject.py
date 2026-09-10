@@ -8,6 +8,14 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from .yunet import detect, head_box
+from .crop_settings import CropSettings, crop_bounds
+
+
+def asset_features(asset):
+    if not asset.subject_checked:
+        asset.subject_features = features(Path(asset.preview_path)) if asset.preview_path else None
+        asset.subject_checked = True
+    return asset.subject_features
 
 
 @dataclass(frozen=True)
@@ -56,11 +64,10 @@ def _cached_features(path: str, modified: int, size: int) -> SubjectFeatures:
     return SubjectFeatures(image_hash(image), image_hash(image.crop((w * .2, h * .1, w * .8, h * .95))), body, face, head)
 
 
-def face_crop(image: Image.Image, face: tuple[float, float, float, float], head: tuple[float, float, float, float] | None = None) -> Image.Image:
+def face_crop(image: Image.Image, face: tuple[float, float, float, float], head: tuple[float, float, float, float] | None = None, settings: CropSettings = CropSettings()) -> Image.Image:
     w, h = image.size
     if head:
-        x, y, bw, bh = head
-        return image.crop((round(x * w), round(y * h), round((x + bw) * w), round((y + bh) * h)))
+        return image.crop(crop_bounds(image.size, head, settings))
     x, y, fw, fh = face
     return image.crop((max(0, int((x - fw * .25) * w)), max(0, int((y - fh * .3) * h)),
                        min(w, int((x + fw * 1.25) * w)), min(h, int((y + fh * 1.3) * h))))

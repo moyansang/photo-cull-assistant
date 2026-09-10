@@ -28,6 +28,8 @@ class PhotoAsset:
     screening_reason: Optional[str] = None
     focus_score: Optional[float] = None
     face_found: bool = False
+    subject_features: object = None
+    subject_checked: bool = False
 
     @property
     def rating_target_paths(self) -> list[Path]:
