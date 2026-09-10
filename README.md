@@ -1,4 +1,4 @@
-# AI选片助手 v0.5.0
+# AI选片助手 v0.5.1
 
 Windows 便携选片工具：本地扫描照片、分组、生成联系表、修正人脸小窗；通过 Lightroom Classic 插件把评级和弃置状态写入 Catalog。
 
@@ -12,6 +12,25 @@ Windows 便携选片工具：本地扫描照片、分组、生成联系表、修
 6. 切换“人工复核”，查看 AI 理由和原图，指定最终星级、旗标，逐张“确认并保存”。未指定的字段保持 LR 现有值；“无标记”明确清除旗标。
 7. “导出已确认结果”生成 `lightroom_results.json`，在 Lightroom Classic 插件中检查匹配数量后应用。全部照片始终保留原目录。
 8. 可选：从 LR 插件“查看上次导入报告”复制 JSON，在 EXE “导入 LR 回执”，记录本次应用状态。
+
+## API 模型预设
+
+打开“配置 API”，选择预设、填写对应平台 API Key，测试并保存即可。高级设置可展开修改名称、地址、模型和超时等；也可选择“自定义”。原有配置保留。
+
+| 预设 | 模型编号 | 默认接口前缀 |
+|---|---|---|
+| 阿里百炼·北京 / Qwen3-VL-Plus | `qwen3-vl-plus` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| 阿里百炼·北京 / Qwen3-VL-Flash | `qwen3-vl-flash` | 同上 |
+| 智谱 / GLM-4.6V-Flash | `glm-4.6v-flash` | `https://open.bigmodel.cn/api/paas/v4` |
+| OpenAI / GPT-5.4 mini | `gpt-5.4-mini` | `https://api.openai.com/v1` |
+| DeepSeek / Flash（支持图片） | `deepseek-flash` | `https://api.deepseek.com` |
+
+- 预设仅填写接口参数；账户需具备服务权限及可用额度。百炼预设使用北京地域公共域名（官方仍支持），必须搭配北京地域 Key。其他地域/业务空间专属域名请用自定义。
+- 首次保存千问某一型号后，另一个型号在密钥留空时可复用同地域已保存的 Key。不会跨服务商复用；修改服务地址需重新输入密钥。
+- GPT 预设自动使用 `max_completion_tokens`；Qwen 和 DeepSeek 预设关闭思考模式，GPT 使用 `reasoning_effort=none`。默认超时 300 秒，输出上限 8192 tokens。GLM 使用服务默认思考设置。
+- DeepSeek 预设使用官方当前支持图片的 `deepseek-flash`；旧实验视觉模型已由新 Flash 承接。单请求编码后不超过 48 MiB，超限提示拆小批次。
+- 修改预设的地址或模型后按自定义配置保存，不再套用原预设专用参数。
+- 2026-09-11 核实的官方资料：[百炼视觉](https://help.aliyun.com/zh/model-studio/vision)、[百炼地域与域名](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope)、[智谱视觉](https://docs.bigmodel.cn/cn/guide/models/free/glm-4.6v-flash)、[OpenAI GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini)、[DeepSeek 视觉](https://api-docs.deepseek.com/zh-cn/guides/vision/)。
 
 ## AI 任务与 API
 

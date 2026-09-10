@@ -732,7 +732,7 @@ class ReviewDialog(tk.Toplevel):
         batch = request["batch"]
         batch["api_profile"] = {
             key: request["profile"].get(key)
-            for key in ("id", "name", "base_url", "model", "timeout")
+            for key in ("id", "name", "base_url", "model", "timeout", "max_tokens", "preset_id")
         }
         batch["status"] = "running"
         batch.pop("error", None)

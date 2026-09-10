@@ -95,6 +95,17 @@ def run(report_path: str) -> None:
             review._close()
             ui_app._close()
             report['ai_task_review_and_confirmation'] = True
+            from .ai_api_dialog import ApiConfigDialog
+            from .ai_presets import PRESETS, preset_profile
+            config_root = App(settings_dir=root)
+            config_root.withdraw()
+            config = ApiConfigDialog(config_root, root)
+            config.update()
+            assert len(PRESETS) == 5
+            assert config.model_var.get() == preset_profile('qwen-vl-plus')['model']
+            config.destroy()
+            config_root._close()
+            report['api_preset_dialog'] = True
             assert not (photos / "TEST001.xmp").exists()
             payload = json.loads(export.read_text(encoding="utf-8"))
             assert any(p.get("rating") == 5 for p in payload["photos"])

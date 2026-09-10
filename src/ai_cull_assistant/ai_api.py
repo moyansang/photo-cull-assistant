@@ -19,6 +19,8 @@ import urllib.parse
 import urllib.request
 import uuid
 
+from .ai_presets import matching_preset
+
 
 PROFILE_FILE = "ai-api-profiles.json"
 DEFAULT_TIMEOUT = 120
@@ -126,6 +128,8 @@ def _normalise_profile(profile: Mapping[str, object], *, create_id: bool = False
         if not 1 <= max_tokens <= 1_000_000:
             raise ValueError("最大输出 token 数必须在 1–1000000 之间。")
         result["max_tokens"] = max_tokens
+    if matching_preset(profile):
+        result['preset_id'] = profile['preset_id']
     return result
 
 
@@ -176,9 +180,25 @@ def save_profile(
     for other in profiles:
         if other["id"] != saved["id"] and other["name"].casefold() == saved["name"].casefold():
             raise ValueError("配置名称已存在。")
+    previous = next((p for p in profiles if p['id'] == saved['id']), None)
+    if previous and _completion_url(previous['base_url']) != _completion_url(saved['base_url']):
+        if key is None:
+            raise CredentialError('修改 API 服务地址后，请重新输入对应服务的密钥。')
+        # A fresh credential ID keeps a failed JSON write from pairing the new
+        # service's key with the old service's still-persisted endpoint.
+        saved['id'] = uuid.uuid4().hex
+    preset = matching_preset(saved)
+    if key is None and previous is None and preset:
+        # Only reuse credentials from a verified preset on the same service/region.
+        for other in profiles:
+            other_preset = matching_preset(other)
+            if other_preset and other_preset['credential_group'] == preset['credential_group']:
+                key = get_secret(other['id'])
+                if key:
+                    break
     replaced = False
     for index, other in enumerate(profiles):
-        if other["id"] == saved["id"]:
+        if other["id"] == (previous["id"] if previous else saved["id"]):
             profiles[index] = saved
             replaced = True
             break
@@ -403,11 +423,16 @@ def call_model(
         "model": saved["model"],
         "messages": [{"role": "user", "content": content}],
     }
+    preset = matching_preset(saved)
+    if preset:
+        payload.update(preset.get('request_options', {}))
     if "max_tokens" in saved:
-        payload["max_tokens"] = saved["max_tokens"]
+        parameter = preset.get('token_parameter', 'max_tokens') if preset else 'max_tokens'
+        payload[parameter] = saved['max_tokens']
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    if len(body) > MAX_REQUEST_BYTES:
-        raise ValueError(f"API 请求内容不能超过 {MAX_REQUEST_BYTES // (1024 * 1024)} MiB。")
+    request_limit = min(MAX_REQUEST_BYTES, preset.get('max_request_bytes', MAX_REQUEST_BYTES)) if preset else MAX_REQUEST_BYTES
+    if len(body) > request_limit:
+        raise ValueError(f"API 请求内容不能超过 {request_limit // (1024 * 1024)} MiB，请拆小本批重试。")
     request = urllib.request.Request(
         _completion_url(saved["base_url"]),
         data=body,
