@@ -13,7 +13,7 @@ def test_inset_renders_in_separate_area_and_does_not_crop_photo(tmp_path, monkey
     image.paste('green', (0, 760, 400, 800))
     preview = tmp_path / 'sample.png'
     image.save(preview)
-    monkeypatch.setattr(contact_sheet, 'features', lambda p: SubjectFeatures('0', '0', '0', (.35, .1, .25, .125)))
+    monkeypatch.setattr(contact_sheet, 'features', lambda p, *args: SubjectFeatures('0', '0', '0', (.35, .1, .25, .125)))
     asset = PhotoAsset('TEST', preview, preview, None, preview, datetime(2026, 1, 1), '.png', group_id=1, preview_path=preview)
     page = contact_sheet.generate_contact_sheets([asset], tmp_path / 'out')[0]
     with Image.open(page) as rendered:

@@ -30,6 +30,7 @@ class PhotoAsset:
     face_found: bool = False
     subject_features: object = None
     subject_checked: bool = False
+    subject_confidence: float = .8
 
     @property
     def rating_target_paths(self) -> list[Path]:

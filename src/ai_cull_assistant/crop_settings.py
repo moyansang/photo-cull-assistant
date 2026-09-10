@@ -7,16 +7,20 @@ class CropSettings:
     scale_factor: float = 1.0
     shift_factor: float = 0.0
     aspect_ratio: str = "124:150"
+    detection_confidence: float = .8
 
     @classmethod
     def from_dict(cls, values):
         try:
             scale = float(values.get("scale_factor", 1))
             shift = float(values.get("shift_factor", 0))
+            confidence = float(values.get("detection_confidence", .8))
+            if not math.isfinite(confidence):
+                confidence = .8
             ratio = values.get("aspect_ratio", "124:150")
             if not math.isfinite(scale) or not math.isfinite(shift):
                 return cls()
-            return cls(max(.6, min(2.0, scale)), max(-.5, min(.5, shift)), ratio if ratio in ("124:150", "1:1", "3:4") else "124:150")
+            return cls(max(.6, min(2.0, scale)), max(-.5, min(.5, shift)), ratio if ratio in ("124:150", "1:1", "3:4") else "124:150", max(.7, min(.95, confidence)))
         except (AttributeError, ValueError, TypeError):
             return cls()
 

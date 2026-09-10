@@ -11,7 +11,7 @@ class CropDialog(tk.Toplevel):
     def __init__(self, parent, assets, settings, on_save):
         super().__init__(parent)
         self.title("人脸细节设置")
-        self.geometry("850x680")
+        self.geometry("850x720")
         self.resizable(False, False)
         self.transient(parent)
         self.assets = [a for a in assets if a.preview_path]
@@ -19,12 +19,13 @@ class CropDialog(tk.Toplevel):
         self.on_save = on_save
         self.scale = tk.DoubleVar(value=settings.scale_factor)
         self.shift = tk.DoubleVar(value=settings.shift_factor)
+        self.confidence = tk.DoubleVar(value=settings.detection_confidence)
         self.ratio = tk.StringVar(value=settings.aspect_ratio)
         self._pending = None
         body = ttk.Frame(self, padding=16)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="小窗大小保持不变；范围增大可多留头发，负偏移向上，正偏移向下。").pack(anchor="w")
-        for label, variable, start, end in (("裁切范围", self.scale, .6, 2), ("上下偏移", self.shift, -.5, .5)):
+        for label, variable, start, end in (("检测置信度", self.confidence, .7, .95), ("裁切范围", self.scale, .6, 2), ("上下偏移", self.shift, -.5, .5)):
             row = ttk.Frame(body)
             row.pack(fill="x", pady=4)
             ttk.Label(row, text=label, width=12).pack(side="left")
@@ -33,6 +34,7 @@ class CropDialog(tk.Toplevel):
             value.pack(side="left", padx=12)
             variable.trace_add("write", lambda *_, v=variable, widget=value: widget.configure(text=f"{v.get():.2f}"))
             value.configure(text=f"{variable.get():.2f}")
+        ttk.Label(body, text="检测置信度：默认 0.80；降低可减少漏脸，也可能增加错框。与分组灵敏度无关。").pack(anchor="w")
         row = ttk.Frame(body)
         row.pack(fill="x", pady=4)
         ttk.Label(row, text="裁切比例", width=12).pack(side="left")
@@ -51,13 +53,13 @@ class CropDialog(tk.Toplevel):
         actions.pack(fill="x", pady=4)
         ttk.Button(actions, text="取消", command=self.destroy).pack(side="right", padx=6)
         ttk.Button(actions, text="保存并重新生成联系表" if self.assets else "保存设置", command=self.save).pack(side="right")
-        for variable in (self.scale, self.shift, self.ratio):
+        for variable in (self.scale, self.shift, self.ratio, self.confidence):
             variable.trace_add("write", self.schedule_preview)
         self.render()
         self.grab_set()
 
     def settings(self):
-        return CropSettings.from_dict(dict(scale_factor=round(self.scale.get(), 2), shift_factor=round(self.shift.get(), 2), aspect_ratio=self.ratio.get()))
+        return CropSettings.from_dict(dict(scale_factor=round(self.scale.get(), 2), shift_factor=round(self.shift.get(), 2), aspect_ratio=self.ratio.get(), detection_confidence=round(self.confidence.get(), 2)))
 
     def schedule_preview(self, *_):
         if self._pending:
@@ -70,6 +72,7 @@ class CropDialog(tk.Toplevel):
             self.render()
 
     def reset(self):
+        self.confidence.set(.8)
         self.scale.set(1)
         self.shift.set(0)
         self.ratio.set("124:150")
@@ -88,7 +91,7 @@ class CropDialog(tk.Toplevel):
         try:
             with Image.open(asset.preview_path) as source:
                 original = ImageOps.exif_transpose(source).convert("RGB")
-            subject = asset_features(asset)
+            subject = asset_features(asset, self.settings().detection_confidence)
             marked = original.copy()
             if subject and subject.face and subject.head:
                 bounds = crop_bounds(original.size, subject.head, self.settings())

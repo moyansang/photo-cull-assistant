@@ -26,8 +26,8 @@ def detector():
     return _local.detector
 
 
-def valid_detection(row: np.ndarray, width: int, height: int) -> bool:
-    if len(row) != 15 or not np.isfinite(row).all() or row[14] < .9:
+def valid_detection(row: np.ndarray, width: int, height: int, score_threshold: float = .9) -> bool:
+    if len(row) != 15 or not np.isfinite(row).all() or row[14] < score_threshold:
         return False
     x, y, w, h = row[:4]
     if min(w, h) < 12 or not .4 <= w / h <= 1.8:
@@ -50,7 +50,7 @@ def valid_detection(row: np.ndarray, width: int, height: int) -> bool:
     return bool(-.2 <= nose_projection <= 1.3)
 
 
-def detect(image: np.ndarray) -> list[FaceDetection]:
+def detect(image: np.ndarray, score_threshold: float = .9) -> list[FaceDetection]:
     h, w = image.shape[:2]
     if not h or not w:
         return []
@@ -58,12 +58,13 @@ def detect(image: np.ndarray) -> list[FaceDetection]:
     resized = cv2.resize(image, (max(1, round(w * scale)), max(1, round(h * scale)))) if scale < 1 else image
     rh, rw = resized.shape[:2]
     model = detector()
+    model.setScoreThreshold(score_threshold)
     model.setInputSize((rw, rh))
     _, rows = model.detect(resized)
     results = []
     if rows is not None:
         for row in rows:
-            if valid_detection(row, rw, rh):
+            if valid_detection(row, rw, rh, score_threshold):
                 sx, sy = w / rw, h / rh
                 x, y, fw, fh = row[:4]
                 points = tuple((float(px * sx), float(py * sy)) for px, py in row[4:14].reshape(5, 2))

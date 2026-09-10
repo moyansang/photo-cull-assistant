@@ -303,9 +303,10 @@ def _draw_cell(
         with Image.open(asset.preview_path) as img:
             img = ImageOps.exif_transpose(img)
             img = img.convert("RGB")
-            if not asset.subject_checked:
-                asset.subject_features = features(Path(asset.preview_path))
+            if not asset.subject_checked or asset.subject_confidence != crop_settings.detection_confidence:
+                asset.subject_features = features(Path(asset.preview_path), crop_settings.detection_confidence)
                 asset.subject_checked = True
+                asset.subject_confidence = crop_settings.detection_confidence
             subject = asset.subject_features
             face = subject.face if subject else None
             photo_box = (330, THUMB_BOX[1]) if face else THUMB_BOX

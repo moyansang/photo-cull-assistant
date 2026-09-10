@@ -40,8 +40,18 @@ def test_valid_landmarks_and_head_crop_leave_hair_space():
         assert y <= py / 100 <= y+h
 
 
+def test_lower_confidence_keeps_geometry_checks():
+    candidate = row()
+    candidate[14] = .83
+    assert not yunet.valid_detection(candidate, 100, 100, .9)
+    assert yunet.valid_detection(candidate, 100, 100, .8)
+    candidate[4:14] = 45
+    assert not yunet.valid_detection(candidate, 100, 100, .8)
+
+
 def test_scaled_coordinates_map_back_to_original(monkeypatch):
     class Model:
+        def setScoreThreshold(self, score): assert score == .9
         def setInputSize(self, size): assert size == (1600, 800)
         def detect(self, image): return 1, np.array([row()])
     monkeypatch.setattr(yunet, 'detector', lambda: Model())

@@ -63,12 +63,16 @@ def run(report_path: str) -> None:
             dialog.ratio.set('1:1')
             dialog.render()
             assert len(dialog.photos) == 2
+            dialog.confidence.set(.75)
+            dialog.render()
+            assert result.assets[0].subject_confidence == .75
+            assert len(dialog.photos) == 1  # Blank synthetic photo is still rejected.
             dialog.navigate(1)
             dialog.save()
             test_app._close()
             check_app = App(settings_dir=root)
             check_app.withdraw()
-            assert check_app.crop_settings == CropSettings(1.25, -.15, '1:1')
+            assert check_app.crop_settings == CropSettings(1.25, -.15, '1:1', .75)
             check_app._close()
             report['crop_settings_dialog_and_persistence'] = True
             apply_selection_text(result.assets, "TEST001,5", root / "selected")

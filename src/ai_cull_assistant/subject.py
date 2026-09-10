@@ -11,10 +11,11 @@ from .yunet import detect, head_box
 from .crop_settings import CropSettings, crop_bounds
 
 
-def asset_features(asset):
-    if not asset.subject_checked:
-        asset.subject_features = features(Path(asset.preview_path)) if asset.preview_path else None
+def asset_features(asset, score_threshold=.8):
+    if not asset.subject_checked or asset.subject_confidence != score_threshold:
+        asset.subject_features = features(Path(asset.preview_path), score_threshold) if asset.preview_path else None
         asset.subject_checked = True
+        asset.subject_confidence = score_threshold
     return asset.subject_features
 
 
@@ -33,20 +34,20 @@ def image_hash(image: Image.Image) -> str:
     return f"{int(''.join('1' if v else '0' for v in bits.flat), 2):016x}"
 
 
-def features(path: Path) -> SubjectFeatures | None:
+def features(path: Path, score_threshold: float = .9) -> SubjectFeatures | None:
     try:
         stat = path.stat()
-        return _cached_features(str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+        return _cached_features(str(path.resolve()), stat.st_mtime_ns, stat.st_size, score_threshold)
     except (OSError, ValueError, cv2.error):
         return None
 
 
 @lru_cache(maxsize=256)
-def _cached_features(path: str, modified: int, size: int) -> SubjectFeatures:
+def _cached_features(path: str, modified: int, size: int, score_threshold: float) -> SubjectFeatures:
     with Image.open(path) as source:
         image = ImageOps.exif_transpose(source).convert("RGB")
     w, h = image.size
-    candidates = detect(cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR))
+    candidates = detect(cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR), score_threshold)
     face = None
     body = None
     head = None

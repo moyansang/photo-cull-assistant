@@ -24,13 +24,15 @@ def test_scale_shift_ratio_and_bounds():
 
 
 def test_directory_and_crop_saves_preserve_each_other(tmp_path):
-    settings = CropSettings(1.2, -.1, '3:4')
+    settings = CropSettings(1.2, -.1, '3:4', .75)
     save_values(tmp_path, {'face_crop': asdict(settings)})
     save_paths(tmp_path, {'input': 'D:/photos', 'workspace': 'D:/work', 'export': 'D:/out'})
     assert CropSettings.from_dict(read_values(tmp_path)['face_crop']) == settings
     save_values(tmp_path, {'face_crop': asdict(CropSettings())})
     assert load_paths(tmp_path)['input'] == 'D:/photos'
     assert CropSettings.from_dict({'scale_factor': float('nan')}) == CropSettings()
+    assert CropSettings.from_dict({'scale_factor': 1.2}).detection_confidence == .8
+    assert CropSettings.from_dict({'detection_confidence': .2}).detection_confidence == .7
 
 
 def test_regenerate_reuses_detection_and_does_not_change_groups(tmp_path, monkeypatch):
@@ -38,7 +40,7 @@ def test_regenerate_reuses_detection_and_does_not_change_groups(tmp_path, monkey
     Image.new('RGB', (500, 800), 'blue').save(path)
     asset = PhotoAsset('TEST', path, path, None, path, datetime.now(), '.jpg', group_id=7, preview_path=path)
     calls = []
-    def detect(p):
+    def detect(p, *args):
         calls.append(p)
         return SubjectFeatures('0', '0', '0', (.3,.2,.2,.2), (.2,.1,.4,.4))
     monkeypatch.setattr(contact_sheet, 'features', detect)
@@ -47,3 +49,18 @@ def test_regenerate_reuses_detection_and_does_not_change_groups(tmp_path, monkey
     assert len(calls) == 1
     assert asset.group_id == 7
     assert not path.with_suffix('.xmp').exists()
+
+
+def test_confidence_change_refreshes_but_cropping_reuses_detection(tmp_path, monkeypatch):
+    path = tmp_path / 'photo.jpg'
+    Image.new('RGB', (200, 300), 'blue').save(path)
+    asset = PhotoAsset('TEST', path, path, None, path, datetime.now(), '.jpg', group_id=9, preview_path=path)
+    thresholds = []
+    def detect(p, confidence):
+        thresholds.append(confidence)
+        return SubjectFeatures('0','0',None,None)
+    monkeypatch.setattr(contact_sheet, 'features', detect)
+    for settings in (CropSettings(), CropSettings(1.2), CropSettings(detection_confidence=.75)):
+        contact_sheet.generate_contact_sheet_sets([asset], tmp_path/'sheets', crop_settings=settings)
+    assert thresholds == [.8, .75]
+    assert asset.group_id == 9
