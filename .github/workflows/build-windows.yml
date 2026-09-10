@@ -28,5 +28,5 @@ jobs:
           if (-not $report.ok) { throw 'Portable smoke test failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: AI选片助手-v0.4.7-Windows-portable
-          path: dist/AI选片助手-v0.4.7-portable.zip
+          name: AI选片助手-v0.4.8-Windows-portable
+          path: dist/AI选片助手-v0.4.8-portable.zip

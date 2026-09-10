@@ -13,7 +13,7 @@ from .preview import build_preview
 from .scanner import scan_folder
 from .screening import ScreeningResult, save_screening_results, screen_assets
 from .selection_parser import parse_selection_text
-from .xmp import write_rating, write_reject_flag
+from .lightroom_results import write_lightroom_results
 
 
 @dataclass(slots=True)
@@ -69,6 +69,7 @@ def run_scan(
             asset.focus_score = None
             asset.face_found = False
 
+    write_lightroom_results(assets, workspace / "lightroom_results.json")
     sheets = generate_contact_sheet_sets(
         assets,
         contact_dir,
@@ -103,7 +104,8 @@ def apply_auto_rejects(
         asset = asset_map.get(stem)
         if asset is None:
             continue
-        write_reject_flag(asset.xmp_base_path)
+        asset.auto_rejected = True
+        asset.screening_reason = result.reason
         count += 1
     return count
 
@@ -113,6 +115,8 @@ def apply_selection_text(
     selection_text: str,
     export_dir: str | Path | None = None,
     copy_min_rating: int = 4,
+    *,
+    results_path: str | Path,
 ) -> tuple[int, int, dict[str, int]]:
     records = parse_selection_text(selection_text)
     stem_to_rating = {record.stem: record.rating for record in records}
@@ -124,9 +128,9 @@ def apply_selection_text(
         if asset is None:
             missing += 1
             continue
-        write_rating(asset.xmp_base_path, rating)
         applied += 1
 
+    write_lightroom_results(assets, results_path, stem_to_rating)
     if export_dir:
         copy_selected(assets, stem_to_rating, export_dir, min_rating=copy_min_rating)
 

@@ -26,7 +26,7 @@ GROUPING_LABELS = {"严格": "strict", "标准": "standard", "宽松": "loose"}
 class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
-        self.title("AI 选片助手 v0.4.7")
+        self.title("AI 选片助手 v0.4.8")
         self.geometry("980x780")
         self.scan_result: ScanResult | None = None
         self.settings_dir = settings_dir if settings_dir is not None else application_dir()
@@ -106,7 +106,7 @@ class App(tk.Tk):
 
         ttk.Checkbutton(
             frame,
-            text="人物主体明显虚焦/严重抖动 → Lightroom 弃置（保守模式）",
+            text="人物主体明显虚焦/严重抖动 → 建议弃置（导入 LR 后生效）",
             variable=self.screening_var,
         ).grid(row=row, column=0, columnspan=6, sticky="w", pady=(2, 8))
         row += 1
@@ -122,9 +122,15 @@ class App(tk.Tk):
         second_btn_frame = ttk.Frame(frame)
         second_btn_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
         ttk.Button(second_btn_frame, text="打开联系表目录", command=self._open_contact_dir).pack(side="left", padx=(0, 8))
-        ttk.Button(second_btn_frame, text="2. 应用选片结果", command=self._apply_selection).pack(side="left", padx=(0, 8))
+        ttk.Button(second_btn_frame, text="2. 导出评级与精选", command=self._apply_selection).pack(side="left", padx=(0, 8))
 
         ttk.Button(second_btn_frame, text="人脸细节设置", command=self._open_crop_settings).pack(side="left", padx=(0, 8))
+
+        row += 1
+        lr_frame = ttk.Frame(frame)
+        lr_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
+        ttk.Button(lr_frame, text="导出 Lightroom 结果", command=self._export_lightroom_results).pack(side="left", padx=(0, 8))
+        ttk.Button(lr_frame, text="LR 插件", command=self._open_lr_plugin).pack(side="left")
 
         row += 1
         ttk.Label(frame, text="把 ChatGPT 返回的选片结果粘贴到这里：").grid(row=row, column=0, columnspan=6, sticky="w")
@@ -194,6 +200,7 @@ class App(tk.Tk):
                 self._log(f"弃置复核表：{result.contact_dir / 'rejected_review'}")
                 if result.screening_results_path:
                     self._log(f"技术筛选报告：{result.screening_results_path}")
+            self._log(f"LR 结果文件：{result.workspace_dir / 'lightroom_results.json'}（需在 LR 插件导入后生效）")
             self._log("可先进入“编辑选片组”人工拆分/合并，再重新生成联系表。")
         except Exception as exc:
             self._log(f"扫描失败：{exc}")
@@ -279,6 +286,28 @@ class App(tk.Tk):
         except Exception:
             messagebox.showinfo("联系表目录", str(path))
 
+    def _export_lightroom_results(self):
+        if not self.scan_result:
+            messagebox.showinfo("提示", "请先扫描照片。")
+            return
+        try:
+            # Export flags plus any explicitly pasted ratings, without copying photos.
+            path = self.scan_result.workspace_dir / "lightroom_results.json"
+            apply_selection_text(self.scan_result.assets, self.selection_text.get("1.0", "end"), results_path=path)
+            import os
+            os.startfile(path.parent)
+            self._log(f"LR 结果已导出：{path}。请在 Lightroom 插件中导入。")
+        except Exception as exc:
+            messagebox.showerror("导出失败", str(exc), parent=self)
+
+    def _open_lr_plugin(self):
+        import os
+        path = application_dir() / "lightroom"
+        if path.exists():
+            os.startfile(path)
+        else:
+            messagebox.showinfo("Lightroom 插件", "请使用完整便携包中的 lightroom 文件夹。", parent=self)
+
     def _apply_selection(self) -> None:
         if not self.scan_result:
             messagebox.showwarning("提示", "请先扫描并生成联系表")
@@ -292,10 +321,11 @@ class App(tk.Tk):
                 self.scan_result.assets,
                 text,
                 export_dir=self.export_var.get().strip() or None,
+                results_path=self.scan_result.workspace_dir / "lightroom_results.json",
             )
-            self._log(f"已应用评级：{applied} 张；未匹配：{missing} 张")
-            self._log(f"已生成/更新 XMP，导出目录：{self.export_var.get()}")
-            self._log("Lightroom Classic 中可执行：元数据 → 从文件读取元数据")
+            self._log(f"已导出评级：{applied} 张；未匹配：{missing} 张")
+            self._log(f"精选导出目录：{self.export_var.get()}")
+            self._log("请在 Lightroom Classic 插件中导入工作区 lightroom_results.json；不会生成 XMP。")
             if rating_map:
                 top = list(rating_map.items())[:10]
                 self._log("示例评级：" + ", ".join(f"{stem}={rating}" for stem, rating in top))

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "photo-cull-mvp"
-version = "0.4.7"
+version = "0.4.8"
 description = "Local contact-sheet based photo culling assistant"
 readme = "README.md"
 authors = [{name = "OpenAI"}]
@@ -21,6 +21,7 @@ raw = [
 ]
 dev = [
     "pytest>=8.0.0",
+    "lupa>=2.0",
 ]
 
 [project.scripts]

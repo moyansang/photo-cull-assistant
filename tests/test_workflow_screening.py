@@ -24,7 +24,7 @@ def make_asset(tmp_path: Path, stem: str) -> PhotoAsset:
     )
 
 
-def test_apply_auto_rejects_writes_lightroom_reject_flag_only_for_rejected(tmp_path):
+def test_apply_auto_rejects_records_suggestions_without_sidecars(tmp_path):
     rejected = make_asset(tmp_path, "REJECTED")
     kept = make_asset(tmp_path, "KEPT")
     results = {
@@ -35,10 +35,6 @@ def test_apply_auto_rejects_writes_lightroom_reject_flag_only_for_rejected(tmp_p
     count = apply_auto_rejects([rejected, kept], results)
 
     assert count == 1
-    xmp = tmp_path / "REJECTED.xmp"
-    assert xmp.exists()
-    content = xmp.read_text(encoding="utf-8")
-    assert 'xmpDM:pick="-1"' in content
-    assert 'xmpDM:good="false"' in content
-    assert 'xmp:Rating="-1"' not in content
-    assert not (tmp_path / "KEPT.xmp").exists()
+    assert rejected.auto_rejected
+    assert not kept.auto_rejected
+    assert not list(tmp_path.glob('*.xmp'))

@@ -76,8 +76,11 @@ def run(report_path: str) -> None:
             assert check_app.crop_settings.for_asset(result.assets[0]) == CropSettings(1.25, -.15, '1:1', .75)
             check_app._close()
             report['crop_settings_dialog_and_persistence'] = True
-            apply_selection_text(result.assets, "TEST001,5", root / "selected")
-            assert (photos / "TEST001.xmp").exists()
+            apply_selection_text(result.assets, "TEST001,5", root / "selected", results_path=root / "lightroom_results.json")
+            assert not (photos / "TEST001.xmp").exists()
+            payload = json.loads((root / "lightroom_results.json").read_text(encoding="utf-8"))
+            assert any(p.get("rating") == 5 for p in payload["photos"])
+            report["lightroom_export_without_xmp"] = True
         report.update(ok=True, opencv=cv2.__version__, rawpy=rawpy.__version__)
     except Exception:
         report.update(ok=False, error=traceback.format_exc())
