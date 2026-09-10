@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .models import PhotoAsset
-from .subject import features, face_crop
+from .subject import features, face_crop, detail_features
 from .crop_settings import CropSettings
 
 PAGE_BG = "white"
@@ -303,11 +303,8 @@ def _draw_cell(
         with Image.open(asset.preview_path) as img:
             img = ImageOps.exif_transpose(img)
             img = img.convert("RGB")
-            if not asset.subject_checked or asset.subject_confidence != crop_settings.detection_confidence:
-                asset.subject_features = features(Path(asset.preview_path), crop_settings.detection_confidence)
-                asset.subject_checked = True
-                asset.subject_confidence = crop_settings.detection_confidence
-            subject = asset.subject_features
+            subject = detail_features(asset, crop_settings)
+            local_settings = crop_settings.for_asset(asset)
             face = subject.face if subject else None
             photo_box = (330, THUMB_BOX[1]) if face else THUMB_BOX
             thumb = ImageOps.contain(img, photo_box)
@@ -315,7 +312,7 @@ def _draw_cell(
             paste_y = y0 + 8
             canvas.paste(thumb, (paste_x, paste_y))
             if face:
-                crop = ImageOps.contain(face_crop(img, face, subject.head, crop_settings), (124, 150))
+                crop = ImageOps.contain(face_crop(img, face, subject.head, local_settings), (124, 150))
                 tile = Image.new("RGB", (124, 150), "white")
                 tile.paste(crop, ((124 - crop.width) // 2, (150 - crop.height) // 2))
                 inset_x = x0 + 350

@@ -1,5 +1,5 @@
 """Face-anchored appearance features; this is not skeletal pose estimation."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -52,11 +52,11 @@ def _cached_features(path: str, modified: int, size: int, score_threshold: float
     body = None
     head = None
     if candidates:
-        candidates.sort(key=lambda f: f.box[2] * f.box[3], reverse=True)
+        candidates.sort(key=lambda f: selection_score(f, w, h), reverse=True)
         chosen = candidates[0]
         x, y, fw, fh = chosen.box
         # Avoid arbitrarily switching between similarly prominent people.
-        if len(candidates) == 1 or fw * fh >= candidates[1].box[2] * candidates[1].box[3] * 1.6:
+        if len(candidates) == 1 or selection_score(chosen, w, h) - selection_score(candidates[1], w, h) >= .025:
             face = (x / w, y / h, fw / w, fh / h)
             head = head_box(chosen, w, h)
             crop = image.crop((max(0, x - 1.5 * fw), max(0, y - .3 * fh),
@@ -72,3 +72,28 @@ def face_crop(image: Image.Image, face: tuple[float, float, float, float], head:
     x, y, fw, fh = face
     return image.crop((max(0, int((x - fw * .25) * w)), max(0, int((y - fh * .3) * h)),
                        min(w, int((x + fw * 1.25) * w)), min(h, int((y + fh * 1.3) * h))))
+
+
+def selection_score(face, width, height):
+    """Confidence dominates; a mild center preference breaks close ties."""
+    x, y, w, h = face.box
+    distance = ((x + w / 2) / width - .5) ** 2 + ((y + h / 2) / height - .4) ** 2
+    return face.score - .12 * distance
+
+
+def detail_features(asset, settings):
+    subject = asset_features(asset, settings.detection_confidence)
+    override = settings.photos.get(settings.key(asset), {})
+    if override.get('hidden'):
+        return replace(subject, face=None, head=None) if subject else None
+    box = override.get('manual_face')
+    if box and len(box) == 4 and all(np.isfinite(v) for v in box):
+        x, y, w, h = box
+        if 0 <= x < 1 and 0 <= y < 1 and w > 0 and h > 0 and x+w <= 1.000001 and y+h <= 1.000001:
+            with Image.open(asset.preview_path) as image:
+                iw, ih = ImageOps.exif_transpose(image).size
+            from .yunet import FaceDetection
+            f = FaceDetection((x*iw,y*ih,w*iw,h*ih), (( (x+w*.35)*iw,(y+h*.35)*ih), ((x+w*.65)*iw,(y+h*.35)*ih)), 1)
+            base = subject or SubjectFeatures('', '', None, None)
+            return replace(base, face=tuple(box), head=head_box(f, iw, ih))
+    return subject

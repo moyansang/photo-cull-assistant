@@ -43,7 +43,7 @@ def test_regenerate_reuses_detection_and_does_not_change_groups(tmp_path, monkey
     def detect(p, *args):
         calls.append(p)
         return SubjectFeatures('0', '0', '0', (.3,.2,.2,.2), (.2,.1,.4,.4))
-    monkeypatch.setattr(contact_sheet, 'features', detect)
+    monkeypatch.setattr('ai_cull_assistant.subject.features', detect)
     contact_sheet.generate_contact_sheet_sets([asset], tmp_path/'sheets')
     contact_sheet.generate_contact_sheet_sets([asset], tmp_path/'sheets', crop_settings=CropSettings(1.5, -.1, '1:1'))
     assert len(calls) == 1
@@ -59,7 +59,7 @@ def test_confidence_change_refreshes_but_cropping_reuses_detection(tmp_path, mon
     def detect(p, confidence):
         thresholds.append(confidence)
         return SubjectFeatures('0','0',None,None)
-    monkeypatch.setattr(contact_sheet, 'features', detect)
+    monkeypatch.setattr('ai_cull_assistant.subject.features', detect)
     for settings in (CropSettings(), CropSettings(1.2), CropSettings(detection_confidence=.75)):
         contact_sheet.generate_contact_sheet_sets([asset], tmp_path/'sheets', crop_settings=settings)
     assert thresholds == [.8, .75]

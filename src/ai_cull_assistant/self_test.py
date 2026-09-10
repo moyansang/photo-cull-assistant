@@ -72,7 +72,8 @@ def run(report_path: str) -> None:
             test_app._close()
             check_app = App(settings_dir=root)
             check_app.withdraw()
-            assert check_app.crop_settings == CropSettings(1.25, -.15, '1:1', .75)
+            assert check_app.crop_settings.detection_confidence == .75
+            assert check_app.crop_settings.for_asset(result.assets[0]) == CropSettings(1.25, -.15, '1:1', .75)
             check_app._close()
             report['crop_settings_dialog_and_persistence'] = True
             apply_selection_text(result.assets, "TEST001,5", root / "selected")

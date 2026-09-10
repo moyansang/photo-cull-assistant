@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 import math
 
 
@@ -8,6 +8,15 @@ class CropSettings:
     shift_factor: float = 0.0
     aspect_ratio: str = "124:150"
     detection_confidence: float = .8
+
+    photos: dict = field(default_factory=dict)
+
+    def key(self, asset):
+        return str(asset.primary_path.resolve()).casefold()
+
+    def for_asset(self, asset):
+        values = self.photos.get(self.key(asset), {})
+        return replace(CropSettings.from_dict(values), detection_confidence=self.detection_confidence)
 
     @classmethod
     def from_dict(cls, values):
@@ -20,7 +29,7 @@ class CropSettings:
             ratio = values.get("aspect_ratio", "124:150")
             if not math.isfinite(scale) or not math.isfinite(shift):
                 return cls()
-            return cls(max(.6, min(2.0, scale)), max(-.5, min(.5, shift)), ratio if ratio in ("124:150", "1:1", "3:4") else "124:150", max(.7, min(.95, confidence)))
+            return cls(max(.6, min(2.0, scale)), max(-.5, min(.5, shift)), ratio if ratio in ("124:150", "1:1", "3:4") else "124:150", max(.7, min(.95, confidence)), values.get("photos", {}) if isinstance(values.get("photos", {}), dict) else {})
         except (AttributeError, ValueError, TypeError):
             return cls()
 

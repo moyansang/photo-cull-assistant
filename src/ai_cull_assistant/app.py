@@ -26,24 +26,54 @@ GROUPING_LABELS = {"严格": "strict", "标准": "standard", "宽松": "loose"}
 class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
-        self.title("AI 选片助手 v0.4.5")
+        self.title("AI 选片助手 v0.4.6")
         self.geometry("980x780")
         self.scan_result: ScanResult | None = None
         self.settings_dir = settings_dir if settings_dir is not None else application_dir()
         self.saved_paths = load_paths(self.settings_dir)
         self.crop_settings = CropSettings.from_dict(read_values(self.settings_dir).get("face_crop", {}))
+        self.saved_options = read_values(self.settings_dir).get("options", {})
+        if not isinstance(self.saved_options, dict):
+            self.saved_options = {}
+        self._settings_pending = None
         self._build_ui()
+        for variable in (self.input_var, self.workspace_var, self.export_var, self.preset_var, self.per_page_var, self.columns_var, self.screening_var):
+            variable.trace_add("write", self._schedule_settings_save)
         self.protocol("WM_DELETE_WINDOW", self._close)
 
-    def _close(self) -> None:
+    def _option_int(self, key, default, minimum, maximum):
         try:
-            save_paths(self.settings_dir, {
-                "input": self.input_var.get(),
-                "workspace": self.workspace_var.get(),
-                "export": self.export_var.get(),
-            })
+            return max(minimum, min(maximum, int(self.saved_options.get(key, default))))
+        except (ValueError, TypeError):
+            return default
+
+    def _schedule_settings_save(self, *_):
+        if self._settings_pending:
+            self.after_cancel(self._settings_pending)
+        self._settings_pending = self.after(500, self._save_preferences)
+
+    def _save_preferences(self):
+        self._settings_pending = None
+        options = dict(self.saved_options)
+        options['grouping'] = self.preset_var.get()
+        options['screening'] = self.screening_var.get()
+        for key, variable, low, high in [('per_page',self.per_page_var,8,60), ('columns',self.columns_var,2,6)]:
+            try:
+                value = variable.get()
+                if low <= value <= high:
+                    options[key] = value
+            except tk.TclError:
+                pass  # Keep the previous valid value while a spinbox is being edited.
+        try:
+            save_values(self.settings_dir, dict(input=self.input_var.get(), workspace=self.workspace_var.get(), export=self.export_var.get(), options=options))
+            self.saved_options = options
         except OSError as exc:
-            messagebox.showwarning("目录未保存", f"无法保存目录设置，请将程序解压到可写入的文件夹。\n{exc}")
+            self._log(f"设置保存失败：{exc}")
+
+    def _close(self) -> None:
+        if self._settings_pending:
+            self.after_cancel(self._settings_pending)
+        self._save_preferences()
         self.destroy()
 
     def _build_ui(self) -> None:
@@ -53,10 +83,10 @@ class App(tk.Tk):
         self.input_var = tk.StringVar(value=self.saved_paths["input"])
         self.workspace_var = tk.StringVar(value=self.saved_paths["workspace"])
         self.export_var = tk.StringVar(value=self.saved_paths["export"])
-        self.preset_var = tk.StringVar(value="标准")
-        self.per_page_var = tk.IntVar(value=16)
-        self.columns_var = tk.IntVar(value=4)
-        self.screening_var = tk.BooleanVar(value=True)
+        self.preset_var = tk.StringVar(value=self.saved_options.get("grouping") if self.saved_options.get("grouping") in GROUPING_LABELS else "标准")
+        self.per_page_var = tk.IntVar(value=self._option_int("per_page", 16, 8, 60))
+        self.columns_var = tk.IntVar(value=self._option_int("columns", 4, 2, 6))
+        self.screening_var = tk.BooleanVar(value=self.saved_options.get("screening", True) if isinstance(self.saved_options.get("screening", True), bool) else True)
 
         row = 0
         self._path_row(frame, row, "照片文件夹", self.input_var, self._choose_input)
