@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "photo-cull-mvp"
-version = "0.4.8"
+version = "0.4.9"
 description = "Local contact-sheet based photo culling assistant"
 readme = "README.md"
 authors = [{name = "OpenAI"}]

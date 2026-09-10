@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-Write-Host "=== AI选片助手 v0.4.8 Windows 便携版构建 ==="
+Write-Host "=== AI选片助手 v0.4.9 Windows 便携版构建 ==="
 
 # 优先 Python 3.12；没有则使用系统默认 py。
 if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
@@ -58,3 +58,6 @@ Write-Host "构建完成：dist\AI选片助手\AI选片助手.exe"
 Write-Host "可继续运行 .\make_portable_zip.ps1 生成便携 ZIP。"
 
 Copy-Item -LiteralPath "lightroom" -Destination "dist/AI选片助手/lightroom" -Recurse -Force
+
+python build_manifest.py "dist/AI选片助手"
+if ($LASTEXITCODE -ne 0) { throw "程序清单生成失败" }

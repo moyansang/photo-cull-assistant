@@ -6,6 +6,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .group_editor import GroupEditor
+from .version import VERSION
+from .update_ui import UpdateController
+import sys
 from .settings import application_dir, load_paths, save_paths, read_values, save_values
 from .crop_settings import CropSettings
 from .crop_dialog import CropDialog
@@ -26,7 +29,7 @@ GROUPING_LABELS = {"严格": "strict", "标准": "standard", "宽松": "loose"}
 class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
-        self.title("AI 选片助手 v0.4.8")
+        self.title(f"AI 选片助手 v{VERSION}")
         self.geometry("980x780")
         self.scan_result: ScanResult | None = None
         self.settings_dir = settings_dir if settings_dir is not None else application_dir()
@@ -37,9 +40,12 @@ class App(tk.Tk):
             self.saved_options = {}
         self._settings_pending = None
         self._build_ui()
-        for variable in (self.input_var, self.workspace_var, self.export_var, self.preset_var, self.per_page_var, self.columns_var, self.screening_var):
+        for variable in (self.input_var, self.workspace_var, self.export_var, self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.no_updates_var):
             variable.trace_add("write", self._schedule_settings_save)
         self.protocol("WM_DELETE_WINDOW", self._close)
+        self.updates = UpdateController(self)
+        if settings_dir is None and getattr(sys, 'frozen', False) and '--self-test' not in sys.argv and not self.no_updates_var.get():
+            self.after(1500, lambda: self.updates.check() if not self.no_updates_var.get() else None)
 
     def _option_int(self, key, default, minimum, maximum):
         try:
@@ -57,6 +63,7 @@ class App(tk.Tk):
         options = dict(self.saved_options)
         options['grouping'] = self.preset_var.get()
         options['screening'] = self.screening_var.get()
+        options['no_auto_updates'] = self.no_updates_var.get()
         for key, variable, low, high in [('per_page',self.per_page_var,8,60), ('columns',self.columns_var,2,6)]:
             try:
                 value = variable.get()
@@ -88,6 +95,7 @@ class App(tk.Tk):
         self.columns_var = tk.IntVar(value=self._option_int("columns", 4, 2, 6))
         self.screening_var = tk.BooleanVar(value=self.saved_options.get("screening", True) if isinstance(self.saved_options.get("screening", True), bool) else True)
 
+        self.no_updates_var = tk.BooleanVar(value=self.saved_options.get('no_auto_updates') is True)
         row = 0
         self._path_row(frame, row, "照片文件夹", self.input_var, self._choose_input)
         row += 1
@@ -131,6 +139,8 @@ class App(tk.Tk):
         lr_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
         ttk.Button(lr_frame, text="导出 Lightroom 结果", command=self._export_lightroom_results).pack(side="left", padx=(0, 8))
         ttk.Button(lr_frame, text="LR 插件", command=self._open_lr_plugin).pack(side="left")
+        ttk.Button(lr_frame, text="检查更新", command=lambda: self.updates.check(True)).pack(side="left", padx=12)
+        ttk.Checkbutton(lr_frame, text="不再自动检查更新", variable=self.no_updates_var, command=self._save_preferences).pack(side="left")
 
         row += 1
         ttk.Label(frame, text="把 ChatGPT 返回的选片结果粘贴到这里：").grid(row=row, column=0, columnspan=6, sticky="w")
@@ -169,10 +179,14 @@ class App(tk.Tk):
             self.export_var.set(path)
 
     def _run_scan_thread(self) -> None:
+        if self.updates.busy:
+            messagebox.showinfo("提示", "请等待更新检查或下载结束。", parent=self)
+            return
         if not self.input_var.get().strip():
             messagebox.showwarning("提示", "请先选择照片文件夹")
             return
         thread = threading.Thread(target=self._run_scan, daemon=True)
+        self._scan_thread = thread
         thread.start()
 
     def _run_scan(self) -> None:
@@ -207,6 +221,9 @@ class App(tk.Tk):
             messagebox.showerror("扫描失败", str(exc))
 
     def _open_crop_settings(self) -> None:
+        if self.updates.busy:
+            messagebox.showinfo("提示", "请等待更新完成。", parent=self)
+            return
         assets = self.scan_result.assets if self.scan_result else []
         CropDialog(self, assets, self.crop_settings, self._save_crop_settings)
 
@@ -220,6 +237,9 @@ class App(tk.Tk):
             self._log("人脸细节设置已保存，下次生成联系表时使用。")
 
     def _open_group_editor(self) -> None:
+        if self.updates.busy:
+            messagebox.showinfo("提示", "请等待更新完成。", parent=self)
+            return
         if not self.scan_result:
             messagebox.showinfo("提示", "请先扫描照片。")
             return

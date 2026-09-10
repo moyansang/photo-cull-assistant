@@ -1,4 +1,4 @@
-# AI选片助手 v0.4.8
+# AI选片助手 v0.4.9
 
 Windows 便携选片工具：本地扫描照片、分组、生成联系表、修正人脸小窗；通过 Lightroom Classic 插件把评级和弃置状态写入 Catalog。
 
@@ -64,3 +64,10 @@ Python 3.12 推荐。安装 `pip install -e ".[raw,dev]"`，运行 `python -m py
 运行 `build_exe.ps1` 构建包含 LR 插件的便携目录，运行 `make_portable_zip.ps1` 生成 ZIP。
 
 SDK 参考： https://developer.adobe.com/lightroom-classic 及 Adobe SDK 文档镜像 https://lrc.mcor.dev/ 。json.lua 来源及 MIT 许可见 `lightroom/安装与使用.txt` 与库文件头。
+
+
+## 自动更新
+启动 EXE 后后台检查 GitHub 正式版。发现新版可选择下载更新；“不再自动检查更新”会记忆，手动“检查更新”仍可使用。
+下载核对 GitHub SHA256，解压后按程序文件清单校验；退出当前 EXE 后只替换清单内程序文件并重启。设置、工作区、照片和用户新增文件不在替换范围内；同名程序文件被用户修改时中止更新。复制失败尝试恢复备份，不删除整个安装目录。
+临时下载、旧程序备份与错误日志位于 Windows 临时目录 photo-cull-update-* 下。
+v0.4.8 及更早版本没有更新器，首次需手动升级到 v0.4.9；此后可通过程序更新。

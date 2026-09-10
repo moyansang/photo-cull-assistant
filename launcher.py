@@ -4,7 +4,10 @@ from ai_cull_assistant.app import main
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) == 3 and sys.argv[1] == "--self-test":
+    if len(sys.argv) == 3 and sys.argv[1] == "--install-update":
+        from ai_cull_assistant.updater import run_installer
+        run_installer(sys.argv[2])
+    elif len(sys.argv) == 3 and sys.argv[1] == "--self-test":
         from ai_cull_assistant.self_test import run
 
         run(sys.argv[2])
