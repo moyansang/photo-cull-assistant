@@ -2,7 +2,7 @@
 Set-Location $PSScriptRoot
 
 $Source = "dist\AI选片助手"
-$Output = "dist\AI选片助手-v0.4.0-portable.zip"
+$Output = "dist\AI选片助手-v0.4.1-portable.zip"
 
 if (-not (Test-Path "$Source\AI选片助手.exe")) {
     Write-Host "尚未构建 EXE，先运行 build_exe.ps1..."

@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-Write-Host "=== AI选片助手 v0.4.0 Windows 便携版构建 ==="
+Write-Host "=== AI选片助手 v0.4.1 Windows 便携版构建 ==="
 
 # 优先 Python 3.12；没有则使用系统默认 py。
 if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
@@ -43,6 +43,7 @@ pyinstaller `
     --noconsole `
     --name "AI选片助手" `
     --paths src `
+    --add-data "src/ai_cull_assistant/data;ai_cull_assistant/data" `
     --collect-data cv2 `
     --collect-binaries cv2 `
     --collect-binaries rawpy `

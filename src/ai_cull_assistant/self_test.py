@@ -14,9 +14,13 @@ def run(report_path: str) -> None:
         from PIL import Image
         from .app import App
         from .screening import _face_cascade
+        from .yunet import detect
+        import numpy as np
         from .workflow import run_scan, apply_selection_text
 
         assert not _face_cascade().empty(), "Missing face detector data"
+        assert detect(np.zeros((320, 320, 3), np.uint8)) == []
+        report["yunet_model_inference"] = True
         with tempfile.TemporaryDirectory(prefix="aicull-smoke-") as folder:
             root = Path(folder)
             app = App(settings_dir=root)

@@ -304,7 +304,7 @@ def _draw_cell(
             paste_y = y0 + 8
             canvas.paste(thumb, (paste_x, paste_y))
             if face:
-                crop = ImageOps.contain(face_crop(img, face), (124, 150))
+                crop = ImageOps.contain(face_crop(img, face, subject.head), (124, 150))
                 inset_x = x0 + 350
                 inset_y = y0 + 30
                 draw.text((inset_x, y0 + 7), "FACE", fill=TEXT_COLOR, font=small_font)
