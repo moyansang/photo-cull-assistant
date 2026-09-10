@@ -26,7 +26,7 @@ GROUPING_LABELS = {"严格": "strict", "标准": "standard", "宽松": "loose"}
 class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
-        self.title("AI 选片助手 v0.4.6")
+        self.title("AI 选片助手 v0.4.7")
         self.geometry("980x780")
         self.scan_result: ScanResult | None = None
         self.settings_dir = settings_dir if settings_dir is not None else application_dir()

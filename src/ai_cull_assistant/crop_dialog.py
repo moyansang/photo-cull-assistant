@@ -66,6 +66,7 @@ class CropDialog(tk.Toplevel):
         navigation.pack(pady=8)
         ttk.Button(navigation, text="上一张", command=lambda: self.navigate(-1)).pack(side="left", padx=6)
         ttk.Button(navigation, text="下一张", command=lambda: self.navigate(1)).pack(side="left", padx=6)
+        ttk.Button(navigation, text="下一张未标记", command=self.next_unmarked).pack(side="left", padx=6)
         ttk.Button(navigation, text="重置本张裁切", command=self.reset).pack(side="left", padx=6)
         actions = ttk.Frame(body)
         actions.pack(fill="x", pady=4)
@@ -93,6 +94,27 @@ class CropDialog(tk.Toplevel):
             self.index = (self.index + step) % len(self.assets)
             self.load_current()
             self.render()
+
+    def next_unmarked(self):
+        if not self.assets:
+            self.caption.configure(text="请先扫描照片，再查找未标记人脸。")
+            return
+        self.store_current()
+        settings = self.global_settings()
+        for step in range(1, len(self.assets) + 1):
+            index = (self.index + step) % len(self.assets)
+            asset = self.assets[index]
+            # An explicitly hidden inset is already a user decision.
+            if settings.photos.get(settings.key(asset), {}).get('hidden'):
+                continue
+            subject = detail_features(asset, settings)
+            if not subject or not subject.face:
+                self.index = index
+                self.load_current()
+                self.render()
+                self.caption.configure(text=f"{index+1}/{len(self.assets)}  ·  {asset.stem}  ·  待补选人脸")
+                return
+        self.caption.configure(text="没有待补选的人脸：已标记和手动隐藏的照片会自动跳过。")
 
     def reset(self):
         self.scale.set(1)

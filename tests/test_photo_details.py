@@ -74,3 +74,25 @@ def _check_restart(tmp_path):
         assert not app.screening_var.get() and app.input_var.get()=='E:/photos'
     finally:
         app._close()
+
+
+def test_next_unmarked_wraps_skips_hidden_and_preserves_edits(monkeypatch, tmp_path):
+    import ai_cull_assistant.crop_dialog as module
+    assets=[SimpleNamespace(primary_path=tmp_path/str(i), stem=str(i)) for i in range(4)]
+    settings=CropSettings()
+    settings.photos[settings.key(assets[2])]={'hidden':True}
+    marked={0,1}
+    monkeypatch.setattr(module, 'detail_features', lambda asset, settings: SimpleNamespace(face=(.2,.2,.2,.2) if int(asset.stem) in marked else None))
+    calls=[]
+    dialog=SimpleNamespace(assets=assets,index=1,store_current=lambda:calls.append('stored'),global_settings=lambda:settings,load_current=lambda:calls.append('loaded'),render=lambda:calls.append('rendered'),caption=SimpleNamespace(configure=lambda **kw:calls.append(kw['text'])))
+    CropDialog.next_unmarked(dialog)
+    assert dialog.index==3 and calls[:3]==['stored','loaded','rendered']
+    marked.remove(0)
+    CropDialog.next_unmarked(dialog)
+    assert dialog.index==0  # wraps past the last photo
+    marked.update({0,3})
+    CropDialog.next_unmarked(dialog)
+    assert '没有待补选' in calls[-1]
+    dialog.assets=[]
+    CropDialog.next_unmarked(dialog)
+    assert '请先扫描' in calls[-1]
