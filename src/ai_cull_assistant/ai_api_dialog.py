@@ -44,6 +44,9 @@ class ApiConfigDialog(tk.Toplevel):
         super().__init__(parent)
         self.title("AI API 配置")
         self.transient(parent)
+        self._owner = parent
+        self._previous_grab = None
+        self._poll_token = None
         self.settings_dir = Path(settings_dir)
         self.on_saved = on_saved
         self.profiles = load_profiles(self.settings_dir)
@@ -94,8 +97,14 @@ class ApiConfigDialog(tk.Toplevel):
             self._apply_new_preset(remembered_preset)
         self._sync_advanced()
         self.protocol("WM_DELETE_WINDOW", self.destroy)
-        self.after(100, self._poll_events)
-        self.grab_set()
+        self._poll_token = self.after(100, self._poll_events)
+        # The editor is an owned, modeless window. A hidden child must never
+        # hold a grab that makes the selection window impossible to operate.
+        self._previous_grab = self.grab_current()
+        if self._previous_grab is not None:
+            self._previous_grab.grab_release()
+        self.bind("<Destroy>", self._on_destroy, add="+")
+        self.reveal()
 
     def _build_ui(self) -> None:
         body = scrollable_body(self, padding=18)
@@ -392,7 +401,7 @@ class ApiConfigDialog(tk.Toplevel):
         try:
             event, value = self._events.get_nowait()
         except queue.Empty:
-            self.after(100, self._poll_events)
+            self._poll_token = self.after(100, self._poll_events)
             return
         self._worker = None
         self._busy = False
@@ -418,7 +427,7 @@ class ApiConfigDialog(tk.Toplevel):
         if self._close_pending:
             self.destroy()
             return
-        self.after(100, self._poll_events)
+        self._poll_token = self.after(100, self._poll_events)
 
     def _saved(self, profile: dict) -> None:
         self.profiles = load_profiles(self.settings_dir)
@@ -428,6 +437,33 @@ class ApiConfigDialog(tk.Toplevel):
         self._load_profile(selected)
         if self.on_saved is not None:
             self.on_saved()
+
+    def reveal(self) -> None:
+        if self._closed:
+            return
+        self.deiconify()
+        self.lift()
+        self.focus_set()
+
+    def _on_destroy(self, event) -> None:
+        if event.widget is not self:
+            return
+        self._closed = True
+        if self._poll_token:
+            try:
+                self.after_cancel(self._poll_token)
+            except tk.TclError:
+                pass
+            self._poll_token = None
+        previous = self._previous_grab
+        self._previous_grab = None
+        try:
+            if self.grab_current() is self:
+                self.grab_release()
+            if previous is not None and previous.winfo_exists() and previous.winfo_viewable() and self.grab_current() is None:
+                previous.grab_set()
+        except tk.TclError:
+            pass
 
     def destroy(self) -> None:
         if self._is_busy():

@@ -239,3 +239,38 @@ def test_reopen_preserves_answers_until_home_sheet_changes(ui, monkeypatch, tmp_
         assert all(not p.get('ai') for p in project.data['photos'].values())
     finally:
         changed._destroy_now()
+
+
+def test_api_editor_background_reopen_and_close_does_not_lock_review(ui):
+    root, dialog, project, task, batch, errors = ui
+    root.deiconify(); dialog.deiconify(); root.update()
+    dialog.grab_set()
+    dialog._configure_api();root.update()
+    editor=dialog._api_config_window
+    assert editor.winfo_exists() and root.grab_current() is None
+    editor.key_var.set('unsaved-test-key')
+    # Simulate an owned window being hidden during a foreground switch.
+    editor.withdraw();root.update()
+    assert root.grab_current() is None
+    dialog.focus_set();dialog._configure_api();root.update()
+    assert dialog._api_config_window is editor
+    assert editor.winfo_viewable() and editor.key_var.get()=='unsaved-test-key'
+    assert root.grab_current() is None
+    editor.destroy();root.update()
+    assert not editor.winfo_exists()
+    assert root.grab_current() is dialog
+    dialog._configure_api();root.update()
+    assert dialog._api_config_window is not editor
+    dialog._api_config_window.destroy()
+    root.withdraw()
+
+
+def test_closing_owner_with_api_editor_leaves_no_grab(ui):
+    root,dialog,project,task,batch,errors=ui
+    root.deiconify();dialog.deiconify();root.update()
+    dialog._configure_api();root.update()
+    editor=dialog._api_config_window
+    dialog._close();root.update()
+    assert not editor.winfo_exists() and editor._closed
+    assert root.grab_current() is None
+    root.withdraw()

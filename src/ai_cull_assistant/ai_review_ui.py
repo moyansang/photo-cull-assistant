@@ -196,6 +196,7 @@ class ReviewDialog(tk.Toplevel):
         self._api_queue: queue.Queue[tuple[Any, ...]] = queue.Queue()
         self._api_pending: list[dict[str, Any]] = []
         self._api_active = False
+        self._api_config_window = None
         self._preparing_task = False
         self._pause_requested = False
         self._closing_requested = False
@@ -822,7 +823,11 @@ class ReviewDialog(tk.Toplevel):
         try:
             from .ai_api_dialog import ApiConfigDialog
 
-            ApiConfigDialog(self, self.settings_dir, on_saved=self._refresh_profiles)
+            existing = self._api_config_window
+            if existing is not None and existing.winfo_exists():
+                existing.reveal()
+                return
+            self._api_config_window = ApiConfigDialog(self, self.settings_dir, on_saved=self._refresh_profiles)
         except Exception as exc:
             messagebox.showerror("API 配置", str(exc), parent=self)
 
