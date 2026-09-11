@@ -139,7 +139,36 @@ class ReviewProject:
         if resolved!=target or resolved.parent!=root:return
         shutil.rmtree(resolved,ignore_errors=True)
 
-    def create_task(self,assets,crop_settings,preferences,kind='initial',photo_ids=None,replace_current=False):
+    def home_sheet_signature(self, assets, crops, pages=None):
+        if pages is None:
+            # Standalone callers without a homepage use the analysis identity.
+            values=[(photo_id(a), fingerprint(a,crops), bool(a.auto_rejected)) for a in assets]
+        else:
+            values=[]
+            for page in pages:
+                path=Path(page)
+                values.append((path.name, hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None))
+        return hashlib.sha256(json.dumps(values,sort_keys=True).encode()).hexdigest()
+
+    def can_reuse_task(self, signature):
+        task=self.current_task()
+        if not task:
+            return False
+        previous=self.data.get('home_sheet_signature')
+        if previous is not None:
+            return previous==signature
+        # Upgrade existing projects without discarding their completed answers.
+        # Adopt the current sheets as baseline only if their analysis is current.
+        if any(p.get('stale') for p in self.data['photos'].values()):
+            return False
+        if any(self.data['photos'].get(pid,{}).get('fingerprint')!=fp
+               for b in task['batches'] for pid,fp in b['fingerprints'].items()):
+            return False
+        self.data['home_sheet_signature']=signature
+        self.save()
+        return True
+
+    def create_task(self,assets,crop_settings,preferences,kind='initial',photo_ids=None,replace_current=False,home_signature=None):
         self.refresh(assets,crop_settings)
         scoped=[a for a in assets if photo_ids is None or photo_id(a) in photo_ids]
         chosen=[a for a in scoped if not a.auto_rejected]
@@ -191,6 +220,7 @@ class ReviewProject:
             else:
                 self.data['tasks'].append(task)
             self.data['current_task_id']=task['id'];self.data['preferences']=dict(preferences)
+            if home_signature is not None:self.data['home_sheet_signature']=home_signature
             self.save()
         except Exception:
             self.data=previous

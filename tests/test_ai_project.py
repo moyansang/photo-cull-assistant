@@ -355,3 +355,20 @@ def test_lr_export_includes_technical_reject_without_ai(tmp_path):
     project.confirm(rejected_id,None,1)
     rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
     assert rows[1]['pick_status']==1
+
+
+def test_home_sheet_identity_ignores_timestamp_and_tracks_content(tmp_path):
+    import os
+    project,assets,task,batch=setup_project(tmp_path)
+    page=tmp_path/'main.jpg';page.write_bytes(b'first')
+    signature=project.home_sheet_signature(assets,CropSettings(),[page])
+    assert project.can_reuse_task(signature)  # migrate current valid task
+    project.ingest(task,batch,answer(task,batch))
+    os.utime(page,None)
+    assert project.home_sheet_signature(assets,CropSettings(),[page])==signature
+    restored=ReviewProject(project.workspace)
+    assert restored.can_reuse_task(signature)
+    assert restored.current_task()['id']==task['id']
+    assert all(p.get('ai') for p in restored.data['photos'].values())
+    page.write_bytes(b'changed')
+    assert not restored.can_reuse_task(restored.home_sheet_signature(assets,CropSettings(),[page]))

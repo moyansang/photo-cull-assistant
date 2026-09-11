@@ -177,6 +177,7 @@ class ReviewDialog(tk.Toplevel):
         assets: Iterable[Any],
         crop_settings: Any,
         settings_dir: str | Path,
+        home_pages=None,
     ) -> None:
         super().__init__(parent)
         self.title("AI 选片与 Lightroom 导出")
@@ -185,6 +186,7 @@ class ReviewDialog(tk.Toplevel):
         self.assets = list(assets)
         self.crop_settings = crop_settings
         self.settings_dir = Path(settings_dir)
+        self.home_pages = list(home_pages) if home_pages is not None else None
         self._asset_by_stem = {str(_asset_value(a, "stem", "")): a for a in self.assets}
         self._photo_ids: list[str] = []
         self._task_labels: dict[str, str] = {}
@@ -227,7 +229,7 @@ class ReviewDialog(tk.Toplevel):
         self.bind("<Right>", lambda _e: self._navigate_photo(1))
         self._poll_token = self.after(120, self._poll_api)
         self.grab_set()
-        self._create_task("initial")
+        self._create_task("initial", reuse_unchanged=True)
 
     # ---- layout ---------------------------------------------------------
     def _build_ui(self) -> None:
@@ -618,7 +620,7 @@ class ReviewDialog(tk.Toplevel):
                 if widget.winfo_exists():
                     widget.configure(state=state)
 
-    def _create_task(self, kind: str, photo_ids=None, *, submit_after=False) -> None:
+    def _create_task(self, kind: str, photo_ids=None, *, submit_after=False, reuse_unchanged=False) -> None:
         if self._api_active or self._preparing_task:
             return
         eligible = [a for a in self.assets if not _asset_value(a, "auto_rejected", False)]
@@ -633,8 +635,13 @@ class ReviewDialog(tk.Toplevel):
         self.status_var.set("正在准备本轮联系表，请稍候…")
         def work():
             try:
+                signature = self.project.home_sheet_signature(self.assets, self.crop_settings, self.home_pages)
+                if reuse_unchanged and self.project.can_reuse_task(signature):
+                    self._api_queue.put(("prepared", self.project.current_task(), False, True))
+                    return
                 task = self.project.create_task(self.assets, self.crop_settings, preferences,
-                    kind=kind, photo_ids=photo_ids, replace_current=(kind == "initial" and photo_ids is None))
+                    kind=kind, photo_ids=photo_ids, replace_current=(kind == "initial" and photo_ids is None),
+                    home_signature=signature)
                 self._api_queue.put(("prepared", task, submit_after))
             except Exception as exc:
                 self._api_queue.put(("prepare_error", str(exc)))
@@ -939,7 +946,7 @@ class ReviewDialog(tk.Toplevel):
                 self._refresh_tasks()
                 self._refresh_review()
                 self._refresh_export_status()
-                self.status_var.set(f"本轮已准备好，共 {len(event[1]['batches'])} 批。")
+                self.status_var.set("联系表未变化，已恢复上次任务和选片结果。" if len(event)>3 and event[3] else f"本轮已准备好，共 {len(event[1]['batches'])} 批。")
             else:
                 self.status_var.set("准备失败：" + event[1])
                 if not self._closing_requested:

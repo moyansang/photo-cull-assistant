@@ -491,7 +491,8 @@ class App(tk.Tk):
             from .ai_review_ui import ReviewDialog
             self.review_project = ReviewProject(self.scan_result.workspace_dir)
             self.review_project.refresh(self.scan_result.assets,self.crop_settings)
-            ReviewDialog(self,self.review_project,self.scan_result.assets,self.crop_settings,self.settings_dir)
+            ReviewDialog(self,self.review_project,self.scan_result.assets,self.crop_settings,self.settings_dir,
+                home_pages=list(self.scan_result.main_pages or []) + list(self.scan_result.rejected_pages or []))
         except Exception as exc:
             messagebox.showerror("AI 选片",str(exc),parent=self)
 

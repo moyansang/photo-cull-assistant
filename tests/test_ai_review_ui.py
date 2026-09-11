@@ -213,3 +213,29 @@ def test_tab_round_trip_keeps_api_layout(ui):
     dialog.notebook.select(0);root.update()
     assert layout()==before
     root.withdraw()
+
+
+def test_reopen_preserves_answers_until_home_sheet_changes(ui, monkeypatch, tmp_path):
+    root,dialog,project,task,batch,errors=ui
+    project.ingest(task,batch,answer(task,batch))
+    page=tmp_path/'main.jpg';page.write_bytes(b'unchanged')
+    signature=project.home_sheet_signature(dialog.assets,dialog.crop_settings,[page])
+    project.data['home_sheet_signature']=signature;project.save()
+    previous_id=task['id']
+    reopened=ReviewDialog(root,project,dialog.assets,dialog.crop_settings,tmp_path,home_pages=[page])
+    try:
+        drive(root,reopened)
+        assert project.current_task()['id']==previous_id
+        assert project.current_task()['batches'][0]['status']=='complete'
+        assert all(p.get('ai') for p in project.data['photos'].values())
+    finally:
+        reopened._destroy_now()
+    page.write_bytes(b'new layout')
+    changed=ReviewDialog(root,project,dialog.assets,dialog.crop_settings,tmp_path,home_pages=[page])
+    try:
+        drive(root,changed)
+        assert project.current_task()['id']!=previous_id
+        assert all(b['status']=='pending' for b in project.current_task()['batches'])
+        assert all(not p.get('ai') for p in project.data['photos'].values())
+    finally:
+        changed._destroy_now()
