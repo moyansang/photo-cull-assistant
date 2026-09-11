@@ -202,3 +202,16 @@ def test_connection_image_is_valid_rgb():
     with Image.open(io.BytesIO(dialog_module._TEST_PNG)) as im:
         im.load()
         assert im.mode == 'RGB' and im.size == (512,512)
+
+
+def test_successful_connection_saves_and_closes_without_popup(tk_root, tmp_path, monkeypatch):
+    refreshed=[]
+    dialog=ApiConfigDialog(tk_root,tmp_path,on_saved=lambda:refreshed.append(True))
+    saved=dict(dialog._form_values()[0],id='connected')
+    monkeypatch.setattr(dialog_module,'save_profile',lambda *args:saved)
+    monkeypatch.setattr(dialog_module,'call_model',lambda *args:{'text':'ok'})
+    monkeypatch.setattr(dialog_module.messagebox,'showinfo',lambda *args,**kwargs:pytest.fail('success should close directly'))
+    dialog._busy=True
+    dialog._test_worker(dialog._form_values()[0],'secret')
+    dialog._poll_events()
+    assert dialog._closed and not dialog.winfo_exists() and refreshed==[True]

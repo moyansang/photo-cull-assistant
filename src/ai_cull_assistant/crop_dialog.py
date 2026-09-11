@@ -10,13 +10,13 @@ from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 from .crop_settings import CropSettings, crop_bounds
 from .subject import asset_features, face_crop, detail_features
-from .window_layout import fit_window
+from .window_layout import fit_window, scrollable_body
 
 
 class CropDialog(tk.Toplevel):
     def __init__(self, parent, assets, settings, on_save):
         super().__init__(parent)
-        self.title("人脸细节设置")
+        self.title("检查／调整人脸框")
         self.transient(parent)
         self.assets = [a for a in assets if a.preview_path]
         self.edits = deepcopy(settings.photos)
@@ -31,8 +31,12 @@ class CropDialog(tk.Toplevel):
         self.confidence = tk.DoubleVar(value=settings.detection_confidence)
         self.ratio = tk.StringVar(value=settings.aspect_ratio)
         self._pending = None
-        body = ttk.Frame(self, padding=16)
-        body.pack(fill="both", expand=True)
+        # Reserve the action footer before allocating the scrollable content.
+        actions = ttk.Frame(self, padding=(16, 8))
+        actions.pack(side="bottom", fill="x")
+        ttk.Button(actions, text="取消", command=self.destroy).pack(side="right", padx=6)
+        ttk.Button(actions, text="保存并重新生成联系表" if self.assets else "保存设置", command=self.save).pack(side="right")
+        body = scrollable_body(self, padding=16)
         ttk.Label(
             body,
             text="小窗大小保持不变；范围增大可多留头发，负偏移向上，正偏移向下。",
@@ -78,10 +82,6 @@ class CropDialog(tk.Toplevel):
         ttk.Button(navigation, text="下一张", command=lambda: self.navigate(1)).pack(side="left", padx=6)
         ttk.Button(navigation, text="下一张未标记", command=self.next_unmarked).pack(side="left", padx=6)
         ttk.Button(navigation, text="重置本张裁切", command=self.reset).pack(side="left", padx=6)
-        actions = ttk.Frame(body)
-        actions.pack(fill="x", pady=4)
-        ttk.Button(actions, text="取消", command=self.destroy).pack(side="right", padx=6)
-        ttk.Button(actions, text="保存并重新生成联系表" if self.assets else "保存设置", command=self.save).pack(side="right")
         for variable in (self.scale, self.shift, self.ratio, self.confidence):
             variable.trace_add("write", self.schedule_preview)
         fit_window(self, (850, 790), minimum_size=(520, 440), parent=parent)

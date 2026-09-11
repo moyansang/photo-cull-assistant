@@ -97,3 +97,27 @@ def test_next_unmarked_wraps_skips_hidden_and_preserves_edits(monkeypatch, tmp_p
     dialog.assets=[]
     CropDialog.next_unmarked(dialog)
     assert '请先扫描' in calls[-1]
+
+
+def test_crop_title_and_footer_visible_on_small_screen(tmp_path, monkeypatch):
+    from ai_cull_assistant import window_layout
+    monkeypatch.setattr(window_layout,'work_area_for',lambda w:window_layout.WorkArea(0,0,800,600))
+    root=tk.Tk()
+    p=tmp_path/'sample.jpg';Image.new('RGB',(400,600),'gray').save(p)
+    a=PhotoAsset('sample',p,p,None,p,datetime.now(),'.jpg',preview_path=p)
+    try:
+        d=CropDialog(root,[a],CropSettings(),lambda s:None)
+        root.update()
+        assert d.title()=='检查／调整人脸框'
+        buttons=[]
+        def walk(w):
+            for c in w.winfo_children():
+                if isinstance(c,tk.ttk.Button) and c.cget('text') in ('取消','保存并重新生成联系表'):buttons.append(c)
+                walk(c)
+        walk(d)
+        assert len(buttons)==2
+        for b in buttons:
+            assert b.winfo_viewable()
+            assert b.winfo_rooty()+b.winfo_height()<=d.winfo_rooty()+d.winfo_height()
+    finally:
+        root.destroy()

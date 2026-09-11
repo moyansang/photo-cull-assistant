@@ -413,7 +413,8 @@ class ApiConfigDialog(tk.Toplevel):
             self._saved(saved)
             text = str(result.get("text", "")).strip()
             self.status_var.set("连接测试成功。")
-            messagebox.showinfo("连接成功", text[:500] or "API 已返回响应。", parent=self)
+            self.destroy()
+            return
         if self._close_pending:
             self.destroy()
             return

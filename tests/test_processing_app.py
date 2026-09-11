@@ -28,7 +28,7 @@ def test_busy_controls_and_stop(tmp_path):
     try:
         app._set_processing_busy(True)
         assert str(app.stop_button.cget('state'))=='normal'
-        assert str(app.clear_log_button.cget('state'))=='normal'
+        assert str(app.clear_log_button.cget('state'))=='disabled'
         assert str(app.continue_button.cget('state'))=='disabled'
         app._stop_processing()
         assert app._stop_event.is_set()

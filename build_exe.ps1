@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-Write-Host "=== AI选片助手 v0.5.7 Windows 便携版构建 ==="
+Write-Host "=== AI选片助手 v0.5.8 Windows 便携版构建 ==="
 
 # 优先 Python 3.12；没有则使用系统默认 py。
 if (-not (Get-Command py -ErrorAction SilentlyContinue)) {

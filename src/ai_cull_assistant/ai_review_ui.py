@@ -256,13 +256,10 @@ class ReviewDialog(tk.Toplevel):
         self.export_button.pack(side="right", padx=8)
 
     def _tab_changed(self, _event=None):
-        if not hasattr(self, "review_tree"):
-            return
-        if self.notebook.index(self.notebook.select()) == 2:
-            self.common_tasks.pack_forget()
+        # Keep the preference panel in place across tabs so returning never
+        # repacks the API page or changes its available area.
+        if hasattr(self, "review_tree") and self.notebook.index(self.notebook.select()) == 2:
             self._show_selected_photo()
-        elif not self.common_tasks.winfo_manager():
-            self.common_tasks.pack(fill="x", before=self.notebook)
 
     def _build_task_tab(self) -> None:
         tab = self.task_tab
@@ -503,8 +500,11 @@ class ReviewDialog(tk.Toplevel):
         self.review_tree.bind("<Double-1>", lambda _e: self._open_original())
         detail = ttk.Frame(self.review_tab)
         detail.pack(fill="both", expand=True, pady=(8, 0))
-        self.preview_label = ttk.Label(detail, text="请选择照片", anchor="center")
-        self.preview_label.pack(side="left", fill="both", expand=True)
+        preview_frame = ttk.Frame(detail, width=300, height=200)
+        preview_frame.pack(side="left", fill="both", expand=True)
+        preview_frame.pack_propagate(False)
+        self.preview_label = ttk.Label(preview_frame, text="请选择照片", anchor="center")
+        self.preview_label.pack(fill="both", expand=True)
         right = ttk.Frame(detail)
         right.pack(side="left", fill="both", expand=True, padx=(10, 0))
         ttk.Label(right, textvariable=self.review_caption_var).pack(anchor="w")

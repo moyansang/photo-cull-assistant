@@ -177,7 +177,7 @@ class App(tk.Tk):
         self.stop_button.pack(side="left", padx=(0, 8))
         self.continue_button = ttk.Button(btn_frame, text="继续处理", command=self._continue_processing, state="disabled")
         self.continue_button.pack(side="left", padx=(0, 8))
-        self.clear_log_button = ttk.Button(btn_frame, text="清空日志", command=self._clear_log)
+        self.clear_log_button = ttk.Button(btn_frame, text="清空日志和联系图", command=self._clear_log)
         self.clear_log_button.pack(side="left")
         row += 1
         second = ttk.Frame(frame)
@@ -262,7 +262,7 @@ class App(tk.Tk):
         self._display_progress("生成联系表进度：", self._scan_progress)
 
     def _set_update_busy(self, busy):
-        controls = (self.scan_button, self.continue_button, self.update_button)
+        controls = (self.scan_button, self.continue_button, self.update_button, self.clear_log_button)
         if busy:
             self._update_disabled_widgets = [(widget, str(widget.cget("state"))) for widget in controls]
             for widget, _ in self._update_disabled_widgets:
@@ -279,7 +279,7 @@ class App(tk.Tk):
             self._disabled_widgets = []
             def walk(parent):
                 for widget in parent.winfo_children():
-                    if widget in (self.stop_button, self.clear_log_button):
+                    if widget is self.stop_button:
                         continue
                     if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Spinbox, ttk.Checkbutton)):
                         self._disabled_widgets.append((widget, str(widget.cget("state"))))
@@ -430,17 +430,33 @@ class App(tk.Tk):
         self._start_processing(regenerate=True, regroup=regroup)
 
     def _clear_log(self):
+        if self._processing_busy or self.updates.busy or any(
+            isinstance(child, tk.Toplevel) and child.winfo_exists()
+            for child in self.winfo_children()
+        ):
+            messagebox.showinfo("暂不能清理", "请等待当前扫描、更新或窗口中的任务结束。", parent=self)
+            return
+        self._ensure_selected_session()
         with self._log_lock:
-            workspace = Path(self.workspace_var.get())
-            try:
-                (workspace / 'session.log').unlink(missing_ok=True)
-            except OSError as exc:
-                messagebox.showerror("清空日志失败", str(exc), parent=self)
-                return
             self._log_epoch += 1
+            from .output_cleanup import clear_generated_outputs
+            protected = []
+            if self.scan_result:
+                for asset in self.scan_result.assets:
+                    protected.extend(asset.rating_target_paths)
+            result = clear_generated_outputs(self.workspace_var.get(), protected_paths=protected)
+            if self.scan_result and self.scan_result.workspace_dir.resolve() == Path(self.workspace_var.get()).resolve():
+                self.scan_result.main_pages = []
+                self.scan_result.rejected_pages = []
             self.log_text.configure(state="normal")
             self.log_text.delete("1.0", "end")
             self.log_text.configure(state="disabled")
+        if result.errors:
+            messagebox.showwarning(
+                "部分内容未清理",
+                "以下内容未能清理：\n" + "\n".join(result.errors),
+                parent=self,
+            )
 
     def _open_contact_dir(self) -> None:
         if not self.scan_result:

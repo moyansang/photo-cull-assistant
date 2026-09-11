@@ -198,3 +198,18 @@ def test_resubmit_uses_changed_preferences_and_displays_photo_results(ui, monkey
         values=dialog.review_tree.item(pid,'values')
         assert values[0]==row['stem'] and values[2]==str(row['ai']['rating'])
         assert values[4]==row['ai']['reason']
+
+
+def test_tab_round_trip_keeps_api_layout(ui):
+    root, dialog, project, task, batch, errors = ui
+    root.deiconify(); dialog.deiconify(); root.update()
+    dialog.notebook.select(0); root.update()
+    def layout():
+        return [(w.winfo_x(),w.winfo_y(),w.winfo_width(),w.winfo_height()) for w in
+                (dialog.common_tasks,dialog.notebook,dialog.batch_tree,dialog.run_button)]
+    before=layout()
+    dialog.notebook.select(2);root.update()
+    assert dialog.common_tasks.winfo_manager()=='pack'
+    dialog.notebook.select(0);root.update()
+    assert layout()==before
+    root.withdraw()
