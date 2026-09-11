@@ -357,19 +357,25 @@ class ReviewProject:
         photo['final']=dict(rating=rating,pick_status=pick_status,confirmed=True,fingerprint=photo['fingerprint'])
         photo['stale']=False;self.data['export_dirty']=True;self.data['export_status']='待重新导出';self.save()
 
-    def export_final(self):
+    def export_final(self, ai_ratings=False):
         if self._crops is not None:self.refresh(self._assets,self._crops)
         rows=[];seen=set()
         for p in self.data['photos'].values():
             f=p['final']
-            if not f['confirmed'] or p['stale'] or f.get('fingerprint')!=p['fingerprint']:continue
-            fields={k:f[k] for k in ('rating','pick_status') if f[k] is not None}
+            if p['stale']:continue
+            if ai_ratings and not f['confirmed']:
+                ai=p.get('ai',{})
+                if ai.get('fingerprint')!=p['fingerprint'] or type(ai.get('rating')) is not int or not 1<=ai['rating']<=5:continue
+                fields={'rating':ai['rating']}
+            else:
+                if not f['confirmed'] or f.get('fingerprint')!=p['fingerprint']:continue
+                fields={k:f[k] for k in ('rating','pick_status') if f[k] is not None}
             if not fields:continue
             for path in p['target_paths']:
                 if path.casefold() in seen:raise ValueError('重复原照片路径，未导出')
                 if not Path(path).is_file():raise ValueError('原照片已移动或丢失：'+path)
                 seen.add(path.casefold());rows.append(dict(path=path,filename=Path(path).name,**fields))
-        if not rows:raise ValueError('没有已确认且有效的评级/标记可导出')
+        if not rows:raise ValueError('没有有效且未过时的评分可导出' if ai_ratings else '没有已确认且有效的评级/标记可导出')
         target=self.workspace/'lightroom_results.json'
         export_id=uuid.uuid4().hex
         atomic_json(target,dict(format='photo-cull-assistant',version=1,photos=rows,project_id=str(self.path),export_id=export_id))

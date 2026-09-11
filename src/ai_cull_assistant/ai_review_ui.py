@@ -240,6 +240,7 @@ class ReviewDialog(tk.Toplevel):
         notebook.add(self.task_tab, text="API 提交")
         notebook.add(self.web_tab, text="网页提交")
         notebook.add(self.review_tab, text="人工复核")
+        notebook.bind("<<NotebookTabChanged>>", self._tab_changed)
         self._build_task_tab()
         self._build_web_tab()
         self._build_review_tab()
@@ -247,6 +248,15 @@ class ReviewDialog(tk.Toplevel):
         footer.pack(fill="x", pady=(8, 0))
         ttk.Label(footer, textvariable=self.status_var).pack(side="left")
         ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
+
+    def _tab_changed(self, _event=None):
+        if not hasattr(self, "review_tree"):
+            return
+        if self.notebook.index(self.notebook.select()) == 2:
+            self.common_tasks.pack_forget()
+            self._show_selected_photo()
+        elif not self.common_tasks.winfo_manager():
+            self.common_tasks.pack(fill="x", before=self.notebook)
 
     def _build_task_tab(self) -> None:
         tab = self.task_tab
@@ -474,6 +484,7 @@ class ReviewDialog(tk.Toplevel):
         combo.pack(side="left", padx=8)
         combo.bind("<<ComboboxSelected>>", lambda _e: (self._refresh_review(), self._save_ui_settings()))
         ttk.Button(bar, text="导入 LR 回执", command=self._import_receipt).pack(side="right")
+        ttk.Button(bar, text="导出 AI 评分到 LR", command=self._export_ai_ratings).pack(side="right", padx=(0, 8))
         ttk.Button(bar, text="导出已确认结果", command=self._export_final).pack(side="right", padx=(0, 8))
         ttk.Label(bar, textvariable=self.export_status_var, foreground="#555555").pack(side="right", padx=12)
 
@@ -485,7 +496,7 @@ class ReviewDialog(tk.Toplevel):
         pane.add(right, weight=2)
 
         columns = ("name", "group", "ai", "final", "flag", "review", "confirmed")
-        self.review_tree = ttk.Treeview(left, columns=columns, show="tree headings", selectmode="browse")
+        self.review_tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse")
         headings = {"#0": "预览", "name": "文件名", "group": "分组", "ai": "AI", "final": "最终", "flag": "状态", "review": "待复核", "confirmed": "确认"}
         widths = {"#0": 58, "name": 150, "group": 55, "ai": 42, "final": 45, "flag": 62, "review": 150, "confirmed": 48}
         for key, label in headings.items():
@@ -1061,9 +1072,7 @@ class ReviewDialog(tk.Toplevel):
             ai = photo.get("ai") or {}
             final = photo.get("final") or {}
             review_items = ai.get("review_items") or []
-            thumb = self._make_thumb(photo, (46, 46))
-            if thumb:
-                self._tree_photos.append(thumb)
+            thumb = None
             flag = PICK_VALUES.get(final.get("pick_status"), "保持原标记")
             self.review_tree.insert(
                 "", "end", iid=str(photo_id), image=thumb or "",
@@ -1085,7 +1094,8 @@ class ReviewDialog(tk.Toplevel):
             self.review_tree.see(old)
         elif self._photo_ids:
             self.review_tree.selection_set(self._photo_ids[0])
-        self._show_selected_photo()
+        if self.notebook.index(self.notebook.select()) == 2:
+            self._show_selected_photo()
 
     def _selected_photo_id(self) -> str | None:
         if not hasattr(self, "review_tree"):
@@ -1094,6 +1104,8 @@ class ReviewDialog(tk.Toplevel):
         return selected[0] if selected else None
 
     def _show_selected_photo(self, _event: Any = None) -> None:
+        if self.notebook.index(self.notebook.select()) != 2:
+            return
         photo_id = self._selected_photo_id()
         photo = self._photos().get(photo_id or "")
         if not photo:
@@ -1178,6 +1190,17 @@ class ReviewDialog(tk.Toplevel):
             os.startfile(str(Path(path)))  # type: ignore[attr-defined]
         except Exception as exc:
             messagebox.showerror("打开原图失败", str(exc), parent=self)
+
+    def _export_ai_ratings(self) -> None:
+        try:
+            path = Path(self.project.export_final(ai_ratings=True))
+            count = len(_state(self.project).get("last_export_rows", []))
+            os.startfile(str(path.parent))
+        except Exception as exc:
+            messagebox.showerror("导出失败", str(exc), parent=self)
+            return
+        self._refresh_export_status()
+        messagebox.showinfo("到 Lightroom 复核", f"已导出 {count} 张结果到：\n{path}\n\n在 Lightroom 插件中导入此文件，再查看原图调整星级。\n优先使用已人工确认结果，其余仅导出 AI 星级，不自动应用 AI 弃置建议。", parent=self)
 
     def _export_final(self) -> None:
         try:

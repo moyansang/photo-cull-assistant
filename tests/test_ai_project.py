@@ -200,3 +200,19 @@ def test_web_submission_preserves_refine_intent_and_recovers_failed_save(tmp_pat
     submission=project.create_web_submission(task,['B001','B002'])
     assert submission['id']=='W001'
     assert '跨组精选，减少重复并统一优先级' in submission['prompt']
+
+
+def test_export_ai_ratings_for_lightroom_review(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    project.ingest(task,batch,answer(task,batch))
+    first,second=batch['photo_ids']
+    project.data['photos'][first]['ai']['suggest_reject']=True
+    payload=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
+    assert len(payload['photos'])==2
+    assert all(row['rating']==4 and 'pick_status' not in row for row in payload['photos'])
+    assert not project.data['photos'][first]['final']['confirmed']
+    project.confirm(first,5,1)
+    project.data['photos'][second]['stale']=True
+    payload=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
+    assert len(payload['photos'])==1
+    assert payload['photos'][0]['rating']==5 and payload['photos'][0]['pick_status']==1

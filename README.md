@@ -1,4 +1,4 @@
-# AI选片助手 v0.5.3
+# AI选片助手 v0.5.4
 
 Windows 便携选片工具：本地扫描照片、分组、生成联系表、修正人脸小窗；通过 Lightroom Classic 插件把评级和弃置状态写入 Catalog。
 

@@ -103,3 +103,14 @@ def test_web_import_dispatch_and_api_guard(ui, monkeypatch):
     assert batch['status'] == 'complete'
     assert all(project.data['photos'][pid]['ai']['batch_id'] == batch['id'] for pid in batch['photo_ids'])
     assert not errors
+
+
+def test_review_only_loads_selected_preview(ui,monkeypatch):
+    root,dialog,project,task,batch,errors=ui
+    calls=[]
+    monkeypatch.setattr(dialog,'_make_thumb',lambda photo,size:calls.append(size))
+    dialog.notebook.select(0);root.update();dialog._refresh_review()
+    assert not calls
+    dialog.notebook.select(2);root.update()
+    assert calls and all(size==(430,430) for size in calls)
+    assert not dialog.common_tasks.winfo_manager()
