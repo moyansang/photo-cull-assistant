@@ -87,7 +87,7 @@ def run(report_path: str) -> None:
             review = ReviewDialog(ui_app, project, result.assets, ui_app.crop_settings, root)
             review.update()
             assert len(review.review_tree.get_children()) == 1
-            assert [review.notebook.tab(t, "text") for t in review.notebook.tabs()] == ["API 提交", "网页提交", "人工复核"]
+            assert [review.notebook.tab(t, "text") for t in review.notebook.tabs()] == ["API 提交", "网页提交"]
             submission = project.create_web_submission(task, [batch["id"]])
             review._refresh_web(submission["id"])
             assert project.web_images(task, submission)

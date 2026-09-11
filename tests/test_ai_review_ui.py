@@ -71,7 +71,7 @@ def test_api_failure_stops_without_retry_and_keeps_confirmed(ui,monkeypatch):
 
 def test_web_tabs_prepare_and_restore(ui, monkeypatch):
     root, dialog, project, task, batch, errors = ui
-    assert [dialog.notebook.tab(t, 'text') for t in dialog.notebook.tabs()] == ['API 提交', '网页提交', '人工复核']
+    assert [dialog.notebook.tab(t, 'text') for t in dialog.notebook.tabs()] == ['API 提交', '网页提交']
     opened = []
     monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
     dialog.notebook.select(1)
@@ -111,6 +111,5 @@ def test_review_only_loads_selected_preview(ui,monkeypatch):
     monkeypatch.setattr(dialog,'_make_thumb',lambda photo,size:calls.append(size))
     dialog.notebook.select(0);root.update();dialog._refresh_review()
     assert not calls
-    dialog.notebook.select(2);root.update()
-    assert calls and all(size==(430,430) for size in calls)
-    assert not dialog.common_tasks.winfo_manager()
+    dialog.notebook.select(1);root.update()
+    assert not calls

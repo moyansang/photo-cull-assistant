@@ -177,7 +177,7 @@ class App(tk.Tk):
 
         row += 1
         ttk.Label(frame, text="流程：准备照片 → 分组与人脸修正 → AI 选片 → 人工复核 → Lightroom 应用").grid(row=row, column=0, columnspan=6, sticky="w", pady=8)
-        ttk.Button(second_btn_frame, text="AI 选片与人工复核", command=self._open_ai_review).pack(side="left", padx=8)
+        ttk.Button(second_btn_frame, text="AI 选片与 Lightroom 导出", command=self._open_ai_review).pack(side="left", padx=8)
         row += 1
         ttk.Label(frame, text="日志：").grid(row=row, column=0, columnspan=6, sticky="w", pady=(8, 0))
         row += 1
@@ -242,7 +242,7 @@ class App(tk.Tk):
                 self._log(f"弃置复核表：{result.contact_dir / 'rejected_review'}")
                 if result.screening_results_path:
                     self._log(f"技术筛选报告：{result.screening_results_path}")
-            self._log("扫描仅生成技术建议；请进入 AI 选片与人工复核，确认后再导出 LR 结果。")
+            self._log("扫描仅生成技术建议；请进入 AI 选片与 Lightroom 导出，选片后导出 LR 结果并在 LR 复核。")
             self._log("可先进入“编辑选片组”人工拆分/合并，再重新生成联系表。")
         except Exception as exc:
             self._log(f"扫描失败：{exc}")

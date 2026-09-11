@@ -194,3 +194,11 @@ def test_restores_exact_custom_profile_and_unsaved_preset(tk_root, tmp_path):
         assert reopened.model_var.get() == PRESETS["glm-vision-flash"]["model"]
     finally:
         reopened.destroy()
+
+
+def test_connection_image_is_valid_rgb():
+    import io
+    from PIL import Image
+    with Image.open(io.BytesIO(dialog_module._TEST_PNG)) as im:
+        im.load()
+        assert im.mode == 'RGB' and im.size == (512,512)

@@ -449,7 +449,21 @@ def call_model(
             raw = response.read(MAX_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         status = exc.code if isinstance(exc.code, int) else 0
-        raise ApiError(f"API 请求失败（HTTP {status}）。") from None
+        detail = ""
+        if status == 400:
+            try:
+                error_document = json.loads(exc.read(16384).decode("utf-8"))
+                error = error_document.get("error", {})
+                message = error.get("message", "") if isinstance(error, dict) else error
+                if isinstance(message, str):
+                    import re
+                    message = message.replace(key, "[REDACTED]")
+                    message = re.sub(r"data:image/[^\s]+", "[图片数据]", message)
+                    message = re.sub(r"[A-Za-z0-9+/=_-]{80,}", "[长数据已隐藏]", message)
+                    detail = "\n服务端原因：" + message[:800] if message else ""
+            except (ValueError, OSError, AttributeError):
+                pass
+        raise ApiError(f"API 请求失败（HTTP {status}）。" + detail) from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise ApiError("无法连接 API 服务。") from None
     if len(raw) > MAX_RESPONSE_BYTES:

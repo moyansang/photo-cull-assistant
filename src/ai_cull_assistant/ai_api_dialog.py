@@ -1,7 +1,8 @@
 """Tkinter editor for OpenAI-compatible API profiles."""
 from __future__ import annotations
 
-import base64
+import io
+from PIL import Image, ImageDraw
 import os
 from pathlib import Path
 import queue
@@ -16,10 +17,14 @@ from .ai_presets import PRESETS, matching_preset, preset_profile
 from .settings import read_values, save_values
 
 
-_TEST_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
-    "/x8AAusB9Wl2nkwAAAAASUVORK5CYII="
-)
+def _test_image():
+    image = Image.new("RGB", (512, 512), "white")
+    ImageDraw.Draw(image).rectangle((128, 128, 384, 384), fill="blue")
+    stream = io.BytesIO()
+    image.save(stream, format="PNG")
+    return stream.getvalue()
+
+_TEST_PNG = _test_image()
 _CUSTOM_PRESET_ID = "custom"
 _CUSTOM_PRESET_NAME = "自定义（OpenAI 兼容接口）"
 _DEFAULT_PRESET_ID = "qwen-vl-plus"

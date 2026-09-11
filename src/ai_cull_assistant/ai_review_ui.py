@@ -176,7 +176,7 @@ class ReviewDialog(tk.Toplevel):
         settings_dir: str | Path,
     ) -> None:
         super().__init__(parent)
-        self.title("AI 选片与人工复核")
+        self.title("AI 选片与 Lightroom 导出")
         self.geometry("1180x820")
         self.minsize(980, 680)
         self.resizable(True, True)
@@ -239,7 +239,6 @@ class ReviewDialog(tk.Toplevel):
         self.web_tab = ttk.Frame(notebook, padding=12)
         notebook.add(self.task_tab, text="API 提交")
         notebook.add(self.web_tab, text="网页提交")
-        notebook.add(self.review_tab, text="人工复核")
         notebook.bind("<<NotebookTabChanged>>", self._tab_changed)
         self._build_task_tab()
         self._build_web_tab()
@@ -248,6 +247,8 @@ class ReviewDialog(tk.Toplevel):
         footer.pack(fill="x", pady=(8, 0))
         ttk.Label(footer, textvariable=self.status_var).pack(side="left")
         ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
+        ttk.Button(footer, text="导出评分与弃置到 LR", command=self._export_ai_ratings).pack(side="right", padx=8)
+        ttk.Button(footer, text="导入 LR 回执", command=self._import_receipt).pack(side="right")
 
     def _tab_changed(self, _event=None):
         if not hasattr(self, "review_tree"):
@@ -290,7 +291,6 @@ class ReviewDialog(tk.Toplevel):
         create = ttk.Frame(prefs)
         create.grid(row=2, column=0, columnspan=6, sticky="w", pady=(10, 0))
         ttk.Button(create, text="新建全量初选", command=self._create_initial).pack(side="left", padx=(0, 8))
-        ttk.Button(create, text="重新评审所选组", command=self._create_group_review).pack(side="left", padx=(0, 8))
         ttk.Button(create, text="跨组精简候选", command=self._create_refine).pack(side="left", padx=(0, 8))
         ttk.Button(create, text="拆小本批重试", command=self._split_selected_batch).pack(side="left")
 
@@ -466,7 +466,7 @@ class ReviewDialog(tk.Toplevel):
             if issues:
                 messagebox.showwarning("回答需要修正", "原始回答已保存，选片结果未应用。\n" + "\n".join(issues), parent=self)
                 return False
-            self.status_var.set(f"网页提交 {submission['id']} 的 {len(submission['photo_ids'])} 张照片已导入，请到人工复核查看。")
+            self.status_var.set(f"网页提交 {submission['id']} 的 {len(submission['photo_ids'])} 张照片已导入，可导出到 Lightroom 复核。")
             return True
         PasteResponseDialog(self, store, title="导入合并提交的完整回答", instruction=f"粘贴网页提交 {submission['id']} 的完整 JSON 回答，软件会自动分配到各批次：")
 
@@ -556,7 +556,7 @@ class ReviewDialog(tk.Toplevel):
         if saved.get("review_filter"):
             self.filter_var.set(str(saved["review_filter"]))
         tab = saved.get("submission_tab", 0)
-        if tab in (0, 1, 2):
+        if tab in (0, 1):
             self.notebook.select(tab)
 
     def _save_ui_settings(self) -> None:
@@ -1200,7 +1200,7 @@ class ReviewDialog(tk.Toplevel):
             messagebox.showerror("导出失败", str(exc), parent=self)
             return
         self._refresh_export_status()
-        messagebox.showinfo("到 Lightroom 复核", f"已导出 {count} 张结果到：\n{path}\n\n在 Lightroom 插件中导入此文件，再查看原图调整星级。\n优先使用已人工确认结果，其余仅导出 AI 星级，不自动应用 AI 弃置建议。", parent=self)
+        messagebox.showinfo("到 Lightroom 复核", f"已导出 {count} 张结果到：\n{path}\n\n在 Lightroom 插件中导入此文件，再查看原图调整星级。\n优先使用已人工确认结果，其余导出 AI 星级和弃置建议。在 Lightroom 中查看原图复核。", parent=self)
 
     def _export_final(self) -> None:
         try:

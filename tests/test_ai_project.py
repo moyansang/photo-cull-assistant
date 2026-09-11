@@ -209,7 +209,9 @@ def test_export_ai_ratings_for_lightroom_review(tmp_path):
     project.data['photos'][first]['ai']['suggest_reject']=True
     payload=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
     assert len(payload['photos'])==2
-    assert all(row['rating']==4 and 'pick_status' not in row for row in payload['photos'])
+    assert all(row['rating']==4 for row in payload['photos'])
+    assert payload['photos'][0]['pick_status']==-1
+    assert 'pick_status' not in payload['photos'][1]
     assert not project.data['photos'][first]['final']['confirmed']
     project.confirm(first,5,1)
     project.data['photos'][second]['stale']=True
