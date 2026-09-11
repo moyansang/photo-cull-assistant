@@ -90,7 +90,10 @@ def focus_metrics(face_bgr: np.ndarray) -> dict[str, Any]:
     elif lap < 0.00150:
         state = "severe_blur"
         reasons.append("very_low_normalized_detail")
-    elif lap < 0.00330 and curvature < 0.180 and grad < 0.250 and coarse_lap < 0.00080:
+    # Broad but soft transitions can have a high gradient (eyeliner/hair).
+    # Require low fine/coarse detail and weak edge sharpness together;
+    # gradient magnitude alone must not veto this blur evidence.
+    elif lap < 0.00360 and curvature < 0.165 and coarse_lap < 0.00100:
         state = "severe_blur"
         reasons.append("weak_edges_at_both_scales")
     elif lap >= 0.00400 and curvature >= 0.180 and grad >= 0.250 and coarse_lap >= 0.00080:

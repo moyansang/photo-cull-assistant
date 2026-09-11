@@ -15,7 +15,7 @@ from .models import RAW_EXTENSIONS
 from .screening import ScreeningResult
 from .subject import detail_features
 
-VERSION = "native-face-v2"
+VERSION = "native-face-v3"
 
 
 def load_full_image(asset):

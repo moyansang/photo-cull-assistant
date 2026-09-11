@@ -64,3 +64,15 @@ def test_source_geometry_mismatch_is_not_rejected(tmp_path,monkeypatch):
     monkeypatch.setattr(face_focus,'load_full_image',lambda a:Image.new('RGB',(1000,500)))
     r=face_focus.assess_asset_focus(a)
     assert not r.rejected and r.reason=='source_preview_geometry_mismatch'
+
+
+def test_strong_but_soft_edges_do_not_hide_low_detail():
+    # Smooth high-contrast transitions have large gradients without sharp detail.
+    x = np.arange(512)
+    gray = np.tile((127.5 + 120 * np.sin(x * 2 * np.pi * 8 / 512)).astype(np.uint8), (512, 1))
+    image = np.repeat(gray[:, :, None], 3, axis=2)
+    result = focus_metrics(image)
+    assert result['fine']['gradient_p90_normalized'] > .25
+    assert result['state'] == 'severe_blur'
+    # The same pattern at insufficient native resolution is not safe to reject.
+    assert focus_metrics(image[::2, ::2])['state'] == 'uncertain'
