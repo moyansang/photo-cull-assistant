@@ -15,6 +15,7 @@ import sys
 from .settings import application_dir, load_paths, save_paths, read_values, save_values
 from .crop_settings import CropSettings
 from .crop_dialog import CropDialog
+from .window_layout import fit_window, scrollable_body
 from dataclasses import asdict
 from .workflow import (
     ScanResult,
@@ -32,7 +33,6 @@ class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
         self.title(f"AI 选片助手 v{VERSION}")
-        self.geometry("980x780")
         self.review_project = None
         self.scan_result: ScanResult | None = None
         self.settings_dir = settings_dir if settings_dir is not None else application_dir()
@@ -44,6 +44,8 @@ class App(tk.Tk):
         self._loaded_grouping = GROUPING_LABELS.get(self.saved_options.get("grouping"), "standard")
         self._processing_busy = False
         self._processing_job = None
+        self._scan_progress = 0
+        self._update_progress_active = False
         self._stop_event = threading.Event()
         self._process_events = queue.Queue()
         self._log_lock = threading.Lock()
@@ -51,6 +53,7 @@ class App(tk.Tk):
         self._close_after_stop = False
         self._settings_pending = None
         self._build_ui()
+        fit_window(self, (980, 780), minimum_size=(640, 520))
         self._restore_session()
         for variable in (self.input_var, self.workspace_var, self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.no_updates_var):
             variable.trace_add("write", self._schedule_settings_save)
@@ -135,8 +138,7 @@ class App(tk.Tk):
         self.destroy()
 
     def _build_ui(self) -> None:
-        frame = ttk.Frame(self, padding=12)
-        frame.pack(fill="both", expand=True)
+        frame = scrollable_body(self, padding=12)
 
         self.input_var = tk.StringVar(value=self.saved_paths["input"])
         self.workspace_var = tk.StringVar(value=self.saved_paths["workspace"])
@@ -169,12 +171,12 @@ class App(tk.Tk):
 
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=10)
-        ttk.Button(btn_frame, text="扫描并生成联系表", command=self._run_scan_thread).pack(side="left", padx=(0, 8))
+        self.scan_button = ttk.Button(btn_frame, text="扫描并生成联系表", command=self._run_scan_thread)
+        self.scan_button.pack(side="left", padx=(0, 8))
         self.stop_button = ttk.Button(btn_frame, text="停止处理", command=self._stop_processing, state="disabled")
         self.stop_button.pack(side="left", padx=(0, 8))
         self.continue_button = ttk.Button(btn_frame, text="继续处理", command=self._continue_processing, state="disabled")
         self.continue_button.pack(side="left", padx=(0, 8))
-        ttk.Button(btn_frame, text="重新生成联系表", command=self._regenerate_contacts).pack(side="left", padx=(0, 8))
         self.clear_log_button = ttk.Button(btn_frame, text="清空日志", command=self._clear_log)
         self.clear_log_button.pack(side="left")
         row += 1
@@ -186,25 +188,27 @@ class App(tk.Tk):
         lr_frame = ttk.Frame(frame)
         lr_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
         ttk.Button(lr_frame, text="LR 插件", command=self._open_lr_plugin).pack(side="left")
-        ttk.Button(lr_frame, text="检查更新", command=lambda: self.updates.check(True)).pack(side="left", padx=12)
+        self.update_button = ttk.Button(lr_frame, text="检查更新", command=lambda: self.updates.check(True))
+        self.update_button.pack(side="left", padx=12)
         ttk.Checkbutton(lr_frame, text="不再自动检查更新", variable=self.no_updates_var, command=self._save_preferences).pack(side="left")
         row += 1
         self.next_step_var = tk.StringVar(value="推荐下一步：扫描并生成联系表")
-        ttk.Label(frame, textvariable=self.next_step_var).grid(row=row, column=0, columnspan=6, sticky="w", pady=8)
+        ttk.Label(frame, textvariable=self.next_step_var).grid(row=row, column=0, columnspan=6, sticky="w", pady=(4, 6))
         row += 1
         self.progress_var = tk.DoubleVar(value=0)
-        self.progress_text = tk.StringVar(value="整体进度约 0%")
-        ttk.Progressbar(frame, variable=self.progress_var, maximum=100).grid(row=row, column=0, columnspan=4, sticky="ew")
-        ttk.Label(frame, textvariable=self.progress_text).grid(row=row, column=4, columnspan=2)
+        self.progress_label = tk.StringVar(value="生成联系表进度：")
+        self.progress_text = tk.StringVar(value="0%")
+        ttk.Label(frame, textvariable=self.progress_label).grid(row=row, column=0, sticky="w")
+        ttk.Progressbar(frame, variable=self.progress_var, maximum=100).grid(row=row, column=1, columnspan=4, sticky="ew", padx=(0, 8))
+        ttk.Label(frame, textvariable=self.progress_text).grid(row=row, column=5, sticky="e")
         row += 1
-        ttk.Label(frame, text="日志：").grid(row=row, column=0, columnspan=6, sticky="w", pady=(8, 0))
+        ttk.Label(frame, text="日志：").grid(row=row, column=0, columnspan=6, sticky="w", pady=(4, 0))
         row += 1
         self.log_text = tk.Text(frame, height=12, wrap="word", state="disabled")
         self.log_text.grid(row=row, column=0, columnspan=6, sticky="nsew")
 
         for col in range(6):
             frame.columnconfigure(col, weight=1)
-        frame.rowconfigure(row - 1, weight=1)
         frame.rowconfigure(row, weight=1)
 
     def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: tk.StringVar, command) -> None:
@@ -239,8 +243,35 @@ class App(tk.Tk):
 
     def _set_progress(self, value):
         value = max(0, min(100, int(value)))
+        self._scan_progress = value
+        if self._update_progress_active:
+            return
+        self._display_progress("生成联系表进度：", value)
+
+    def _display_progress(self, label, value):
         self.progress_var.set(value)
-        self.progress_text.set(f"整体进度约 {value}%")
+        self.progress_label.set(label)
+        self.progress_text.set(f"{value}%")
+
+    def _show_update_progress(self, value):
+        self._update_progress_active = True
+        self._display_progress("更新进度：", max(0, min(100, int(value))))
+
+    def _restore_scan_progress(self):
+        self._update_progress_active = False
+        self._display_progress("生成联系表进度：", self._scan_progress)
+
+    def _set_update_busy(self, busy):
+        controls = (self.scan_button, self.continue_button, self.update_button)
+        if busy:
+            self._update_disabled_widgets = [(widget, str(widget.cget("state"))) for widget in controls]
+            for widget, _ in self._update_disabled_widgets:
+                widget.configure(state="disabled")
+        else:
+            for widget, state in getattr(self, "_update_disabled_widgets", []):
+                if widget.winfo_exists():
+                    widget.configure(state=state)
+            self.continue_button.configure(state="normal" if self._processing_job else "disabled")
 
     def _set_processing_busy(self, busy):
         self._processing_busy = busy
@@ -312,7 +343,12 @@ class App(tk.Tk):
                         self.review_project = None
                         self._processing_job = None
                         self._set_progress(100)
-                        self._log(f"处理完成：{len(result.assets)} 张照片；主联系表 {len(result.main_pages or [])} 页。")
+                        rejected = sum(1 for asset in result.assets if asset.auto_rejected)
+                        eligible = len(result.assets) - rejected
+                        self._log(
+                            f"处理完成：{len(result.assets)} 张照片；初筛技术模糊/抖动弃置 {rejected} 张；"
+                            f"剩余可进入 AI 选片 {eligible} 张；主联系表 {len(result.main_pages or [])} 页。"
+                        )
                     self._set_processing_busy(False)
                     self.next_step_var.set("推荐下一步：" + ("继续处理" if self._processing_job else "AI 选片与 LR 导出"))
                     if self._close_after_stop:
@@ -349,8 +385,12 @@ class App(tk.Tk):
     def _save_crop_settings(self, settings: CropSettings) -> None:
         save_values(self.settings_dir, {"face_crop": asdict(settings)})
         self.crop_settings = settings
-        self._log("人脸设置已保存，点击继续处理或重新生成联系表应用到后续内容。")
-        self.next_step_var.set("推荐下一步：" + ("继续处理" if self._processing_job else "重新生成联系表"))
+        if self.scan_result:
+            self._log("人脸设置已保存，正在按当前设置和分组灵敏度重新生成联系表。")
+            self._regenerate_contacts()
+        else:
+            self._log("人脸设置已保存，将在下次扫描时应用。")
+            self.next_step_var.set("推荐下一步：扫描并生成联系表")
 
     def _open_group_editor(self) -> None:
         if self.updates.busy:

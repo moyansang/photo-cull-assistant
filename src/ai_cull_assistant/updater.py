@@ -133,7 +133,12 @@ def validate_install(stage, target):
     return new
 
 
-def prepare_update(release, target):
+def prepare_update(release, target, progress=None):
+    def report(percent, phase):
+        if progress:
+            progress(percent, phase)
+
+    report(0, 'download')
     work=Path(tempfile.mkdtemp(prefix='photo-cull-update-'))
     package=work/'release.zip'
     with request(release['url']) as response, package.open('wb') as stream:
@@ -143,9 +148,12 @@ def prepare_update(release, target):
             if total>release['size'] or total>1024*1024*1024:
                 raise ValueError('更新包大小异常')
             stream.write(chunk)
+            report(min(80, total*80//release['size']), 'download')
+    report(82, 'verify')
     if package.stat().st_size!=release['size'] or digest(package)!=release['sha256']:
         raise ValueError('下载不完整或 SHA256 校验失败，原程序未修改')
     stage=work/'stage'; stage.mkdir()
+    report(85, 'extract')
     with zipfile.ZipFile(package) as archive:
         members={}
         expanded=0
@@ -160,18 +168,22 @@ def prepare_update(release, target):
             members[name.casefold()]=(name,entry)
             expanded+=entry.file_size
             if expanded>2*1024*1024*1024: raise ValueError('解压大小异常')
-        for name,entry in members.values():
+        for index, (name,entry) in enumerate(members.values(), 1):
             destination=stage/name; destination.parent.mkdir(parents=True,exist_ok=True)
             with archive.open(entry) as source, destination.open('wb') as out:
                 shutil.copyfileobj(source,out)
+            report(85 + index*10//len(members), 'extract')
+    report(96, 'validate')
     new=validate_install(stage,target)
     if version_tuple(new['version'])!=version_tuple(release['version']): raise ValueError('安装包版本不匹配')
     if set(members)!={n.casefold() for n in new['files']}|{MANIFEST.casefold()}: raise ValueError('安装包文件与清单不一致')
+    report(98, 'prepare')
     helper=work/'helper'; helper.mkdir()
     shutil.copy2(target/EXE,helper/EXE)
     shutil.copytree(target/'_internal',helper/'_internal')
     plan=dict(target=str(target.resolve()),stage=str(stage),backup=str(work/'backup'),parent=os.getpid())
     path=work/'plan.json'; path.write_text(json.dumps(plan),encoding='utf-8')
+    report(100, 'ready')
     return helper/EXE,path
 
 

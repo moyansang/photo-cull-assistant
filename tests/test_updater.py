@@ -84,10 +84,16 @@ def test_prepare_download_checksum_and_file_inventory(tmp_path,monkeypatch):
     monkeypatch.setattr(u,'request',lambda url:io.BytesIO(payload))
     staging=tmp_path/'staging';staging.mkdir()
     monkeypatch.setattr(u.tempfile,'mkdtemp',lambda **kw:str(staging))
-    helper,plan=u.prepare_update(release,old)
+    updates=[]
+    helper,plan=u.prepare_update(release,old,lambda percent,phase:updates.append((percent,phase)))
     assert helper.exists()
     assert json.loads(plan.read_text('utf-8'))['target']==str(old.resolve())
     assert (old/u.EXE).read_bytes()==b'old'
+    assert updates[0]==(0,'download')
+    assert (80,'download') in updates
+    assert updates[-1]==(100,'ready')
+    assert {phase for _,phase in updates}>={'download','verify','extract','validate','prepare','ready'}
+    assert [percent for percent,_ in updates]==sorted(percent for percent,_ in updates)
     release['sha256']='0'*64
     with pytest.raises(ValueError,match='校验'):u.prepare_update(release,old)
 

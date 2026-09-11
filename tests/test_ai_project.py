@@ -39,7 +39,6 @@ def test_snapshot_prompt_and_strict_answers(tmp_path):
 
 def test_human_decisions_preserved_and_export_only_confirmed(tmp_path):
     project,assets,task,batch=setup_project(tmp_path)
-    assets[0].auto_rejected=True
     project.ingest(task,batch,answer(task,batch))
     with pytest.raises(ValueError):project.export_final()
     project.confirm(photo_id(assets[0]),5,None)
@@ -113,6 +112,123 @@ def test_explicit_split_retry_leaves_old_task_and_human_results(tmp_path):
     assert len(small['batches'])==2 and len(task['batches'])==1
     assert project.data['photos'][photo_id(assets[0])]['final']['rating']==5
     assert '同组可能未完整提供' in small['batches'][0]['prompt']
+
+
+def test_tasks_exclude_technical_rejects_from_implicit_explicit_and_refine_scopes(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    rejected=assets[1]
+    rejected.auto_rejected=True
+    rejected.screening_reason='severe_subject_blur'
+    rejected_id=photo_id(rejected)
+
+    for kind,photo_ids in [('initial',None),('initial',[photo_id(assets[0]),rejected_id]),('refine',[photo_id(assets[0]),rejected_id])]:
+        task=project.create_task(assets,CropSettings(),{},kind=kind,photo_ids=photo_ids)
+        assert [pid for batch in task['batches'] for pid in batch['photo_ids']]==[photo_id(assets[0])]
+        assert all(rejected_id not in batch['prompt'] for batch in task['batches'])
+
+    with pytest.raises(ValueError,match='没有可评审'):
+        project.create_task(assets,CropSettings(),{},photo_ids=[rejected_id])
+
+
+def test_existing_batch_cannot_be_used_after_photo_becomes_technical_reject(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[1].auto_rejected=True
+    assets[1].screening_reason='camera_shake'
+
+    with pytest.raises(ValueError,match='技术筛选'):
+        project.batch_images(task,batch)
+    with pytest.raises(ValueError,match='技术筛选'):
+        project.prompt(task,batch)
+    with pytest.raises(ValueError,match='技术筛选'):
+        project.create_web_submission(task,[batch['id']])
+
+
+def test_replacing_current_task_discards_history_and_resets_scoped_results(tmp_path):
+    project,assets,old_task,old_batch=setup_project(tmp_path)
+    project.ingest(old_task,old_batch,answer(old_task,old_batch))
+    project.confirm(photo_id(assets[0]),5,1)
+    old_task_root=project.workspace/'ai_tasks'/old_task['id']
+    assert old_task_root.is_dir()
+
+    new_task=project.create_task(assets,CropSettings(),{'intensity':'更严格'},replace_current=True)
+
+    assert project.data['tasks']==[new_task]
+    assert project.current_task() is new_task
+    assert not old_task_root.exists()
+    for asset in assets:
+        photo=project.data['photos'][photo_id(asset)]
+        assert 'ai' not in photo
+        assert photo['final']==dict(rating=None,pick_status=None,confirmed=False)
+        assert photo['history']==[] and not photo['stale']
+
+
+def test_replacement_preparation_failure_keeps_old_task_and_results(tmp_path,monkeypatch):
+    project,assets,old_task,old_batch=setup_project(tmp_path)
+    project.ingest(old_task,old_batch,answer(old_task,old_batch))
+    project.confirm(photo_id(assets[0]),5,1)
+    before=json.loads(json.dumps(project.data))
+
+    def fail_after_creating_folder(_assets,folder,**_kwargs):
+        Path(folder).mkdir(parents=True)
+        raise OSError('cannot render')
+
+    monkeypatch.setattr('ai_cull_assistant.ai_project.generate_contact_sheets',fail_after_creating_folder)
+    with pytest.raises(OSError,match='cannot render'):
+        project.create_task(assets,CropSettings(),{},replace_current=True)
+
+    assert project.data==before
+    assert {path.name for path in (project.workspace/'ai_tasks').iterdir()}=={old_task['id']}
+
+
+def test_replacement_save_failure_rolls_back_old_task_and_results(tmp_path,monkeypatch):
+    project,assets,old_task,old_batch=setup_project(tmp_path)
+    project.ingest(old_task,old_batch,answer(old_task,old_batch))
+    project.confirm(photo_id(assets[0]),5,1)
+    before=json.loads(json.dumps(project.data))
+    real_save=project.save
+    save_calls=0
+
+    def fail_commit():
+        nonlocal save_calls
+        save_calls+=1
+        if save_calls==2:raise OSError('disk full')
+        real_save()
+
+    monkeypatch.setattr(project,'save',fail_commit)
+    with pytest.raises(OSError,match='disk full'):
+        project.create_task(assets,CropSettings(),{},replace_current=True)
+
+    assert project.data==before
+    assert {path.name for path in (project.workspace/'ai_tasks').iterdir()}=={old_task['id']}
+
+
+def test_replacement_never_deletes_folder_named_by_unsafe_persisted_task_id(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    keep=project.workspace/'keep'
+    keep.mkdir()
+    (keep/'evidence.txt').write_text('keep',encoding='utf-8')
+    project.data['tasks'].append({'id':'../keep','kind':'initial','batches':[]})
+
+    project.create_task(assets,CropSettings(),{},replace_current=True)
+
+    assert (keep/'evidence.txt').read_text('utf-8')=='keep'
+
+
+def test_all_technical_rejects_can_replace_old_task_with_empty_fresh_task(tmp_path):
+    project,assets,old_task,old_batch=setup_project(tmp_path)
+    project.ingest(old_task,old_batch,answer(old_task,old_batch))
+    project.confirm(photo_id(assets[0]),5,1)
+    for asset in assets:
+        asset.auto_rejected=True
+        asset.screening_reason='severe_subject_blur'
+
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+
+    assert project.data['tasks']==[task] and task['batches']==[]
+    assert all('ai' not in project.data['photos'][photo_id(asset)] for asset in assets)
+    assert all(not project.data['photos'][photo_id(asset)]['final']['confirmed'] for asset in assets)
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    assert len(rows)==2 and all(row['pick_status']==-1 and 'rating' not in row for row in rows)
 
 
 def setup_merged_web_submission(tmp_path):
@@ -224,13 +340,18 @@ def test_lr_export_includes_technical_reject_without_ai(tmp_path):
     project,assets,task,batch=setup_project(tmp_path)
     assets[1].auto_rejected=True
     assets[1].screening_reason='severe_subject_blur'
-    project.refresh(assets,project._crops)
+    task=project.create_task(assets,project._crops,{},replace_current=True)
+    batch=task['batches'][0]
     project.ingest(task,batch,answer(task,batch))
-    project.data['photos'][batch['photo_ids'][1]].pop('ai')
+    rejected_id=photo_id(assets[1])
+    rejected=project.data['photos'][rejected_id]
+    rejected.pop('ai',None)
+    rejected['final']=dict(rating=5,pick_status=1,confirmed=True,fingerprint='older')
+    rejected['stale']=True
     rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
     assert len(rows)==2
     assert rows[0]['rating']==4
     assert rows[1]['pick_status']==-1 and 'rating' not in rows[1]
-    project.confirm(batch['photo_ids'][1],None,1)
+    project.confirm(rejected_id,None,1)
     rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
     assert rows[1]['pick_status']==1

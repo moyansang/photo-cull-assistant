@@ -8,6 +8,7 @@ from PIL import Image, ImageOps, ImageTk
 
 from .grouping import merge_adjacent_groups, split_group_at
 from .models import PhotoAsset
+from .window_layout import fit_window
 
 
 def grouped_assets(assets: list[PhotoAsset]) -> list[tuple[int, list[PhotoAsset]]]:
@@ -35,8 +36,7 @@ class GroupEditor(tk.Toplevel):
     def __init__(self, parent: tk.Misc, assets: list[PhotoAsset], on_change) -> None:
         super().__init__(parent)
         self.title("选片组编辑")
-        self.geometry("1180x820")
-        self.minsize(900, 620)
+        self.transient(parent)
         self.assets = assets
         self.on_change = on_change
         self.selected_group_id: int | None = assets[0].group_id if assets else None
@@ -44,18 +44,23 @@ class GroupEditor(tk.Toplevel):
         self._row_images: list[ImageTk.PhotoImage] = []
         self._detail_images: list[ImageTk.PhotoImage] = []
         self._build_ui()
+        fit_window(self, (1180, 820), minimum_size=(560, 420), parent=parent)
         self._redraw_rows()
         self._redraw_detail()
 
     def _build_ui(self) -> None:
         toolbar = ttk.Frame(self, padding=(10, 10, 10, 6))
         toolbar.pack(fill="x")
-        ttk.Button(toolbar, text="从所选照片拆分", command=self._split_selected).pack(side="left", padx=(0, 8))
-        ttk.Button(toolbar, text="与上一组合并", command=lambda: self._merge_neighbor(-1)).pack(side="left", padx=(0, 8))
-        ttk.Button(toolbar, text="与下一组合并", command=lambda: self._merge_neighbor(1)).pack(side="left", padx=(0, 8))
-        ttk.Label(toolbar, text="提示：先点组，再在下方点具体照片；人工修改会立即保存。") .pack(side="left", padx=12)
+        actions = ttk.Frame(toolbar)
+        actions.pack(fill="x")
+        ttk.Button(actions, text="从所选照片拆分", command=self._split_selected).pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="与上一组合并", command=lambda: self._merge_neighbor(-1)).pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="与下一组合并", command=lambda: self._merge_neighbor(1)).pack(side="left", padx=(0, 8))
         self.status_var = tk.StringVar(value="")
-        ttk.Label(toolbar, textvariable=self.status_var).pack(side="right")
+        ttk.Label(actions, textvariable=self.status_var).pack(side="right")
+        ttk.Label(toolbar, text="提示：先点组，再在下方点具体照片；人工修改会立即保存。") .pack(
+            fill="x", pady=(6, 0)
+        )
 
         upper = ttk.Frame(self, padding=(10, 0, 10, 6))
         upper.pack(fill="both", expand=True)

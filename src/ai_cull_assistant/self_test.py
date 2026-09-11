@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import tempfile
+import time
 import traceback
 
 
@@ -57,6 +58,8 @@ def run(report_path: str) -> None:
             report['native_face_analysis_and_cache'] = True
             test_app = App(settings_dir=root)
             test_app.withdraw()
+            test_app.input_var.set(str(photos))
+            test_app.workspace_var.set(str(root / "workspace"))
             test_app.scan_result = result
             result.assets[0].subject_checked = True
             result.assets[0].subject_features = SubjectFeatures('0', '0', '0', (.3,.2,.2,.2), (.2,.1,.4,.4))
@@ -72,6 +75,10 @@ def run(report_path: str) -> None:
             assert len(dialog.photos) == 1  # Blank synthetic photo is still rejected.
             dialog.navigate(1)
             dialog.save()
+            deadline = time.monotonic() + 15
+            while test_app._processing_busy and time.monotonic() < deadline:
+                test_app.update(); time.sleep(.02)
+            assert not test_app._processing_busy
             test_app._close()
             check_app = App(settings_dir=root)
             check_app.withdraw()
@@ -91,9 +98,14 @@ def run(report_path: str) -> None:
                 reason='合成测试', review_items=['原图复核'])]))
             assert project.ingest(task, batch, response) == []
             review = ReviewDialog(ui_app, project, result.assets, ui_app.crop_settings, root)
+            deadline = time.monotonic() + 15
+            while review._preparing_task and time.monotonic() < deadline:
+                review.update(); time.sleep(.02)
+            assert not review._preparing_task
+            task = project.current_task(); batch = task["batches"][0]
             review.update()
             assert len(review.review_tree.get_children()) == 1
-            assert [review.notebook.tab(t, "text") for t in review.notebook.tabs()] == ["API 选片", "网页选片"]
+            assert [review.notebook.tab(t, "text") for t in review.notebook.tabs()] == ["API 选片", "网页选片", "选片结果"]
             submission = project.create_web_submission(task, [batch["id"]])
             review._refresh_web(submission["id"])
             assert project.web_images(task, submission)

@@ -15,6 +15,7 @@ from typing import Callable
 from .ai_api import DEFAULT_TIMEOUT, call_model, load_profiles, save_profile
 from .ai_presets import PRESETS, matching_preset, preset_profile
 from .settings import read_values, save_values
+from .window_layout import fit_window, scrollable_body
 
 
 def _test_image():
@@ -42,8 +43,6 @@ class ApiConfigDialog(tk.Toplevel):
     ) -> None:
         super().__init__(parent)
         self.title("AI API 配置")
-        self.geometry("680x420")
-        self.resizable(False, False)
         self.transient(parent)
         self.settings_dir = Path(settings_dir)
         self.on_saved = on_saved
@@ -99,8 +98,7 @@ class ApiConfigDialog(tk.Toplevel):
         self.grab_set()
 
     def _build_ui(self) -> None:
-        body = ttk.Frame(self, padding=18)
-        body.pack(fill="both", expand=True)
+        body = scrollable_body(self, padding=18)
         body.columnconfigure(1, weight=1)
 
         ttk.Label(body, text="已保存配置", width=16).grid(row=0, column=0, sticky="w", pady=5)
@@ -293,10 +291,14 @@ class ApiConfigDialog(tk.Toplevel):
         visible = self.advanced_var.get() or self._preset_id() == _CUSTOM_PRESET_ID
         if visible:
             self.advanced_frame.grid()
-            self.geometry("680x590")
         else:
             self.advanced_frame.grid_remove()
-            self.geometry("680x420")
+        fit_window(
+            self,
+            (680, 590 if visible else 420),
+            minimum_size=(440, 320),
+            parent=self.master,
+        )
 
     def _remember_ui_state(self) -> None:
         try:

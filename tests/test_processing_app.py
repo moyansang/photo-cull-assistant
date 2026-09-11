@@ -1,6 +1,8 @@
 import tkinter as tk
+from types import SimpleNamespace
 from pathlib import Path
 from ai_cull_assistant.app import App
+from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.settings import save_values
 
 
@@ -33,8 +35,42 @@ def test_busy_controls_and_stop(tmp_path):
         app._set_processing_busy(False)
         assert str(app.stop_button.cget('state'))=='disabled'
         app._set_progress(45)
-        assert app.progress_text.get()=='整体进度约 45%'
+        assert app.progress_label.get()=='生成联系表进度：'
+        assert app.progress_text.get()=='45%'
     finally:app._close()
+
+
+def test_update_progress_temporarily_replaces_scan_progress_and_disables_scan(tmp_path):
+    app=make_app(tmp_path)
+    try:
+        app._set_progress(45)
+        app._set_update_busy(True)
+        app._show_update_progress(23)
+        assert app.progress_label.get()=='更新进度：'
+        assert app.progress_text.get()=='23%'
+        assert str(app.scan_button.cget('state'))=='disabled'
+        app._set_progress(60)
+        assert app.progress_text.get()=='23%'
+        app._restore_scan_progress()
+        app._set_update_busy(False)
+        assert app.progress_label.get()=='生成联系表进度：'
+        assert app.progress_text.get()=='60%'
+        assert str(app.scan_button.cget('state'))=='normal'
+    finally:app._close()
+
+
+def test_saving_face_settings_regenerates_existing_scan_without_main_button(tmp_path,monkeypatch):
+    app=make_app(tmp_path)
+    regenerated=[]
+    monkeypatch.setattr(app,'_regenerate_contacts',lambda:regenerated.append(True))
+    try:
+        app.scan_result=SimpleNamespace(assets=[])
+        app._save_crop_settings(CropSettings(scale_factor=1.2))
+        assert regenerated==[True]
+        assert not hasattr(app,'regenerate_button')
+    finally:
+        app.scan_result=None
+        app._close()
 
 
 def test_regroup_confirmation_and_layout_only(tmp_path,monkeypatch):
@@ -82,4 +118,7 @@ def test_continue_from_saved_job_updates_main_window(tmp_path):
         assert app.scan_result and len(app.scan_result.assets)==1
         assert app.progress_var.get()==100
         assert app.next_step_var.get()=='推荐下一步：AI 选片与 LR 导出'
+        log=app.log_text.get('1.0','end')
+        assert '初筛技术模糊/抖动弃置 0 张' in log
+        assert '剩余可进入 AI 选片 1 张' in log
     finally:app._close()

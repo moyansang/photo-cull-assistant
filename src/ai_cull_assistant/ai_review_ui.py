@@ -10,6 +10,7 @@ from tkinter import messagebox, ttk
 from typing import Any, Callable, Iterable
 
 from PIL import Image, ImageOps, ImageTk
+from .window_layout import fit_window, ScrollableFrame
 
 
 RATING_UNSET = "未指定 / 不修改"
@@ -75,12 +76,12 @@ class PasteResponseDialog(tk.Toplevel):
     ) -> None:
         super().__init__(parent)
         self.title(title)
-        self.geometry("760x560")
         self.transient(parent)
         self.on_submit = on_submit
         self.on_legacy = on_legacy
-        body = ttk.Frame(self, padding=12)
-        body.pack(fill="both", expand=True)
+        viewport = ScrollableFrame(self, padding=12)
+        viewport.pack(fill="both", expand=True)
+        body = viewport.content
         ttk.Label(body, text=instruction).pack(anchor="w")
         text_frame = ttk.Frame(body)
         text_frame.pack(fill="both", expand=True, pady=(6, 10))
@@ -96,6 +97,7 @@ class PasteResponseDialog(tk.Toplevel):
         if on_legacy is not None:
             ttk.Button(row, text="导入简化评级（文件名,星级）", command=self._submit_legacy).pack(side="right", padx=(0, 8))
         self.protocol("WM_DELETE_WINDOW", self.destroy)
+        fit_window(self, (760, 560), minimum_size=(480, 360), parent=parent)
         self.grab_set()
         self.text.focus_set()
 
@@ -120,11 +122,11 @@ class RawResponsesDialog(tk.Toplevel):
     def __init__(self, parent: tk.Misc, responses: Iterable[Any]) -> None:
         super().__init__(parent)
         self.title("原始回答")
-        self.geometry("900x620")
         self.transient(parent)
         self.responses = list(responses)
-        body = ttk.Frame(self, padding=12)
-        body.pack(fill="both", expand=True)
+        viewport = ScrollableFrame(self, padding=12)
+        viewport.pack(fill="both", expand=True)
+        body = viewport.content
         left = ttk.Frame(body)
         left.pack(side="left", fill="y", padx=(0, 10))
         self.listbox = tk.Listbox(left, width=26, exportselection=False)
@@ -144,6 +146,7 @@ class RawResponsesDialog(tk.Toplevel):
         else:
             self._show("本批尚无保存的原始回答。")
         ttk.Button(self, text="关闭", command=self.destroy).pack(pady=(0, 10))
+        fit_window(self, (900, 620), minimum_size=(520, 360), parent=parent)
         self.grab_set()
 
     def _select(self, _event: Any = None) -> None:
@@ -177,9 +180,6 @@ class ReviewDialog(tk.Toplevel):
     ) -> None:
         super().__init__(parent)
         self.title("AI 选片与 Lightroom 导出")
-        self.geometry("1180x820")
-        self.minsize(980, 680)
-        self.resizable(True, True)
         self.transient(parent)
         self.project = project
         self.assets = list(assets)
@@ -194,6 +194,7 @@ class ReviewDialog(tk.Toplevel):
         self._api_queue: queue.Queue[tuple[Any, ...]] = queue.Queue()
         self._api_pending: list[dict[str, Any]] = []
         self._api_active = False
+        self._preparing_task = False
         self._pause_requested = False
         self._closing_requested = False
         self._poll_token: str | None = None
@@ -214,6 +215,7 @@ class ReviewDialog(tk.Toplevel):
         self.export_status_var = tk.StringVar(value="")
         self.review_caption_var = tk.StringVar(value="请选择照片")
         self._build_ui()
+        fit_window(self, (1180, 820), minimum_size=(640, 500), parent=parent)
         self._load_saved_preferences()
         self._load_ui_settings()
         self._refresh_profiles()
@@ -225,11 +227,13 @@ class ReviewDialog(tk.Toplevel):
         self.bind("<Right>", lambda _e: self._navigate_photo(1))
         self._poll_token = self.after(120, self._poll_api)
         self.grab_set()
+        self._create_task("initial")
 
     # ---- layout ---------------------------------------------------------
     def _build_ui(self) -> None:
-        outer = ttk.Frame(self, padding=12)
-        outer.pack(fill="both", expand=True)
+        viewport = ScrollableFrame(self, padding=12)
+        viewport.pack(fill="both", expand=True)
+        outer = viewport.content
         self.common_tasks = ttk.Frame(outer)
         self.common_tasks.pack(fill="x")
         notebook = self.notebook = ttk.Notebook(outer)
@@ -239,6 +243,7 @@ class ReviewDialog(tk.Toplevel):
         self.web_tab = ttk.Frame(notebook, padding=12)
         notebook.add(self.task_tab, text="API 选片")
         notebook.add(self.web_tab, text="网页选片")
+        notebook.add(self.review_tab, text="选片结果")
         notebook.bind("<<NotebookTabChanged>>", self._tab_changed)
         self._build_task_tab()
         self._build_web_tab()
@@ -249,7 +254,6 @@ class ReviewDialog(tk.Toplevel):
         ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
         self.export_button = ttk.Button(footer, text="导出到 LR", command=self._export_ai_ratings)
         self.export_button.pack(side="right", padx=8)
-        ttk.Button(footer, text="导入 LR 回执", command=self._import_receipt).pack(side="right")
 
     def _tab_changed(self, _event=None):
         if not hasattr(self, "review_tree"):
@@ -262,15 +266,6 @@ class ReviewDialog(tk.Toplevel):
 
     def _build_task_tab(self) -> None:
         tab = self.task_tab
-        selector = ttk.LabelFrame(self.common_tasks, text="评审任务", padding=10)
-        selector.pack(fill="x")
-        ttk.Label(selector, text="任务历史").grid(row=0, column=0, sticky="w")
-        self.task_combo = ttk.Combobox(selector, textvariable=self.task_var, state="readonly", width=52)
-        self.task_combo.grid(row=0, column=1, sticky="ew", padx=8)
-        self.task_combo.bind("<<ComboboxSelected>>", lambda _e: self._select_task())
-        ttk.Button(selector, text="刷新照片状态", command=self._refresh_project).grid(row=0, column=2, padx=(0, 6))
-        selector.columnconfigure(1, weight=1)
-
         prefs = ttk.LabelFrame(self.common_tasks, text="本轮选片偏好", padding=10)
         prefs.pack(fill="x", pady=10)
         fields = (
@@ -291,14 +286,13 @@ class ReviewDialog(tk.Toplevel):
             prefs.columnconfigure(col, weight=1)
         create = ttk.Frame(prefs)
         create.grid(row=2, column=0, columnspan=6, sticky="w", pady=(10, 0))
-        ttk.Button(create, text="新建全量初选", command=self._create_initial).pack(side="left", padx=(0, 8))
         self.refine_button = ttk.Button(create, text="精选照片再选一轮", command=self._create_refine)
         self.refine_button.pack(side="left", padx=(0, 8))
 
         batches = ttk.LabelFrame(tab, text="批次", padding=8)
         batches.pack(fill="both", expand=True)
         columns = ("status", "photos", "images", "error")
-        self.batch_tree = ttk.Treeview(batches, columns=columns, show="tree headings", height=11, selectmode="browse")
+        self.batch_tree = ttk.Treeview(batches, columns=columns, show="tree headings", height=7, selectmode="browse")
         self.batch_tree.heading("#0", text="批次")
         self.batch_tree.heading("status", text="状态")
         self.batch_tree.heading("photos", text="照片")
@@ -316,16 +310,21 @@ class ReviewDialog(tk.Toplevel):
 
         api = ttk.LabelFrame(tab, text="API 自动提交", padding=8)
         api.pack(fill="x", pady=(10, 0))
-        ttk.Label(api, text="配置").pack(side="left")
-        self.profile_combo = ttk.Combobox(api, textvariable=self.profile_var, state="readonly", width=34)
-        self.profile_combo.pack(side="left", padx=8)
+        ttk.Label(api, text="配置").grid(row=0, column=0, sticky="w")
+        self.profile_combo = ttk.Combobox(api, textvariable=self.profile_var, state="readonly", width=24)
+        self.profile_combo.grid(row=0, column=1, sticky="ew", padx=8)
         self.profile_combo.bind("<<ComboboxSelected>>", lambda _e: self._save_ui_settings())
-        ttk.Button(api, text="配置 API", command=self._configure_api).pack(side="left", padx=(0, 8))
-        self.run_button = ttk.Button(api, text="开始 / 继续未完成批次", command=self._start_api)
+        ttk.Button(api, text="配置 API", command=self._configure_api).grid(row=0, column=2, padx=8)
+        api.columnconfigure(1, weight=1)
+        actions = ttk.Frame(api)
+        actions.grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.run_button = ttk.Button(actions, text="开始 / 继续未完成批次", command=self._start_api)
         self.run_button.pack(side="left", padx=(0, 8))
-        self.pause_button = ttk.Button(api, text="完成当前批后暂停", command=self._pause_api, state="disabled")
+        self.resubmit_button = ttk.Button(actions, text="重新提交", command=self._resubmit_api)
+        self.resubmit_button.pack(side="left", padx=(0, 8))
+        self.pause_button = ttk.Button(actions, text="完成当前批后暂停", command=self._pause_api, state="disabled")
         self.pause_button.pack(side="left")
-        self.split_button = ttk.Button(api, text="拆分所选批次重试", command=self._split_selected_batch)
+        self.split_button = ttk.Button(actions, text="拆分所选批次重试", command=self._split_selected_batch)
         self.split_button.pack(side="left", padx=(8, 0))
         ttk.Button(tab, text="查看所选批次原始回答", command=self._show_raw_responses).pack(anchor="w", pady=(8, 0))
 
@@ -482,55 +481,41 @@ class ReviewDialog(tk.Toplevel):
         bar = ttk.Frame(self.review_tab)
         bar.pack(fill="x", pady=(0, 8))
         ttk.Label(bar, text="筛选").pack(side="left")
-        filters = ("全部", "尚未确认", "待复核", "AI 建议弃置", "4～5 星", "结果已过时", "回答缺失或异常")
-        combo = ttk.Combobox(bar, textvariable=self.filter_var, values=filters, state="readonly", width=20)
+        combo = ttk.Combobox(bar, textvariable=self.filter_var, values=("全部", "待复核", "AI 建议弃置", "4～5 星", "回答缺失或异常"), state="readonly", width=18)
         combo.pack(side="left", padx=8)
         combo.bind("<<ComboboxSelected>>", lambda _e: (self._refresh_review(), self._save_ui_settings()))
-        ttk.Button(bar, text="导入 LR 回执", command=self._import_receipt).pack(side="right")
-        ttk.Button(bar, text="导出 AI 评分到 LR", command=self._export_ai_ratings).pack(side="right", padx=(0, 8))
-        ttk.Button(bar, text="导出已确认结果", command=self._export_final).pack(side="right", padx=(0, 8))
-        ttk.Label(bar, textvariable=self.export_status_var, foreground="#555555").pack(side="right", padx=12)
-
-        pane = ttk.Panedwindow(self.review_tab, orient="horizontal")
-        pane.pack(fill="both", expand=True)
-        left = ttk.Frame(pane)
-        right = ttk.Frame(pane, padding=(12, 0, 0, 0))
-        pane.add(left, weight=3)
-        pane.add(right, weight=2)
-
-        columns = ("name", "group", "ai", "final", "flag", "review", "confirmed")
-        self.review_tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse")
-        headings = {"#0": "预览", "name": "文件名", "group": "分组", "ai": "AI", "final": "最终", "flag": "状态", "review": "待复核", "confirmed": "确认"}
-        widths = {"#0": 58, "name": 150, "group": 55, "ai": 42, "final": 45, "flag": 62, "review": 150, "confirmed": 48}
-        for key, label in headings.items():
+        ttk.Label(bar, textvariable=self.export_status_var).pack(side="right")
+        table = ttk.Frame(self.review_tab)
+        table.pack(fill="both", expand=True)
+        columns = ("name", "group", "ai", "flag", "reason")
+        self.review_tree = ttk.Treeview(table, columns=columns, show="headings", selectmode="browse", height=8)
+        for key, label, width in (("name", "照片", 145), ("group", "分组", 55), ("ai", "星级", 60), ("flag", "是否弃置", 120), ("reason", "对应 AI 回复", 480)):
             self.review_tree.heading(key, text=label)
-            self.review_tree.column(key, width=widths[key], stretch=key in {"name", "review"})
-        review_scroll = ttk.Scrollbar(left, orient="vertical", command=self.review_tree.yview)
-        self.review_tree.configure(yscrollcommand=review_scroll.set)
-        self.review_tree.pack(side="left", fill="both", expand=True)
-        review_scroll.pack(side="right", fill="y")
+            self.review_tree.column(key, width=width, minwidth=45, stretch=key in {"name", "reason"})
+        scroll = ttk.Scrollbar(table, orient="vertical", command=self.review_tree.yview)
+        horizontal = ttk.Scrollbar(table, orient="horizontal", command=self.review_tree.xview)
+        self.review_tree.configure(yscrollcommand=scroll.set, xscrollcommand=horizontal.set)
+        self.review_tree.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        horizontal.grid(row=1, column=0, sticky="ew")
+        table.rowconfigure(0, weight=1); table.columnconfigure(0, weight=1)
         self.review_tree.bind("<<TreeviewSelect>>", self._show_selected_photo)
         self.review_tree.bind("<Double-1>", lambda _e: self._open_original())
-
-        ttk.Label(right, textvariable=self.review_caption_var, font=("TkDefaultFont", 11, "bold")).pack(anchor="w")
-        self.preview_label = ttk.Label(right, text="无预览", anchor="center")
-        self.preview_label.pack(fill="both", expand=True, pady=8)
-        ttk.Button(right, text="打开原图", command=self._open_original).pack(anchor="w")
-        details_frame = ttk.LabelFrame(right, text="AI 与技术说明", padding=8)
-        details_frame.pack(fill="x", pady=8)
-        self.details = tk.Text(details_frame, height=8, wrap="word", state="disabled")
-        self.details.pack(fill="x")
-        final = ttk.LabelFrame(right, text="人工最终结果", padding=8)
-        final.pack(fill="x")
-        ttk.Label(final, text="星级").grid(row=0, column=0, sticky="w")
-        ttk.Combobox(final, textvariable=self.rating_var, values=(RATING_UNSET, "1", "2", "3", "4", "5"), state="readonly", width=18).grid(row=0, column=1, sticky="w", padx=(6, 18))
-        ttk.Label(final, text="旗标").grid(row=0, column=2, sticky="w")
-        ttk.Combobox(final, textvariable=self.pick_var, values=tuple(PICK_LABELS), state="readonly", width=12).grid(row=0, column=3, sticky="w", padx=6)
-        ttk.Button(final, text="确认并保存", command=self._confirm_photo).grid(row=1, column=0, columnspan=4, sticky="ew", pady=(10, 0))
-        nav = ttk.Frame(right)
-        nav.pack(fill="x", pady=(8, 0))
-        ttk.Button(nav, text="上一张", command=lambda: self._navigate_photo(-1)).pack(side="left")
-        ttk.Button(nav, text="下一张", command=lambda: self._navigate_photo(1)).pack(side="left", padx=8)
+        detail = ttk.Frame(self.review_tab)
+        detail.pack(fill="both", expand=True, pady=(8, 0))
+        self.preview_label = ttk.Label(detail, text="请选择照片", anchor="center")
+        self.preview_label.pack(side="left", fill="both", expand=True)
+        right = ttk.Frame(detail)
+        right.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        ttk.Label(right, textvariable=self.review_caption_var).pack(anchor="w")
+        details_frame = ttk.Frame(right)
+        details_frame.pack(fill="both", expand=True)
+        self.details = tk.Text(details_frame, height=6, width=45, wrap="word", state="disabled")
+        detail_scroll = ttk.Scrollbar(details_frame, command=self.details.yview)
+        self.details.configure(yscrollcommand=detail_scroll.set)
+        self.details.pack(side="left", fill="both", expand=True)
+        detail_scroll.pack(side="right", fill="y")
+        ttk.Button(right, text="打开原图", command=self._open_original).pack(anchor="w", pady=6)
 
     # ---- project/task helpers ------------------------------------------
     def _photos(self) -> dict[str, dict[str, Any]]:
@@ -574,14 +559,7 @@ class ReviewDialog(tk.Toplevel):
         self._safe_save()
 
     def _current_task(self) -> dict[str, Any] | None:
-        wanted = self._task_labels.get(self.task_var.get())
-        if wanted:
-            return next((task for task in self._tasks() if _task_id(task) == wanted), None)
-        try:
-            task = self.project.current_task()
-            return task if isinstance(task, dict) else None
-        except Exception:
-            return self._tasks()[-1] if self._tasks() else None
+        return self.project.current_task()
 
     def _selected_batch(self) -> dict[str, Any] | None:
         task = self._current_task()
@@ -591,30 +569,7 @@ class ReviewDialog(tk.Toplevel):
         wanted = selection[0]
         return next((batch for batch in task.get("batches", []) if _batch_id(batch) == wanted), None)
 
-    def _refresh_tasks(self, select_current: bool = False, selected_id: str | None = None) -> None:
-        tasks = self._tasks()
-        self._task_labels.clear()
-        values: list[str] = []
-        for index, task in enumerate(tasks, 1):
-            kind = "跨组精简" if task.get("kind") == "refine" else "组内初选"
-            label = f"{index}. {kind} · {_task_id(task)}"
-            self._task_labels[label] = _task_id(task)
-            values.append(label)
-        self.task_combo.configure(values=values)
-        wanted = selected_id
-        if select_current and not wanted:
-            try:
-                current = self.project.current_task()
-                wanted = _task_id(current) if isinstance(current, dict) else None
-            except Exception:
-                wanted = None
-        chosen = next((label for label, value in self._task_labels.items() if value == wanted), None)
-        if chosen:
-            self.task_var.set(chosen)
-        elif values and self.task_var.get() not in values:
-            self.task_var.set(values[-1])
-        elif not values:
-            self.task_var.set("")
+    def _refresh_tasks(self, select_current=False, selected_id=None) -> None:
         self._refresh_batches()
 
     def _select_task(self) -> None:
@@ -647,27 +602,51 @@ class ReviewDialog(tk.Toplevel):
             self.batch_tree.selection_set(children[0])
         self._refresh_web()
 
-    def _create_task(self, kind: str, photo_ids: list[str] | None = None) -> None:
-        if self._api_active:
-            messagebox.showinfo("新建任务", "请先等待当前 API 请求结束或暂停。", parent=self)
+    def _set_preparing(self, preparing):
+        self._preparing_task = preparing
+        if preparing:
+            self._prepare_controls = []
+            def walk(parent):
+                for widget in parent.winfo_children():
+                    if isinstance(widget, (ttk.Button, ttk.Combobox, ttk.Entry)):
+                        self._prepare_controls.append((widget, str(widget.cget("state"))))
+                        widget.configure(state="disabled")
+                    walk(widget)
+            walk(self)
+        else:
+            for widget, state in getattr(self, "_prepare_controls", []):
+                if widget.winfo_exists():
+                    widget.configure(state=state)
+
+    def _create_task(self, kind: str, photo_ids=None, *, submit_after=False) -> None:
+        if self._api_active or self._preparing_task:
             return
-        if not self.assets:
-            messagebox.showinfo("新建任务", "当前没有可评审的照片。", parent=self)
+        eligible = [a for a in self.assets if not _asset_value(a, "auto_rejected", False)]
+        if photo_ids == []:
+            self.status_var.set("没有可提交 AI 的照片；初筛弃置结果仍可导出到 LR。")
             return
-        if photo_ids is not None and not photo_ids:
-            messagebox.showinfo("新建任务", "当前范围没有符合条件的照片。", parent=self)
+        # Collect retired Tk variable/image cycles on the Tk thread before CPU work.
+        import gc
+        gc.collect()
+        preferences = self._preferences()
+        self._set_preparing(True)
+        self.status_var.set("正在准备本轮联系表，请稍候…")
+        def work():
+            try:
+                task = self.project.create_task(self.assets, self.crop_settings, preferences,
+                    kind=kind, photo_ids=photo_ids, replace_current=(kind == "initial" and photo_ids is None))
+                self._api_queue.put(("prepared", task, submit_after))
+            except Exception as exc:
+                self._api_queue.put(("prepare_error", str(exc)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _resubmit_api(self):
+        if self._api_active or self._preparing_task:
             return
-        try:
-            task = self.project.create_task(
-                self.assets, self.crop_settings, self._preferences(), kind=kind, photo_ids=photo_ids
-            )
-            self.project.save()
-        except Exception as exc:
-            messagebox.showerror("新建任务失败", str(exc), parent=self)
+        if not self._profile_labels.get(self.profile_var.get()):
+            messagebox.showinfo("重新提交", "请先保存并选择 API 配置。", parent=self)
             return
-        self._refresh_tasks(selected_id=_task_id(task))
-        self._refresh_review()
-        self.status_var.set(f"已创建任务 {_task_id(task)}，共 {len(task.get('batches', []))} 批。")
+        self._create_task("initial", submit_after=True)
 
     def _create_initial(self) -> None:
         self._create_task("initial")
@@ -841,7 +820,7 @@ class ReviewDialog(tk.Toplevel):
             messagebox.showerror("API 配置", str(exc), parent=self)
 
     def _start_api(self) -> None:
-        if self._api_active:
+        if self._api_active or self._preparing_task:
             return
         task = self._current_task()
         profile = self._profile_labels.get(self.profile_var.get())
@@ -889,7 +868,7 @@ class ReviewDialog(tk.Toplevel):
         self._api_active = True
         self.run_button.configure(state="disabled")
         self.pause_button.configure(state="normal")
-        self.task_combo.configure(state="disabled")
+        self.resubmit_button.configure(state="disabled")
         self._start_next_api_batch()
 
     def _start_next_api_batch(self) -> None:
@@ -954,6 +933,23 @@ class ReviewDialog(tk.Toplevel):
         return task, batch
 
     def _handle_api_event(self, event: tuple[Any, ...]) -> None:
+        if event[0] in ("prepared", "prepare_error"):
+            self._set_preparing(False)
+            if event[0] == "prepared":
+                self._refresh_tasks()
+                self._refresh_review()
+                self._refresh_export_status()
+                self.status_var.set(f"本轮已准备好，共 {len(event[1]['batches'])} 批。")
+            else:
+                self.status_var.set("准备失败：" + event[1])
+                if not self._closing_requested:
+                    messagebox.showerror("准备 AI 选片失败", event[1], parent=self)
+            if self._closing_requested:
+                self._save_ui_settings()
+                self._destroy_now()
+            elif event[0] == "prepared" and event[2]:
+                self._start_api()
+            return
         kind, task_id, batch_id = event[:3]
         task, batch = self._find_task_batch(task_id, batch_id)
         if not task or not batch:
@@ -1007,7 +1003,7 @@ class ReviewDialog(tk.Toplevel):
         self._api_pending.clear()
         self.run_button.configure(state="normal")
         self.pause_button.configure(state="disabled")
-        self.task_combo.configure(state="readonly")
+        self.resubmit_button.configure(state="normal")
         self.status_var.set(message)
         if self._closing_requested:
             self._save_ui_settings()
@@ -1076,20 +1072,14 @@ class ReviewDialog(tk.Toplevel):
             final = photo.get("final") or {}
             review_items = ai.get("review_items") or []
             thumb = None
-            flag = PICK_VALUES.get(final.get("pick_status"), "保持原标记")
-            self.review_tree.insert(
-                "", "end", iid=str(photo_id), image=thumb or "",
-                values=(
-                    photo.get("stem") or Path(str(photo.get("path", ""))).stem,
-                    str(photo.get("group_id", "")),
-                    "" if ai.get("rating") is None else ai.get("rating"),
-                    "" if final.get("rating") is None else final.get("rating"),
-                    flag,
-                    "；".join(map(str, review_items)),
-                    "是" if final.get("confirmed") else "否",
-                ),
-                tags=("stale",) if photo.get("stale") else (),
-            )
+            technical = bool(photo.get("technical_reason"))
+            flag = "是（初筛）" if technical else ("是" if ai.get("suggest_reject") else "否" if ai else "待选片")
+            reason = "主体虚焦／抖动，未提交 AI" if technical else (ai.get("reason") or "尚无 AI 回复")
+            self.review_tree.insert("", "end", iid=str(photo_id), values=(
+                photo.get("stem") or Path(str(photo.get("path", ""))).stem,
+                str(photo.get("group_id", "")),
+                "" if ai.get("rating") is None or technical else ai.get("rating"),
+                flag, reason), tags=("stale",) if photo.get("stale") else ())
             self._photo_ids.append(str(photo_id))
         self.review_tree.tag_configure("stale", foreground="#b05a00")
         if old and old in self._photo_ids:
@@ -1120,7 +1110,7 @@ class ReviewDialog(tk.Toplevel):
             self.pick_var.set("保持原标记")
             return
         final = photo.get("final") or {}
-        ai = photo.get("ai") or {}
+        ai = {} if photo.get("technical_reason") else (photo.get("ai") or {})
         self.review_caption_var.set(f"{photo.get('stem', photo_id)}  ·  分组 {photo.get('group_id', '')}{'  ·  结果已过时' if photo.get('stale') else ''}")
         suggested_rating = ai.get("rating") if not final.get("confirmed") else None
         visible_rating = final.get("rating") if final.get("rating") is not None else suggested_rating
@@ -1136,7 +1126,10 @@ class ReviewDialog(tk.Toplevel):
             f"解析异常：{photo.get('error') or '无'}"
         )
         self._set_details(details)
-        thumb = self._make_thumb(photo, (430, 430))
+        self.update_idletasks()
+        width = max(100, min(420, self.preview_label.winfo_width()))
+        height = max(80, min(300, self.preview_label.winfo_height()))
+        thumb = self._make_thumb(photo, (width, height))
         self._preview_photo = thumb
         self.preview_label.configure(image=thumb or "", text="" if thumb else "预览不可用")
 
@@ -1254,28 +1247,12 @@ class ReviewDialog(tk.Toplevel):
     def _refresh_export_status(self) -> None:
         self.export_status_var.set("导出状态：" + str(_state(self.project).get("export_status", "未导出")))
 
-    def _import_receipt(self) -> None:
-        def submit(raw: str) -> bool:
-            try:
-                status = self.project.import_receipt(raw)
-            except Exception as exc:
-                messagebox.showerror("导入 Lightroom 回执失败", str(exc), parent=self)
-                return False
-            self._refresh_export_status()
-            self.status_var.set(str(status))
-            messagebox.showinfo("Lightroom 回执", str(status), parent=self)
-            return True
-
-        PasteResponseDialog(
-            self,
-            submit,
-            title="导入 Lightroom 回执",
-            instruction="粘贴 Lightroom 插件“查看上次导入报告”中的完整 JSON：",
-            submit_text="校验并导入回执",
-        )
-
     # ---- lifetime ------------------------------------------------------
     def _close(self) -> None:
+        if self._preparing_task:
+            self._closing_requested = True
+            self.status_var.set("正在保存本轮任务，完成后关闭…")
+            return
         if self._api_active:
             self._pause_requested = True
             self._closing_requested = True

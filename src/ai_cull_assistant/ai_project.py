@@ -1,5 +1,6 @@
 """Persistent AI suggestions and human decisions, with immutable review batches."""
 from collections import Counter, OrderedDict
+import copy
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import hashlib
@@ -113,7 +114,8 @@ class ReviewProject:
             row.update(id=pid,stem=asset.stem,path=str(asset.primary_path.resolve()),
                 target_paths=[str(p.resolve()) for p in asset.rating_target_paths],
                 preview_path=str(asset.preview_path) if asset.preview_path else '',group_id=asset.group_id,
-                fingerprint=fp,technical_reason=asset.screening_reason if asset.auto_rejected else '')
+                fingerprint=fp,technical_rejected=bool(asset.auto_rejected),
+                technical_reason=asset.screening_reason if asset.auto_rejected else '')
             row.setdefault('final',dict(rating=None,pick_status=None,confirmed=False))
             row.setdefault('stale',False);row.setdefault('history',[])
             active[pid]=row
@@ -128,10 +130,20 @@ class ReviewProject:
     def current_task(self):
         return next((t for t in self.data['tasks'] if t['id']==self.data.get('current_task_id')),self.data['tasks'][-1] if self.data['tasks'] else None)
 
-    def create_task(self,assets,crop_settings,preferences,kind='initial',photo_ids=None):
+    def _remove_task_folder(self,task_id):
+        if not isinstance(task_id,str) or not re.fullmatch(r'[0-9a-f]{32}',task_id):return
+        root=(self.workspace/'ai_tasks').resolve()
+        target=root/task_id
+        try:resolved=target.resolve()
+        except OSError:return
+        if resolved!=target or resolved.parent!=root:return
+        shutil.rmtree(resolved,ignore_errors=True)
+
+    def create_task(self,assets,crop_settings,preferences,kind='initial',photo_ids=None,replace_current=False):
         self.refresh(assets,crop_settings)
-        chosen=[a for a in assets if photo_ids is None or photo_id(a) in photo_ids]
-        if not chosen:raise ValueError('没有可评审的照片')
+        scoped=[a for a in assets if photo_ids is None or photo_id(a) in photo_ids]
+        chosen=[a for a in scoped if not a.auto_rejected]
+        if not chosen and not replace_current:raise ValueError('没有可评审的照片')
         task=dict(id=uuid.uuid4().hex,kind=kind,preferences=dict(preferences),created_at=datetime.now(timezone.utc).isoformat(),batches=[],web_submissions=[])
         groups=OrderedDict()
         for a in chosen:groups.setdefault(a.group_id,[]).append(a)
@@ -145,28 +157,70 @@ class ReviewProject:
             current.extend(group)
         if current:chunks.append(current)
         task_root=self.workspace/'ai_tasks'/task['id']
-        for i,chunk in enumerate(chunks,1):
-            bid=f'B{i:03d}';folder=task_root/bid
-            labeled=[replace(a,stem=photo_id(a)) for a in chunk]
-            images=generate_contact_sheets(labeled,folder,photos_per_page=12,columns=3,crop_settings=crop_settings)
-            ids=[photo_id(a) for a in chunk]
-            manifest='\n'.join(f"{photo_id(a)} | 文件名：{a.primary_path.name} | G{a.group_id:03d}" for a in chunk)
-            prompt=PROMPT.format(kind='跨组比较候选，减少重复并统一优先级' if kind=='refine' else '组内初选',
-                preferences=json.dumps({k:v for k,v in preferences.items() if not k.startswith('_')},ensure_ascii=False),task_id=task['id'],batch_id=bid,manifest=manifest)
-            if '_split_limit' in preferences:
-                prompt='本次因接口限制拆为较小批次，同组可能未完整提供；只比较本批，跨批优劣交由后续人工复核。\n'+prompt
-            batch=dict(id=bid,photo_ids=ids,status='pending',prompt=prompt,image_paths=[str(p.resolve()) for p in images],
-                image_hashes=[hashlib.sha256(p.read_bytes()).hexdigest() for p in images],
-                fingerprints={pid:self.data['photos'][pid]['fingerprint'] for pid in ids},error='',raw_responses=[])
-            (folder/'prompt.txt').write_text(prompt,encoding='utf-8')
-            task['batches'].append(batch)
-        self.data['tasks'].append(task);self.data['current_task_id']=task['id'];self.data['preferences']=dict(preferences)
-        self.save();return task
+        try:
+            for i,chunk in enumerate(chunks,1):
+                bid=f'B{i:03d}';folder=task_root/bid
+                labeled=[replace(a,stem=photo_id(a)) for a in chunk]
+                images=generate_contact_sheets(labeled,folder,photos_per_page=12,columns=3,crop_settings=crop_settings)
+                ids=[photo_id(a) for a in chunk]
+                manifest='\n'.join(f"{photo_id(a)} | 文件名：{a.primary_path.name} | G{a.group_id:03d}" for a in chunk)
+                prompt=PROMPT.format(kind='跨组比较候选，减少重复并统一优先级' if kind=='refine' else '组内初选',
+                    preferences=json.dumps({k:v for k,v in preferences.items() if not k.startswith('_')},ensure_ascii=False),task_id=task['id'],batch_id=bid,manifest=manifest)
+                if '_split_limit' in preferences:
+                    prompt='本次因接口限制拆为较小批次，同组可能未完整提供；只比较本批，跨批优劣交由后续人工复核。\n'+prompt
+                batch=dict(id=bid,photo_ids=ids,status='pending',prompt=prompt,image_paths=[str(p.resolve()) for p in images],
+                    image_hashes=[hashlib.sha256(p.read_bytes()).hexdigest() for p in images],
+                    fingerprints={pid:self.data['photos'][pid]['fingerprint'] for pid in ids},error='',raw_responses=[])
+                (folder/'prompt.txt').write_text(prompt,encoding='utf-8')
+                task['batches'].append(batch)
+        except Exception:
+            if replace_current:self._remove_task_folder(task['id'])
+            raise
 
-    def prompt(self,task,batch):return batch['prompt']
+        previous=copy.deepcopy(self.data)
+        previous_task_ids=[old.get('id') for old in self.data['tasks'] if isinstance(old,dict)]
+        try:
+            if replace_current:
+                for asset in scoped:
+                    photo=self.data['photos'][photo_id(asset)]
+                    photo.pop('ai',None)
+                    photo.update(final=dict(rating=None,pick_status=None,confirmed=False),history=[],stale=False,error='')
+                self.data['tasks']=[task]
+                self.data['export_dirty']=True
+                self.data['export_status']='已创建新评审任务，等待重新评审并导出'
+            else:
+                self.data['tasks'].append(task)
+            self.data['current_task_id']=task['id'];self.data['preferences']=dict(preferences)
+            self.save()
+        except Exception:
+            self.data=previous
+            if replace_current:self._remove_task_folder(task['id'])
+            raise
+        if replace_current:
+            for old_id in previous_task_ids:
+                if old_id!=task['id']:
+                    self._remove_task_folder(old_id)
+        return task
+
+    @staticmethod
+    def _technical_rejected(photo):
+        return bool(photo.get('technical_rejected') or photo.get('technical_reason'))
+
+    def _validate_ai_photos(self,photo_ids,context):
+        for pid in photo_ids:
+            photo=self.data['photos'].get(pid)
+            if photo is None:raise ValueError(f'照片已不在当前项目中：{pid}')
+            if self._technical_rejected(photo):
+                raise ValueError(f'{context}包含当前技术筛选已弃置的照片，请创建新评审任务')
+
+    def prompt(self,task,batch):
+        if self._crops is not None:self.refresh(self._assets,self._crops)
+        self._validate_ai_photos(batch.get('photo_ids',[]),'本批')
+        return batch['prompt']
 
     def batch_images(self,task,batch):
         if self._crops is not None:self.refresh(self._assets,self._crops)
+        self._validate_ai_photos(batch.get('photo_ids',[]),'本批')
         for pid,fp in batch['fingerprints'].items():
             if self.data['photos'].get(pid,{}).get('fingerprint')!=fp:raise ValueError('本批照片或分组/裁切已改变，请创建新评审任务')
         images=[Path(p) for p in batch['image_paths']]
@@ -258,6 +312,7 @@ class ReviewProject:
         if submission not in task.get('web_submissions',[]):
             raise ValueError('网页提交不存在')
         if self._crops is not None:self.refresh(self._assets,self._crops)
+        self._validate_ai_photos(submission.get('photo_ids',[]),'网页提交')
         for pid,fp in submission['fingerprints'].items():
             if self.data['photos'].get(pid,{}).get('fingerprint')!=fp:
                 raise ValueError('网页提交中的照片或分组/裁切已改变，请重新创建评审任务')
@@ -362,15 +417,21 @@ class ReviewProject:
         rows=[];seen=set()
         for p in self.data['photos'].values():
             f=p['final']
-            if p['stale']:continue
-            if ai_ratings and not f['confirmed']:
-                ai=p.get('ai',{})
-                fields={}
-                if ai.get('fingerprint')==p['fingerprint']:
-                    if type(ai.get('rating')) is int and 1<=ai['rating']<=5:fields['rating']=ai['rating']
-                    if ai.get('suggest_reject') is True:fields['pick_status']=-1
-                if p.get('technical_reason'):fields['pick_status']=-1
+            if ai_ratings:
+                confirmed=f['confirmed'] and not p['stale'] and f.get('fingerprint')==p['fingerprint']
+                if confirmed:
+                    fields={k:f[k] for k in ('rating','pick_status') if f[k] is not None}
+                elif self._technical_rejected(p):
+                    fields={'pick_status':-1}
+                else:
+                    if p['stale']:continue
+                    ai=p.get('ai',{})
+                    fields={}
+                    if ai.get('fingerprint')==p['fingerprint']:
+                        if type(ai.get('rating')) is int and 1<=ai['rating']<=5:fields['rating']=ai['rating']
+                        if ai.get('suggest_reject') is True:fields['pick_status']=-1
             else:
+                if p['stale']:continue
                 if not f['confirmed'] or f.get('fingerprint')!=p['fingerprint']:continue
                 fields={k:f[k] for k in ('rating','pick_status') if f[k] is not None}
             if not fields:continue

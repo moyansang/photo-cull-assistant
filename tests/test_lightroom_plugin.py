@@ -86,4 +86,6 @@ def test_lua_entrypoint_confirmation_and_catalog_gate(answer,expected):
     assert report['status']==('applied' if answer=='ok' else 'not_applied')
     assert report['changes'][0]['before_rating']==2
     assert report['export_id']=='review-export-1'
-    lua.execute('assert(loadstring(...))',(PLUGIN/'ViewReport.lua').read_text('utf-8'))
+    info=lua.execute((PLUGIN/'Info.lua').read_text('utf-8'))
+    assert len(info['LrLibraryMenuItems'])==1
+    assert info['LrLibraryMenuItems'][1]['file']=='ImportResults.lua'

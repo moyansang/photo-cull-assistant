@@ -10,14 +10,13 @@ from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 from .crop_settings import CropSettings, crop_bounds
 from .subject import asset_features, face_crop, detail_features
+from .window_layout import fit_window
 
 
 class CropDialog(tk.Toplevel):
     def __init__(self, parent, assets, settings, on_save):
         super().__init__(parent)
         self.title("人脸细节设置")
-        self.geometry("850x790")
-        self.resizable(False, False)
         self.transient(parent)
         self.assets = [a for a in assets if a.preview_path]
         self.edits = deepcopy(settings.photos)
@@ -34,17 +33,27 @@ class CropDialog(tk.Toplevel):
         self._pending = None
         body = ttk.Frame(self, padding=16)
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text="小窗大小保持不变；范围增大可多留头发，负偏移向上，正偏移向下。").pack(anchor="w")
+        ttk.Label(
+            body,
+            text="小窗大小保持不变；范围增大可多留头发，负偏移向上，正偏移向下。",
+            wraplength=460,
+        ).pack(fill="x", anchor="w")
         for label, variable, start, end in (("置信度（全局）", self.confidence, .7, .95), ("裁切范围", self.scale, .6, 2), ("上下偏移", self.shift, -.5, .5)):
             row = ttk.Frame(body)
             row.pack(fill="x", pady=4)
             ttk.Label(row, text=label, width=12).pack(side="left")
-            ttk.Scale(row, from_=start, to=end, variable=variable, length=530).pack(side="left")
+            ttk.Scale(row, from_=start, to=end, variable=variable, length=300).pack(
+                side="left", fill="x", expand=True
+            )
             value = ttk.Label(row, width=8)
             value.pack(side="left", padx=12)
             variable.trace_add("write", lambda *_, v=variable, widget=value: widget.configure(text=f"{v.get():.2f}"))
             value.configure(text=f"{variable.get():.2f}")
-        ttk.Label(body, text="检测置信度：默认 0.80；降低可减少漏脸，也可能增加错框。与分组灵敏度无关。").pack(anchor="w")
+        ttk.Label(
+            body,
+            text="检测置信度：默认 0.80；降低可减少漏脸，也可能增加错框。与分组灵敏度无关。",
+            wraplength=460,
+        ).pack(fill="x", anchor="w")
         row = ttk.Frame(body)
         row.pack(fill="x", pady=4)
         ttk.Label(row, text="裁切比例", width=12).pack(side="left")
@@ -52,8 +61,9 @@ class CropDialog(tk.Toplevel):
         ttk.Label(row, text="默认 / 正方形 / 竖向 3:4").pack(side="left", padx=16)
         self.caption = ttk.Label(body)
         self.caption.pack(pady=(12, 4))
-        self.canvas = tk.Canvas(body, width=810, height=400, background="#eeeeee", highlightthickness=0)
-        self.canvas.pack()
+        self.canvas = tk.Canvas(body, width=1, height=400, background="#eeeeee", highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", self.schedule_preview)
         self.canvas.bind('<ButtonPress-1>', self.pointer_down)
         self.canvas.bind('<B1-Motion>', self.pointer_move)
         self.canvas.bind('<ButtonRelease-1>', self.pointer_up)
@@ -74,6 +84,8 @@ class CropDialog(tk.Toplevel):
         ttk.Button(actions, text="保存并重新生成联系表" if self.assets else "保存设置", command=self.save).pack(side="right")
         for variable in (self.scale, self.shift, self.ratio, self.confidence):
             variable.trace_add("write", self.schedule_preview)
+        fit_window(self, (850, 790), minimum_size=(520, 440), parent=parent)
+        self.update_idletasks()
         self.load_current()
         self.render()
         self.grab_set()
@@ -135,6 +147,14 @@ class CropDialog(tk.Toplevel):
         asset = self.assets[self.index]
         self.caption.configure(text=f"{self.index+1}/{len(self.assets)}  ·  {asset.stem}  ·  G{asset.group_id:03d}")
         try:
+            canvas_width = max(240, self.canvas.winfo_width())
+            canvas_height = max(100, self.canvas.winfo_height())
+            padding = 10
+            inset_width = min(150, max(105, canvas_width // 4))
+            preview_width = max(80, canvas_width - inset_width - padding * 3)
+            preview_height = max(80, canvas_height - padding * 2)
+            preview_x = padding + preview_width / 2
+            final_x = canvas_width - padding - inset_width / 2
             with Image.open(asset.preview_path) as source:
                 original = ImageOps.exif_transpose(source).convert("RGB")
             subject = detail_features(asset, self.global_settings())
@@ -147,20 +167,21 @@ class CropDialog(tk.Toplevel):
                 bounds = crop_bounds(original.size, subject.head, self.settings())
                 ImageDraw.Draw(marked).rectangle(bounds, outline="#00dd88", width=max(2, original.width // 250))
                 crop = face_crop(original, subject.face, subject.head, self.settings())
-                tile = Image.new("RGB", (124, 150), "white")
-                crop = ImageOps.contain(crop, (124, 150))
-                tile.paste(crop, ((124-crop.width)//2, (150-crop.height)//2))
+                tile_size = (min(124, inset_width), min(150, max(60, canvas_height - 44)))
+                tile = Image.new("RGB", tile_size, "white")
+                crop = ImageOps.contain(crop, tile_size)
+                tile.paste(crop, ((tile.width-crop.width)//2, (tile.height-crop.height)//2))
                 self.photos.append(ImageTk.PhotoImage(tile, master=self))
-                self.canvas.create_image(710, 200, image=self.photos[-1])
-                self.canvas.create_text(710, 105, text="最终小窗 · 124×150")
+                self.canvas.create_image(final_x, canvas_height / 2, image=self.photos[-1])
+                self.canvas.create_text(final_x, max(10, (canvas_height - tile.height) / 2 - 12), text="最终小窗 · 124×150")
             else:
-                self.canvas.create_text(710, 200, text="未检测到可靠人脸\n本张不显示小窗", justify="center")
-            preview = ImageOps.contain(marked, (600, 380))
-            self._image_rect = (305-preview.width/2, 200-preview.height/2, preview.width, preview.height, original.width, original.height)
+                self.canvas.create_text(final_x, canvas_height / 2, text="未检测到可靠人脸\n本张不显示小窗", justify="center")
+            preview = ImageOps.contain(marked, (preview_width, preview_height))
+            self._image_rect = (preview_x-preview.width/2, canvas_height/2-preview.height/2, preview.width, preview.height, original.width, original.height)
             self.photos.append(ImageTk.PhotoImage(preview, master=self))
-            self.canvas.create_image(305, 200, image=self.photos[-1])
+            self.canvas.create_image(preview_x, canvas_height / 2, image=self.photos[-1])
         except (OSError, ValueError) as exc:
-            self.canvas.create_text(405, 200, text=f"预览不可用：{exc}")
+            self.canvas.create_text(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, text=f"预览不可用：{exc}")
 
     def global_settings(self):
         return CropSettings(detection_confidence=round(self.confidence.get(), 2), photos=deepcopy(self.edits))

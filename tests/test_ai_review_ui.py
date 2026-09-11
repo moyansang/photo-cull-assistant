@@ -27,15 +27,17 @@ def ui(tmp_path,monkeypatch,tk_root):
     monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showerror',lambda *a,**kw:errors.append(a))
     monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showinfo',lambda *a,**kw:None)
     dialog=ReviewDialog(root,project,assets,CropSettings(),tmp_path)
+    drive(root,dialog)
+    task=project.current_task();batch=task["batches"][0]
     yield root,dialog,project,task,batch,errors
     dialog._destroy_now()
 
 
 def drive(root,dialog):
-    end=time.monotonic()+5
-    while dialog._api_active and time.monotonic()<end:
+    end=time.monotonic()+15
+    while (dialog._api_active or dialog._preparing_task) and time.monotonic()<end:
         root.update();time.sleep(.02)
-    assert not dialog._api_active
+    assert not dialog._api_active and not dialog._preparing_task
 
 
 def test_api_queue_ingests_records_provider_and_skips_completed(ui,monkeypatch):
@@ -71,11 +73,11 @@ def test_api_failure_stops_without_retry_and_keeps_confirmed(ui,monkeypatch):
 
 def test_web_tabs_prepare_and_restore(ui, monkeypatch):
     root, dialog, project, task, batch, errors = ui
-    assert [dialog.notebook.tab(t, 'text') for t in dialog.notebook.tabs()] == ['API 选片', '网页选片']
+    assert [dialog.notebook.tab(t, 'text') for t in dialog.notebook.tabs()] == ['API 选片', '网页选片', '选片结果']
     assert dialog.export_button.cget('text') == '导出到 LR'
     assert dialog.refine_button.cget('text') == '精选照片再选一轮'
     assert dialog.split_button.cget('text') == '拆分所选批次重试'
-    assert dialog.split_button.master.master is dialog.task_tab
+    assert dialog.split_button.master.master.master is dialog.task_tab
     opened = []
     monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
     dialog.notebook.select(1)
@@ -158,3 +160,41 @@ def test_export_current_results_after_unscored_confirmation(ui, monkeypatch):
     assert first['pick_status'] == -1 and 'rating' not in first
     assert second['rating'] == 4
     assert opened == [project.workspace]
+
+
+def test_enter_creates_fresh_task_without_api_or_history_controls(ui):
+    root, dialog, project, task, batch, errors = ui
+    assert len(project.data['tasks']) == 1
+    assert all(b['status'] == 'pending' for b in task['batches'])
+    assert not hasattr(dialog, 'task_combo')
+    def labels(parent):
+        result=[]
+        for w in parent.winfo_children():
+            if 'text' in w.keys():result.append(str(w.cget('text')))
+            result.extend(labels(w))
+        return result
+    text=labels(dialog)
+    assert '任务历史' not in text and '新建全量初选' not in text and '导入 LR 回执' not in text
+    assert '重新提交' in text
+
+
+def test_resubmit_uses_changed_preferences_and_displays_photo_results(ui, monkeypatch):
+    root, dialog, project, old_task, old_batch, errors = ui
+    project.ingest(old_task, old_batch, answer(old_task, old_batch))
+    dialog.preference_vars['extra'].set('优先眼神清楚')
+    calls=[]
+    def fake(profile,prompt,paths):
+        task=project.current_task();batch=task['batches'][0]
+        calls.append(prompt)
+        return {'text':answer(task,batch)}
+    monkeypatch.setattr(ai_api,'call_model',fake)
+    dialog._resubmit_api();drive(root,dialog)
+    task=project.current_task()
+    assert not errors and len(calls)==1 and task['id']!=old_task['id']
+    assert '优先眼神清楚' in calls[0] and len(project.data['tasks'])==1
+    dialog.notebook.select(2);root.update()
+    for pid in task['batches'][0]['photo_ids']:
+        row=project.data['photos'][pid]
+        values=dialog.review_tree.item(pid,'values')
+        assert values[0]==row['stem'] and values[2]==str(row['ai']['rating'])
+        assert values[4]==row['ai']['reason']
