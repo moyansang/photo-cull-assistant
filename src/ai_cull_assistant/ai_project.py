@@ -365,10 +365,11 @@ class ReviewProject:
             if p['stale']:continue
             if ai_ratings and not f['confirmed']:
                 ai=p.get('ai',{})
-                if ai.get('fingerprint')!=p['fingerprint']:continue
                 fields={}
-                if type(ai.get('rating')) is int and 1<=ai['rating']<=5:fields['rating']=ai['rating']
-                if ai.get('suggest_reject') is True:fields['pick_status']=-1
+                if ai.get('fingerprint')==p['fingerprint']:
+                    if type(ai.get('rating')) is int and 1<=ai['rating']<=5:fields['rating']=ai['rating']
+                    if ai.get('suggest_reject') is True:fields['pick_status']=-1
+                if p.get('technical_reason'):fields['pick_status']=-1
             else:
                 if not f['confirmed'] or f.get('fingerprint')!=p['fingerprint']:continue
                 fields={k:f[k] for k in ('rating','pick_status') if f[k] is not None}

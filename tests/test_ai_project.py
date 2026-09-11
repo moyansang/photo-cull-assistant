@@ -218,3 +218,19 @@ def test_export_ai_ratings_for_lightroom_review(tmp_path):
     payload=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
     assert len(payload['photos'])==1
     assert payload['photos'][0]['rating']==5 and payload['photos'][0]['pick_status']==1
+
+
+def test_lr_export_includes_technical_reject_without_ai(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[1].auto_rejected=True
+    assets[1].screening_reason='severe_subject_blur'
+    project.refresh(assets,project._crops)
+    project.ingest(task,batch,answer(task,batch))
+    project.data['photos'][batch['photo_ids'][1]].pop('ai')
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    assert len(rows)==2
+    assert rows[0]['rating']==4
+    assert rows[1]['pick_status']==-1 and 'rating' not in rows[1]
+    project.confirm(batch['photo_ids'][1],None,1)
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    assert rows[1]['pick_status']==1

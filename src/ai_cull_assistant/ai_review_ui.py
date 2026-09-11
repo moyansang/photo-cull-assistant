@@ -1200,7 +1200,7 @@ class ReviewDialog(tk.Toplevel):
             messagebox.showerror("导出失败", str(exc), parent=self)
             return
         self._refresh_export_status()
-        messagebox.showinfo("到 Lightroom 复核", f"已导出 {count} 张结果到：\n{path}\n\n在 Lightroom 插件中导入此文件，再查看原图调整星级。\n优先使用已人工确认结果，其余导出 AI 星级和弃置建议。在 Lightroom 中查看原图复核。", parent=self)
+        messagebox.showinfo("到 Lightroom 复核", f"已导出 {count} 张结果到：\n{path}\n\n在 Lightroom 插件中导入此文件，再查看原图调整星级。\n优先使用已人工确认结果，其余合并导出 AI 星级、AI 弃置建议和技术筛选弃置。在 Lightroom 中查看原图复核。", parent=self)
 
     def _export_final(self) -> None:
         try:
