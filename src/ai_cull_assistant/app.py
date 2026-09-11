@@ -40,12 +40,39 @@ class App(tk.Tk):
             self.saved_options = {}
         self._settings_pending = None
         self._build_ui()
+        self._restore_session()
         for variable in (self.input_var, self.workspace_var, self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.no_updates_var):
             variable.trace_add("write", self._schedule_settings_save)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.updates = UpdateController(self)
         if settings_dir is None and getattr(sys, 'frozen', False) and '--self-test' not in sys.argv and not self.no_updates_var.get():
             self.after(1500, lambda: self.updates.check() if not self.no_updates_var.get() else None)
+
+    def _save_session(self, fresh=False):
+        if self.scan_result:
+            try:
+                from .session_store import save_session
+                save_session(self.scan_result, fresh=fresh)
+            except Exception as exc:
+                self._log(f"分析记录保存失败：{exc}")
+
+    def _restore_session(self):
+        workspace = Path(self.workspace_var.get())
+        logfile = workspace / 'session.log'
+        if logfile.exists():
+            try:
+                self.log_text.configure(state="normal")
+                self.log_text.insert("end", logfile.read_text('utf-8'))
+                self.log_text.configure(state="disabled")
+            except OSError:
+                pass
+        try:
+            from .session_store import load_session
+            self.scan_result = load_session(workspace, self.input_var.get())
+            if self.scan_result:
+                self._log(f"已恢复上次分析：{len(self.scan_result.assets)} 张照片，可直接进入 AI 选片。新增照片请重新扫描。")
+        except Exception as exc:
+            self._log(f"上次分析未恢复：{exc}。请检查照片路径或重新扫描；已有 AI 任务仍保留。")
 
     def _option_int(self, key, default, minimum, maximum):
         try:
@@ -84,7 +111,11 @@ class App(tk.Tk):
                 return
         if self._settings_pending:
             self.after_cancel(self._settings_pending)
+        if getattr(self, "_scan_thread", None) and self._scan_thread.is_alive():
+            messagebox.showinfo("正在扫描", "请等待扫描完成后再关闭，分析结果会自动保存。", parent=self)
+            return
         self._save_preferences()
+        self._save_session()
         for timer in self.tk.splitlist(self.tk.call('after', 'info')):
             self.after_cancel(timer)
         self.destroy()
@@ -197,6 +228,7 @@ class App(tk.Tk):
                 crop_settings=self.crop_settings,
             )
             self.scan_result = result
+            self._save_session(fresh=True)
             self.review_project = None
             self._log(f"扫描完成：共 {len(result.assets)} 张逻辑照片")
             if result.groups_loaded_from_store:
@@ -228,6 +260,7 @@ class App(tk.Tk):
         self.crop_settings = settings
         if self.scan_result:
             sheets = regenerate_contact_sheet_sets(self.scan_result, photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), crop_settings=settings)
+            self._save_session()
             self._log(f"人脸细节设置已保存；已生成主表 {len(sheets.main_pages)} 页、复核表 {len(sheets.rejected_pages)} 页。")
         else:
             self._log("人脸细节设置已保存，下次生成联系表时使用。")
@@ -244,6 +277,7 @@ class App(tk.Tk):
             if not self.scan_result:
                 return
             persist_manual_groups(self.scan_result)
+            self._save_session()
             self._log("人工分组已保存到 groups.json。")
 
         GroupEditor(self, self.scan_result.assets, save_changes)
@@ -259,6 +293,7 @@ class App(tk.Tk):
                 columns=self.columns_var.get(),
                 crop_settings=self.crop_settings,
             )
+            self._save_session()
             self._log(f"联系表已重新生成：主表 {len(sheets.main_pages)} 页；弃置复核 {len(sheets.rejected_pages)} 页。")
             self._log(f"主联系表目录：{self.scan_result.contact_dir / 'main'}")
         except Exception as exc:
@@ -283,6 +318,7 @@ class App(tk.Tk):
                 columns=self.columns_var.get(),
                 crop_settings=self.crop_settings,
             )
+            self._save_session()
             self._log(f"已重新自动分组并覆盖 groups.json；主联系表 {len(sheets.main_pages)} 页。")
         except Exception as exc:
             self._log(f"重新自动分组失败：{exc}")
@@ -332,6 +368,13 @@ class App(tk.Tk):
             self.log_text.insert("end", text + "\n")
             self.log_text.see("end")
             self.log_text.configure(state="disabled")
+        try:
+            workspace = self.scan_result.workspace_dir if self.scan_result else Path(self.workspace_var.get())
+            workspace.mkdir(parents=True, exist_ok=True)
+            with (workspace / "session.log").open("a", encoding="utf-8") as stream:
+                stream.write(text + "\n")
+        except OSError:
+            pass
         self.after(0, append)
 
 
