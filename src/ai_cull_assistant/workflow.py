@@ -58,7 +58,7 @@ def run_scan(
 
     rejected_count = 0
     if technical_screening:
-        screening_results = screen_assets(assets)
+        screening_results = screen_assets(assets, crop_settings=crop_settings, cache_dir=workspace / ".analysis-cache")
         save_screening_results(screening_results, screening_results_path)
         rejected_count = apply_auto_rejects(assets, screening_results)
     else:

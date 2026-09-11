@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from functools import lru_cache
 import json
 from pathlib import Path
 from typing import Callable, Iterable
@@ -39,6 +38,10 @@ class ScreeningResult:
     laplacian_variance: float | None = None
     tenengrad: float | None = None
     face_box: FaceBox | None = None
+    analysis_version: str = "legacy-preview"
+    source_size: tuple[int, int] | None = None
+    detail_ratio: float | None = None
+    focus_evidence: dict | None = None
 
 
 DEFAULT_CONFIG = ScreeningConfig()
@@ -101,61 +104,9 @@ def assess_subject_blur(
 
 
 def detect_faces(image: np.ndarray, *, config: ScreeningConfig = DEFAULT_CONFIG) -> list[FaceBox]:
-    h, w = image.shape[:2]
-    scale = min(1.0, config.max_detection_side / max(h, w))
-    if scale < 1.0:
-        resized = cv2.resize(image, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
-    else:
-        resized = image
-    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-    gray = cv2.equalizeHist(gray)
+    from .yunet import detect
+    return [tuple(round(v) for v in face.box) for face in detect(image, .8)]
 
-    cascade = _face_cascade()
-    if cascade is None:
-        return []
-    min_size = max(24, int(config.min_face_size * scale))
-    try:
-        rects, _reject_levels, level_weights = cascade.detectMultiScale3(
-            gray,
-            scaleFactor=1.08,
-            minNeighbors=5,
-            minSize=(min_size, min_size),
-            outputRejectLevels=True,
-        )
-        weighted_rects = [
-            rect
-            for rect, weight in zip(rects, level_weights)
-            if float(weight) >= config.min_face_confidence
-        ]
-    except (AttributeError, cv2.error):
-        weighted_rects = list(
-            cascade.detectMultiScale(
-                gray,
-                scaleFactor=1.08,
-                minNeighbors=5,
-                minSize=(min_size, min_size),
-            )
-        )
-    if not weighted_rects:
-        return []
-    inv = 1.0 / scale
-    result: list[FaceBox] = []
-    for x, y, fw, fh in weighted_rects:
-        result.append((int(x * inv), int(y * inv), int(fw * inv), int(fh * inv)))
-    return result
-
-
-
-@lru_cache(maxsize=1)
-def _face_cascade():
-    cascade_path = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
-    storage = cv2.FileStorage(cascade_path.read_text(encoding="utf-8"), cv2.FILE_STORAGE_READ | cv2.FILE_STORAGE_MEMORY)
-    cascade = cv2.CascadeClassifier()
-    try:
-        cascade.read(storage.getFirstTopLevelNode())
-    finally:
-        storage.release()
-    return None if cascade.empty() else cascade
 
 def choose_primary_face(boxes: Iterable[FaceBox], image_width: int, image_height: int) -> FaceBox:
     cx = image_width / 2.0
@@ -178,14 +129,18 @@ def screen_assets(
     *,
     config: ScreeningConfig = DEFAULT_CONFIG,
     face_provider: Callable[[PhotoAsset], list[FaceBox]] | None = None,
+    crop_settings=None,
+    cache_dir=None,
 ) -> dict[str, ScreeningResult]:
     results: dict[str, ScreeningResult] = {}
     for asset in assets:
         if asset.preview_path is None:
             result = ScreeningResult(False, "preview_unavailable", False)
+        elif face_provider is not None:
+            result = assess_subject_blur(asset.preview_path, face_boxes=face_provider(asset), config=config)
         else:
-            boxes = face_provider(asset) if face_provider is not None else None
-            result = assess_subject_blur(asset.preview_path, face_boxes=boxes, config=config)
+            from .face_focus import assess_asset_focus
+            result = assess_asset_focus(asset, crop_settings=crop_settings, cache_dir=cache_dir)
         asset.auto_rejected = result.rejected
         asset.screening_reason = result.reason
         asset.focus_score = result.laplacian_variance

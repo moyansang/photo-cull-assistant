@@ -13,12 +13,10 @@ def run(report_path: str) -> None:
         import exifread
         from PIL import Image
         from .app import App
-        from .screening import _face_cascade
         from .yunet import detect
         import numpy as np
         from .workflow import run_scan
 
-        assert not _face_cascade().empty(), "Missing face detector data"
         assert detect(np.zeros((320, 320, 3), np.uint8)) == []
         report["yunet_model_inference"] = True
         with tempfile.TemporaryDirectory(prefix="aicull-smoke-") as folder:
@@ -49,6 +47,14 @@ def run(report_path: str) -> None:
             from .crop_dialog import CropDialog
             from .crop_settings import CropSettings
             from .subject import SubjectFeatures
+            from .face_focus import assess_asset_focus, VERSION as FOCUS_VERSION
+            focus_settings = CropSettings()
+            focus_settings.photos[focus_settings.key(result.assets[0])] = {'manual_face': [.1, .1, .8, .8]}
+            focus = assess_asset_focus(result.assets[0], crop_settings=focus_settings, cache_dir=root / 'focus-cache')
+            assert focus.analysis_version == FOCUS_VERSION and focus.face_found
+            assert focus.reason == 'face_focus_uncertain' and not focus.rejected
+            assert list((root / 'focus-cache').rglob('*.json'))
+            report['native_face_analysis_and_cache'] = True
             test_app = App(settings_dir=root)
             test_app.withdraw()
             test_app.scan_result = result

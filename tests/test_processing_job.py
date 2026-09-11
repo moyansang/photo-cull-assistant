@@ -34,7 +34,7 @@ def test_stop_resume_uses_new_settings_only_for_unfinished_photos(tmp_path, monk
     job = start_job(photos, workspace, _options(technical_screening=True), CropSettings())
     calls = []
 
-    def fake_screen(assets):
+    def fake_screen(assets, **kwargs):
         from ai_cull_assistant.screening import ScreeningResult
         calls.append(assets[0].stem)
         assets[0].screening_reason = "checked"
@@ -202,3 +202,27 @@ def test_invalid_active_job_path_does_not_delete_outside_processing_root(tmp_pat
     with pytest.raises(Exception):
         load_job(workspace, photos)
     assert marker.read_text("utf-8") == "keep"
+
+
+def test_regenerate_refreshes_focus_without_rebuilding_previews(tmp_path, monkeypatch):
+    from ai_cull_assistant.screening import ScreeningResult
+    photos = _photos(tmp_path, 1)
+    workspace = tmp_path / 'workspace'
+    first = start_job(photos, workspace, _options(), CropSettings()).run(
+        _options(), CropSettings(), Event(), None)
+    def screen(assets, **kwargs):
+        assert kwargs['cache_dir'] == workspace / '.analysis-cache'
+        a = assets[0]
+        a.auto_rejected = True
+        a.screening_reason = 'obvious_subject_blur'
+        return {a.stem: ScreeningResult(True, a.screening_reason, True)}
+    monkeypatch.setattr('ai_cull_assistant.processing_job.screen_assets', screen)
+    def fail_preview(*args, **kwargs):
+        raise AssertionError('regeneration should reuse preview')
+    monkeypatch.setattr('ai_cull_assistant.processing_job.build_preview', fail_preview)
+    updated = start_job(photos, workspace, _options(technical_screening=True), CropSettings(), result=first).run(
+        _options(technical_screening=True), CropSettings(), Event(), None)
+    assert updated.assets[0].auto_rejected
+    assert not updated.main_pages and updated.rejected_pages
+    report = json.loads((workspace / 'screening_results.json').read_text('utf-8'))
+    assert 'obvious_subject_blur' in json.dumps(report)

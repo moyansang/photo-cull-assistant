@@ -129,7 +129,7 @@ def start_job(
     (root / "output").mkdir(parents=True, exist_ok=False)
     normalised = _normalise_options(options)
     kind = "regenerate" if result is not None else "scan"
-    completed_photos = len(assets) if result is not None else 0
+    completed_photos = 0
     data = {
         "version": JOB_VERSION,
         "id": identifier,
@@ -252,9 +252,10 @@ class ProcessingJob:
         while self._data["completed_photos"] < len(self.assets):
             index = int(self._data["completed_photos"])
             asset = self.assets[index]
-            build_preview(asset, self.output / "previews")
+            if self.kind == "scan":
+                build_preview(asset, self.output / "previews")
             if current["technical_screening"]:
-                screened = screen_assets([asset])[asset.stem]
+                screened = screen_assets([asset], crop_settings=crop_settings, cache_dir=self.workspace / ".analysis-cache")[asset.stem]
             else:
                 asset.auto_rejected = False
                 asset.screening_reason = "screening_disabled"
@@ -418,8 +419,7 @@ class ProcessingJob:
             for asset in self.assets
             if _asset_key(asset) in self._data["screening_results"]
         }
-        if self.kind == "scan":
-            save_screening_results(screening, output / "screening_results.json")
+        save_screening_results(screening, output / "screening_results.json")
         save_groups(
             self.assets,
             output / "groups.json",
@@ -427,11 +427,10 @@ class ProcessingJob:
             collection_key=str(self.input_dir),
         )
 
-        destinations: list[tuple[Path, Path]] = [(output / "contact_sheets", self.workspace / "contact_sheets")]
+        destinations: list[tuple[Path, Path]] = [(output / "contact_sheets", self.workspace / "contact_sheets"), (output / "screening_results.json", self.workspace / "screening_results.json")]
         if self.kind == "scan":
             destinations.extend([
                 (output / "previews", self.workspace / "previews"),
-                (output / "screening_results.json", self.workspace / "screening_results.json"),
             ])
         if self.kind == "scan" or self._data.get("regroup"):
             destinations.append((output / "groups.json", self.workspace / "groups.json"))
