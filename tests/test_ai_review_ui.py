@@ -71,7 +71,11 @@ def test_api_failure_stops_without_retry_and_keeps_confirmed(ui,monkeypatch):
 
 def test_web_tabs_prepare_and_restore(ui, monkeypatch):
     root, dialog, project, task, batch, errors = ui
-    assert [dialog.notebook.tab(t, 'text') for t in dialog.notebook.tabs()] == ['API 提交', '网页提交']
+    assert [dialog.notebook.tab(t, 'text') for t in dialog.notebook.tabs()] == ['API 选片', '网页选片']
+    assert dialog.export_button.cget('text') == '导出到 LR'
+    assert dialog.refine_button.cget('text') == '精选照片再选一轮'
+    assert dialog.split_button.cget('text') == '拆分所选批次重试'
+    assert dialog.split_button.master.master is dialog.task_tab
     opened = []
     monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
     dialog.notebook.select(1)
@@ -113,3 +117,44 @@ def test_review_only_loads_selected_preview(ui,monkeypatch):
     assert not calls
     dialog.notebook.select(1);root.update()
     assert not calls
+
+
+def test_export_warns_about_unscored_and_can_return_without_writing(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    project.ingest(task, batch, answer(task, batch))
+    project.data['photos'][batch['photo_ids'][0]].pop('ai')
+    project._assets[0].auto_rejected = True
+    project._assets[0].screening_reason = 'severe_subject_blur'
+    project.refresh(project._assets, project._crops)
+    prompts = []
+    monkeypatch.setattr(
+        'ai_cull_assistant.ai_review_ui.messagebox.askyesno',
+        lambda title, body, **kw: prompts.append((title, body)) or False,
+    )
+    monkeypatch.setattr(project, 'export_final', lambda **kw: pytest.fail('取消后不应写出结果'))
+    dialog._export_ai_ratings()
+    assert prompts and prompts[0][0] == '仍有照片未评分'
+    assert 'AI 已评分：1 张' in prompts[0][1]
+    assert '技术筛选弃置：1 张' in prompts[0][1]
+    assert '尚无 AI 评分：1 张' in prompts[0][1]
+    assert '独立统计' in prompts[0][1]
+    assert dialog.status_var.get() == '已取消导出，可继续完成 AI 选片。'
+
+
+def test_export_current_results_after_unscored_confirmation(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    project.ingest(task, batch, answer(task, batch))
+    project.data['photos'][batch['photo_ids'][0]].pop('ai')
+    project._assets[0].auto_rejected = True
+    project._assets[0].screening_reason = 'severe_subject_blur'
+    project.refresh(project._assets, project._crops)
+    opened = []
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
+    dialog._export_ai_ratings()
+    payload = json.loads((project.workspace / 'lightroom_results.json').read_text('utf-8'))
+    assert len(payload['photos']) == 2
+    first = next(row for row in payload['photos'] if row['filename'].casefold().startswith('a.'))
+    second = next(row for row in payload['photos'] if row['filename'].casefold().startswith('b.'))
+    assert first['pick_status'] == -1 and 'rating' not in first
+    assert second['rating'] == 4
+    assert opened == [project.workspace]

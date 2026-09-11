@@ -237,8 +237,8 @@ class ReviewDialog(tk.Toplevel):
         self.task_tab = ttk.Frame(notebook, padding=12)
         self.review_tab = ttk.Frame(notebook, padding=10)
         self.web_tab = ttk.Frame(notebook, padding=12)
-        notebook.add(self.task_tab, text="API 提交")
-        notebook.add(self.web_tab, text="网页提交")
+        notebook.add(self.task_tab, text="API 选片")
+        notebook.add(self.web_tab, text="网页选片")
         notebook.bind("<<NotebookTabChanged>>", self._tab_changed)
         self._build_task_tab()
         self._build_web_tab()
@@ -247,7 +247,8 @@ class ReviewDialog(tk.Toplevel):
         footer.pack(fill="x", pady=(8, 0))
         ttk.Label(footer, textvariable=self.status_var).pack(side="left")
         ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
-        ttk.Button(footer, text="导出评分与弃置到 LR", command=self._export_ai_ratings).pack(side="right", padx=8)
+        self.export_button = ttk.Button(footer, text="导出到 LR", command=self._export_ai_ratings)
+        self.export_button.pack(side="right", padx=8)
         ttk.Button(footer, text="导入 LR 回执", command=self._import_receipt).pack(side="right")
 
     def _tab_changed(self, _event=None):
@@ -291,8 +292,8 @@ class ReviewDialog(tk.Toplevel):
         create = ttk.Frame(prefs)
         create.grid(row=2, column=0, columnspan=6, sticky="w", pady=(10, 0))
         ttk.Button(create, text="新建全量初选", command=self._create_initial).pack(side="left", padx=(0, 8))
-        ttk.Button(create, text="跨组精简候选", command=self._create_refine).pack(side="left", padx=(0, 8))
-        ttk.Button(create, text="拆小本批重试", command=self._split_selected_batch).pack(side="left")
+        self.refine_button = ttk.Button(create, text="精选照片再选一轮", command=self._create_refine)
+        self.refine_button.pack(side="left", padx=(0, 8))
 
         batches = ttk.LabelFrame(tab, text="批次", padding=8)
         batches.pack(fill="both", expand=True)
@@ -324,6 +325,8 @@ class ReviewDialog(tk.Toplevel):
         self.run_button.pack(side="left", padx=(0, 8))
         self.pause_button = ttk.Button(api, text="完成当前批后暂停", command=self._pause_api, state="disabled")
         self.pause_button.pack(side="left")
+        self.split_button = ttk.Button(api, text="拆分所选批次重试", command=self._split_selected_batch)
+        self.split_button.pack(side="left", padx=(8, 0))
         ttk.Button(tab, text="查看所选批次原始回答", command=self._show_raw_responses).pack(anchor="w", pady=(8, 0))
 
     def _build_web_tab(self) -> None:
@@ -990,7 +993,7 @@ class ReviewDialog(tk.Toplevel):
             if not self._closing_requested:
                 hint = ""
                 if "413" in error or "大小" in error or "图片" in error:
-                    hint = "\n\n可选择“拆小本批重试”创建更小批次；软件不会自动重复请求。"
+                    hint = "\n\n可选择“拆分所选批次重试”创建更小批次；软件不会自动重复请求。"
                 messagebox.showerror("API 批次失败", f"批次 {batch_id}：{error}{hint}", parent=self)
 
     def _safe_save(self) -> None:
@@ -1192,6 +1195,40 @@ class ReviewDialog(tk.Toplevel):
             messagebox.showerror("打开原图失败", str(exc), parent=self)
 
     def _export_ai_ratings(self) -> None:
+        try:
+            self.project.refresh(self.assets, self.crop_settings)
+        except Exception as exc:
+            messagebox.showerror("刷新照片失败", str(exc), parent=self)
+            return
+        photos = list(_state(self.project).get("photos", {}).values())
+        current = [photo for photo in photos if not photo.get("stale")]
+        ai_rated = 0
+        technical_rejected = 0
+        unscored = 0
+        for photo in current:
+            ai = photo.get("ai") or {}
+            rating = ai.get("rating")
+            has_ai_rating = (
+                ai.get("fingerprint") == photo.get("fingerprint")
+                and type(rating) is int
+                and 1 <= rating <= 5
+            )
+            ai_rated += int(has_ai_rating)
+            technical_rejected += int(bool(photo.get("technical_reason")))
+            unscored += int(not has_ai_rating)
+        if unscored:
+            summary = (
+                f"当前有效照片共 {len(current)} 张：\n"
+                f"• AI 已评分：{ai_rated} 张\n"
+                f"• 技术筛选弃置：{technical_rejected} 张\n"
+                f"• 尚无 AI 评分：{unscored} 张\n\n"
+                "技术筛选弃置为独立统计，可能同时出现在已评分或未评分数量中。\n"
+                "继续导出时，未评分照片不会写入 AI 星级；其中已有技术筛选弃置结果的照片仍会导出弃置标记。\n\n"
+                "是否导出当前已有结果？选择“否”可返回继续选片。"
+            )
+            if not messagebox.askyesno("仍有照片未评分", summary, parent=self):
+                self.status_var.set("已取消导出，可继续完成 AI 选片。")
+                return
         try:
             path = Path(self.project.export_final(ai_ratings=True))
             count = len(_state(self.project).get("last_export_rows", []))

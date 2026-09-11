@@ -87,7 +87,7 @@ def run(report_path: str) -> None:
             review = ReviewDialog(ui_app, project, result.assets, ui_app.crop_settings, root)
             review.update()
             assert len(review.review_tree.get_children()) == 1
-            assert [review.notebook.tab(t, "text") for t in review.notebook.tabs()] == ["API 提交", "网页提交"]
+            assert [review.notebook.tab(t, "text") for t in review.notebook.tabs()] == ["API 选片", "网页选片"]
             submission = project.create_web_submission(task, [batch["id"]])
             review._refresh_web(submission["id"])
             assert project.web_images(task, submission)
@@ -115,6 +115,23 @@ def run(report_path: str) -> None:
             payload = json.loads(export.read_text(encoding="utf-8"))
             assert any(p.get("rating") == 5 for p in payload["photos"])
             report["lightroom_export_without_xmp"] = True
+            from .processing_job import start_job, load_job
+            from threading import Event
+            options = dict(grouping_preset='standard', photos_per_page=8, columns=2, technical_screening=False)
+            resumed_workspace = root / 'resume-smoke'
+            job = start_job(photos, resumed_workspace, options, CropSettings())
+            stop = Event()
+            def stop_after_unit(percent):
+                if percent > 0: stop.set()
+            assert job.run(options, CropSettings(), stop, stop_after_unit) is None
+            loaded = load_job(resumed_workspace, photos)
+            assert loaded is not None
+            stop.clear()
+            completed = loaded.run(options, CropSettings(), stop, lambda percent: None)
+            assert completed is not None and completed.main_pages
+            assert load_job(resumed_workspace, photos) is None
+            report['stop_restart_resume_processing'] = True
+
         report.update(ok=True, opencv=cv2.__version__, rawpy=rawpy.__version__)
     except Exception:
         report.update(ok=False, error=traceback.format_exc())

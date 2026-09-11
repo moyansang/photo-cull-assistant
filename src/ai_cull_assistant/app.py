@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import threading
+import queue
+import copy
+import json
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -38,6 +41,14 @@ class App(tk.Tk):
         self.saved_options = read_values(self.settings_dir).get("options", {})
         if not isinstance(self.saved_options, dict):
             self.saved_options = {}
+        self._loaded_grouping = GROUPING_LABELS.get(self.saved_options.get("grouping"), "standard")
+        self._processing_busy = False
+        self._processing_job = None
+        self._stop_event = threading.Event()
+        self._process_events = queue.Queue()
+        self._log_lock = threading.Lock()
+        self._log_epoch = 0
+        self._close_after_stop = False
         self._settings_pending = None
         self._build_ui()
         self._restore_session()
@@ -45,8 +56,10 @@ class App(tk.Tk):
             variable.trace_add("write", self._schedule_settings_save)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.updates = UpdateController(self)
+        self._restore_processing_job()
+        self.after(100, self._poll_processing)
         if settings_dir is None and getattr(sys, 'frozen', False) and '--self-test' not in sys.argv and not self.no_updates_var.get():
-            self.after(1500, lambda: self.updates.check() if not self.no_updates_var.get() else None)
+            self.after(1500, lambda: self.updates.check() if not self.no_updates_var.get() and not self._processing_busy else None)
 
     def _save_session(self, fresh=False):
         if self.scan_result:
@@ -111,8 +124,9 @@ class App(tk.Tk):
                 return
         if self._settings_pending:
             self.after_cancel(self._settings_pending)
-        if getattr(self, "_scan_thread", None) and self._scan_thread.is_alive():
-            messagebox.showinfo("正在扫描", "请等待扫描完成后再关闭，分析结果会自动保存。", parent=self)
+        if self._processing_busy:
+            self._close_after_stop = True
+            self._stop_processing()
             return
         self._save_preferences()
         self._save_session()
@@ -155,29 +169,33 @@ class App(tk.Tk):
 
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=10)
-        ttk.Button(btn_frame, text="1. 扫描并生成联系表", command=self._run_scan_thread).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_frame, text="编辑选片组", command=self._open_group_editor).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_frame, text="扫描并生成联系表", command=self._run_scan_thread).pack(side="left", padx=(0, 8))
+        self.stop_button = ttk.Button(btn_frame, text="停止处理", command=self._stop_processing, state="disabled")
+        self.stop_button.pack(side="left", padx=(0, 8))
+        self.continue_button = ttk.Button(btn_frame, text="继续处理", command=self._continue_processing, state="disabled")
+        self.continue_button.pack(side="left", padx=(0, 8))
         ttk.Button(btn_frame, text="重新生成联系表", command=self._regenerate_contacts).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_frame, text="重新自动分组", command=self._reset_auto_groups).pack(side="left", padx=(0, 8))
-
+        self.clear_log_button = ttk.Button(btn_frame, text="清空日志", command=self._clear_log)
+        self.clear_log_button.pack(side="left")
         row += 1
-        second_btn_frame = ttk.Frame(frame)
-        second_btn_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
-        ttk.Button(second_btn_frame, text="打开联系表目录", command=self._open_contact_dir).pack(side="left", padx=(0, 8))
-
-        ttk.Button(second_btn_frame, text="人脸细节设置", command=self._open_crop_settings).pack(side="left", padx=(0, 8))
-
+        second = ttk.Frame(frame)
+        second.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
+        for title, command in (("编辑选片组", self._open_group_editor), ("检查／调整人脸框", self._open_crop_settings), ("打开联系表目录", self._open_contact_dir), ("AI 选片与 LR 导出", self._open_ai_review)):
+            ttk.Button(second, text=title, command=command).pack(side="left", padx=(0, 8))
         row += 1
         lr_frame = ttk.Frame(frame)
         lr_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
-        ttk.Button(lr_frame, text="复核并导出 Lightroom 结果", command=self._open_ai_review).pack(side="left", padx=(0, 8))
         ttk.Button(lr_frame, text="LR 插件", command=self._open_lr_plugin).pack(side="left")
         ttk.Button(lr_frame, text="检查更新", command=lambda: self.updates.check(True)).pack(side="left", padx=12)
         ttk.Checkbutton(lr_frame, text="不再自动检查更新", variable=self.no_updates_var, command=self._save_preferences).pack(side="left")
-
         row += 1
-        ttk.Label(frame, text="流程：准备照片 → 分组与人脸修正 → AI 选片 → 人工复核 → Lightroom 应用").grid(row=row, column=0, columnspan=6, sticky="w", pady=8)
-        ttk.Button(second_btn_frame, text="AI 选片与 Lightroom 导出", command=self._open_ai_review).pack(side="left", padx=8)
+        self.next_step_var = tk.StringVar(value="推荐下一步：扫描并生成联系表")
+        ttk.Label(frame, textvariable=self.next_step_var).grid(row=row, column=0, columnspan=6, sticky="w", pady=8)
+        row += 1
+        self.progress_var = tk.DoubleVar(value=0)
+        self.progress_text = tk.StringVar(value="整体进度约 0%")
+        ttk.Progressbar(frame, variable=self.progress_var, maximum=100).grid(row=row, column=0, columnspan=4, sticky="ew")
+        ttk.Label(frame, textvariable=self.progress_text).grid(row=row, column=4, columnspan=2)
         row += 1
         ttk.Label(frame, text="日志：").grid(row=row, column=0, columnspan=6, sticky="w", pady=(8, 0))
         row += 1
@@ -204,49 +222,122 @@ class App(tk.Tk):
         if path:
             self.workspace_var.set(path)
 
-    def _run_scan_thread(self) -> None:
-        if self.updates.busy:
-            messagebox.showinfo("提示", "请等待更新检查或下载结束。", parent=self)
+    def _processing_options(self):
+        return dict(grouping_preset=GROUPING_LABELS[self.preset_var.get()], photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), technical_screening=self.screening_var.get())
+
+    def _restore_processing_job(self):
+        try:
+            from .processing_job import load_job
+            self._processing_job = load_job(self.workspace_var.get(), self.input_var.get())
+        except Exception as exc:
+            self._processing_job = None
+            self._log(str(exc))
+        self.continue_button.configure(state="normal" if self._processing_job else "disabled")
+        if self._processing_job:
+            self._set_progress(self._processing_job.percent)
+        self.next_step_var.set("推荐下一步：" + ("继续处理" if self._processing_job else "AI 选片与 LR 导出" if self.scan_result else "扫描并生成联系表"))
+
+    def _set_progress(self, value):
+        value = max(0, min(100, int(value)))
+        self.progress_var.set(value)
+        self.progress_text.set(f"整体进度约 {value}%")
+
+    def _set_processing_busy(self, busy):
+        self._processing_busy = busy
+        if busy:
+            self._disabled_widgets = []
+            def walk(parent):
+                for widget in parent.winfo_children():
+                    if widget in (self.stop_button, self.clear_log_button):
+                        continue
+                    if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Spinbox, ttk.Checkbutton)):
+                        self._disabled_widgets.append((widget, str(widget.cget("state"))))
+                        widget.configure(state="disabled")
+                    walk(widget)
+            walk(self)
+        else:
+            for widget, state in getattr(self, "_disabled_widgets", []):
+                if widget.winfo_exists():widget.configure(state=state)
+            self.continue_button.configure(state="normal" if self._processing_job else "disabled")
+        self.stop_button.configure(state="normal" if busy else "disabled")
+
+    def _start_processing(self, resume=False, regenerate=False, regroup=False):
+        if self._processing_busy or self.updates.busy:
             return
         if not self.input_var.get().strip():
-            messagebox.showwarning("提示", "请先选择照片文件夹")
+            messagebox.showinfo("处理照片", "请先选择照片文件夹。", parent=self)
             return
-        thread = threading.Thread(target=self._run_scan, daemon=True)
-        self._scan_thread = thread
-        thread.start()
-
-    def _run_scan(self) -> None:
         try:
-            self._log("开始扫描照片...")
-            result = run_scan(
-                self.input_var.get(),
-                self.workspace_var.get(),
-                grouping_preset=GROUPING_LABELS[self.preset_var.get()],
-                photos_per_page=self.per_page_var.get(),
-                columns=self.columns_var.get(),
-                technical_screening=self.screening_var.get(),
-                crop_settings=self.crop_settings,
-            )
-            self.scan_result = result
-            self._save_session(fresh=True)
-            self.review_project = None
-            self._log(f"扫描完成：共 {len(result.assets)} 张逻辑照片")
-            if result.groups_loaded_from_store:
-                self._log("已读取工作区 groups.json，保留上次人工分组。")
-                self._log("如需使用新版分组算法，请点击“重新自动分组”（会覆盖人工分组）。")
-            else:
-                self._log("未找到可用的保存分组，已按当前灵敏度自动分组。")
-            self._log(f"主联系表：{result.contact_dir / 'main'}")
-            if self.screening_var.get():
-                self._log(f"自动弃置：{result.rejected_count} 张（仅明显人物主体虚焦/严重抖动）")
-                self._log(f"弃置复核表：{result.contact_dir / 'rejected_review'}")
-                if result.screening_results_path:
-                    self._log(f"技术筛选报告：{result.screening_results_path}")
-            self._log("扫描仅生成技术建议；请进入 AI 选片与 Lightroom 导出，选片后导出 LR 结果并在 LR 复核。")
-            self._log("可先进入“编辑选片组”人工拆分/合并，再重新生成联系表。")
-        except Exception as exc:
-            self._log(f"扫描失败：{exc}")
-            messagebox.showerror("扫描失败", str(exc))
+            options = self._processing_options()
+            if not 8 <= options['photos_per_page'] <= 60 or not 2 <= options['columns'] <= 6:
+                raise ValueError("每页照片数应为 8～60，列数应为 2～6")
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showerror("设置无效", str(exc), parent=self)
+            return
+        input_dir, workspace = self.input_var.get(), self.workspace_var.get()
+        crops = copy.deepcopy(self.crop_settings)
+        previous = copy.deepcopy(self.scan_result) if regenerate else None
+        self._save_preferences()
+        self._stop_event.clear()
+        self._set_processing_busy(True)
+        if not resume:self._set_progress(0)
+        self.next_step_var.set("推荐下一步：等待处理完成")
+        self._log("继续处理，已完成部分保留原设置，未完成部分使用当前设置。" if resume else "开始重新生成联系表。" if regenerate else "开始扫描并生成联系表。")
+        def work():
+            try:
+                from .processing_job import start_job, load_job
+                job = load_job(workspace, input_dir) if resume else start_job(input_dir, workspace, options, crops, result=previous, regroup=regroup)
+                if job is None:raise ValueError("没有可继续的中断任务")
+                self._process_events.put(("job", job))
+                result = job.run(options, crops, self._stop_event, lambda percent: self._process_events.put(("progress", percent)))
+                self._process_events.put(("done", (job, result)))
+            except Exception as exc:
+                self._process_events.put(("error", str(exc)))
+        self._scan_thread = threading.Thread(target=work, daemon=True)
+        self._scan_thread.start()
+
+    def _poll_processing(self):
+        try:
+            while True:
+                event, value = self._process_events.get_nowait()
+                if event == "progress":self._set_progress(value)
+                elif event == "job":self._processing_job = value
+                elif event == "done":
+                    job, result = value
+                    if result is None:
+                        self._processing_job = job
+                        self._log("已停止并保存进度，下次可点击继续处理。")
+                    else:
+                        self.scan_result = result
+                        self.review_project = None
+                        self._processing_job = None
+                        self._set_progress(100)
+                        self._log(f"处理完成：{len(result.assets)} 张照片；主联系表 {len(result.main_pages or [])} 页。")
+                    self._set_processing_busy(False)
+                    self.next_step_var.set("推荐下一步：" + ("继续处理" if self._processing_job else "AI 选片与 LR 导出"))
+                    if self._close_after_stop:
+                        self._close_after_stop = False
+                        self.after(50, self._close)
+                elif event == "error":
+                    self._log("处理未完成：" + value)
+                    self._set_processing_busy(False)
+                    self._restore_processing_job()
+                    messagebox.showerror("处理未完成", value, parent=self)
+        except queue.Empty:
+            pass
+        self.after(100, self._poll_processing)
+
+    def _stop_processing(self):
+        if self._processing_busy:
+            self._stop_event.set()
+            self.stop_button.configure(state="disabled")
+            self.next_step_var.set("推荐下一步：等待当前处理单元保存")
+
+    def _continue_processing(self):
+        self._start_processing(resume=True)
+
+    def _run_scan_thread(self):
+        self._start_processing()
 
     def _open_crop_settings(self) -> None:
         if self.updates.busy:
@@ -258,12 +349,8 @@ class App(tk.Tk):
     def _save_crop_settings(self, settings: CropSettings) -> None:
         save_values(self.settings_dir, {"face_crop": asdict(settings)})
         self.crop_settings = settings
-        if self.scan_result:
-            sheets = regenerate_contact_sheet_sets(self.scan_result, photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), crop_settings=settings)
-            self._save_session()
-            self._log(f"人脸细节设置已保存；已生成主表 {len(sheets.main_pages)} 页、复核表 {len(sheets.rejected_pages)} 页。")
-        else:
-            self._log("人脸细节设置已保存，下次生成联系表时使用。")
+        self._log("人脸设置已保存，点击继续处理或重新生成联系表应用到后续内容。")
+        self.next_step_var.set("推荐下一步：" + ("继续处理" if self._processing_job else "重新生成联系表"))
 
     def _open_group_editor(self) -> None:
         if self.updates.busy:
@@ -282,47 +369,38 @@ class App(tk.Tk):
 
         GroupEditor(self, self.scan_result.assets, save_changes)
 
-    def _regenerate_contacts(self) -> None:
+    def _regenerate_contacts(self):
+        self._ensure_selected_session()
         if not self.scan_result:
-            messagebox.showinfo("提示", "请先扫描照片。")
+            messagebox.showinfo("提示", "请先扫描照片。", parent=self)
             return
+        settings_path = self.scan_result.workspace_dir / 'processing-settings.json'
         try:
-            sheets = regenerate_contact_sheet_sets(
-                self.scan_result,
-                photos_per_page=self.per_page_var.get(),
-                columns=self.columns_var.get(),
-                crop_settings=self.crop_settings,
-            )
-            self._save_session()
-            self._log(f"联系表已重新生成：主表 {len(sheets.main_pages)} 页；弃置复核 {len(sheets.rejected_pages)} 页。")
-            self._log(f"主联系表目录：{self.scan_result.contact_dir / 'main'}")
-        except Exception as exc:
-            self._log(f"重新生成联系表失败：{exc}")
-            messagebox.showerror("生成失败", str(exc))
+            previous = json.loads(settings_path.read_text('utf-8')).get('grouping_preset')
+        except (OSError, ValueError):
+            previous = self._loaded_grouping
+        regroup = previous != GROUPING_LABELS[self.preset_var.get()]
+        if regroup:
+            try:
+                manual = json.loads(self.scan_result.group_store_path.read_text('utf-8')).get('source') == 'manual'
+            except (OSError, ValueError):
+                manual = self.scan_result.groups_loaded_from_store
+            if manual and not messagebox.askyesno("覆盖人工分组", "分组灵敏度已改变，重新分组会覆盖人工拆分／合并。是否继续？", parent=self):
+                return
+        self._start_processing(regenerate=True, regroup=regroup)
 
-    def _reset_auto_groups(self) -> None:
-        if not self.scan_result:
-            messagebox.showinfo("提示", "请先扫描照片。")
-            return
-        confirmed = messagebox.askyesno(
-            "重新自动分组",
-            "这会覆盖当前人工拆组/合组结果，并按当前灵敏度重新计算。继续吗？",
-        )
-        if not confirmed:
-            return
-        try:
-            reset_auto_groups(self.scan_result, GROUPING_LABELS[self.preset_var.get()])
-            sheets = regenerate_contact_sheet_sets(
-                self.scan_result,
-                photos_per_page=self.per_page_var.get(),
-                columns=self.columns_var.get(),
-                crop_settings=self.crop_settings,
-            )
-            self._save_session()
-            self._log(f"已重新自动分组并覆盖 groups.json；主联系表 {len(sheets.main_pages)} 页。")
-        except Exception as exc:
-            self._log(f"重新自动分组失败：{exc}")
-            messagebox.showerror("分组失败", str(exc))
+    def _clear_log(self):
+        with self._log_lock:
+            workspace = Path(self.workspace_var.get())
+            try:
+                (workspace / 'session.log').unlink(missing_ok=True)
+            except OSError as exc:
+                messagebox.showerror("清空日志失败", str(exc), parent=self)
+                return
+            self._log_epoch += 1
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", "end")
+            self.log_text.configure(state="disabled")
 
     def _open_contact_dir(self) -> None:
         if not self.scan_result:
@@ -338,10 +416,17 @@ class App(tk.Tk):
         except Exception:
             messagebox.showinfo("联系表目录", str(path))
 
+    def _ensure_selected_session(self):
+        if self.scan_result and (self.scan_result.workspace_dir.resolve() != Path(self.workspace_var.get()).resolve() or (self.scan_result.input_dir and self.scan_result.input_dir.resolve() != Path(self.input_var.get()).resolve())):
+            self.scan_result = None
+            self._restore_session()
+            self._restore_processing_job()
+
     def _open_ai_review(self):
         if self.updates.busy or (getattr(self, '_scan_thread', None) and self._scan_thread.is_alive()):
             messagebox.showinfo("提示", "请等待扫描或更新结束。", parent=self)
             return
+        self._ensure_selected_session()
         if not self.scan_result:
             messagebox.showinfo("提示", "请先扫描照片；同一工作区会恢复保存的 AI 任务与人工结果。", parent=self)
             return
@@ -363,18 +448,21 @@ class App(tk.Tk):
             messagebox.showinfo("Lightroom 插件", "请使用完整便携包中的 lightroom 文件夹。", parent=self)
 
     def _log(self, text: str) -> None:
-        def append() -> None:
+        with self._log_lock:
+            epoch = self._log_epoch
+            try:
+                workspace = Path(self.workspace_var.get())
+                workspace.mkdir(parents=True, exist_ok=True)
+                with (workspace / "session.log").open("a", encoding="utf-8") as stream:
+                    stream.write(text + "\n")
+            except OSError:
+                pass
+        def append():
+            if epoch != self._log_epoch:return
             self.log_text.configure(state="normal")
             self.log_text.insert("end", text + "\n")
             self.log_text.see("end")
             self.log_text.configure(state="disabled")
-        try:
-            workspace = self.scan_result.workspace_dir if self.scan_result else Path(self.workspace_var.get())
-            workspace.mkdir(parents=True, exist_ok=True)
-            with (workspace / "session.log").open("a", encoding="utf-8") as stream:
-                stream.write(text + "\n")
-        except OSError:
-            pass
         self.after(0, append)
 
 
