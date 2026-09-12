@@ -21,9 +21,10 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
     try:
         initial=CropSettings()
         d=CropDialog(root,assets,initial,saved.append)
-        d.scale.set(1.4); d.shift.set(.1); d.ratio.set('1:1')
+        d.scale.set(1.4); d.shift.set(.1); d.offset_x.set(.2); d.ratio.set('1:1')
         d.render()
         x,y,w,h,_,_=d._image_rect
+        d.manual_mode.set(True)
         d.pointer_down(SimpleNamespace(x=x+w*.3,y=y+h*.2))
         d.pointer_up(SimpleNamespace(x=x+w*.6,y=y+h*.4))
         assert detail_features(assets[0],d.global_settings()).face is not None
@@ -32,10 +33,12 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
         d.hide_face(); d.confidence.set(.95)
         d.navigate(-1)
         assert d.scale.get()==1.4 and d.shift.get()==.1
+        assert d.offset_x.get()==.2
         assert detail_features(assets[0],d.global_settings()).face is not None
         d.save()
         settings=CropSettings.from_dict(asdict(saved[0]))
         assert settings.for_asset(assets[0]).aspect_ratio=='1:1'
+        assert settings.for_asset(assets[0]).offset_x_factor==.2
         assert settings.for_asset(assets[1]).scale_factor==1
         assert settings.for_asset(assets[0]).detection_confidence==.95
         assert detail_features(assets[1],settings).face is None
@@ -44,6 +47,34 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
         d.auto_face(); d.scale.set(2); d.destroy()
         assert settings.for_asset(assets[0]).scale_factor==1.4
         assert settings.photos[settings.key(assets[0])]['manual_face']
+    finally:
+        root.destroy()
+
+
+def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path):
+    path=tmp_path/'face.jpg'
+    Image.new('RGB',(400,600),'gray').save(path)
+    asset=PhotoAsset('face',path,path,None,path,datetime.now(),'.jpg',preview_path=path)
+    asset.subject_checked=True
+    asset.subject_confidence=.8
+    asset.subject_features=SimpleNamespace(face=(.35,.2,.2,.2),head=(.3,.12,.3,.36))
+    root=tk.Tk();root.withdraw()
+    try:
+        dialog=CropDialog(root,[asset],CropSettings(),lambda settings:None)
+        dialog.render()
+        left,top,right,bottom=dialog._crop_rect
+        start_x=(left+right)/2;start_y=(top+bottom)/2
+        dialog.pointer_down(SimpleNamespace(x=start_x,y=start_y))
+        dialog.pointer_move(SimpleNamespace(x=start_x+12,y=start_y+8))
+        dialog.pointer_up(SimpleNamespace(x=start_x+12,y=start_y+8))
+        assert dialog.offset_x.get()>0
+        assert dialog.shift.get()>0
+        assert 'manual_face' not in dialog.current_entry()
+        old_scale=dialog.scale.get()
+        x,y,w,h,_,_=dialog._image_rect
+        dialog.mouse_wheel(SimpleNamespace(x=x+w/2,y=y+h/2,delta=120,num=0))
+        assert dialog.scale.get()<old_scale
+        dialog.destroy()
     finally:
         root.destroy()
 

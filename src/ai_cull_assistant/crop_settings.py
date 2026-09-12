@@ -10,6 +10,10 @@ class CropSettings:
     detection_confidence: float = .8
 
     photos: dict = field(default_factory=dict)
+    # Horizontal crop displacement, measured in detected head heights.  This is
+    # appended to preserve the positional constructor used by older settings and
+    # callers.  ``shift_factor`` is the matching vertical displacement.
+    offset_x_factor: float = 0.0
 
     def key(self, asset):
         return str(asset.primary_path.resolve()).casefold()
@@ -23,13 +27,21 @@ class CropSettings:
         try:
             scale = float(values.get("scale_factor", 1))
             shift = float(values.get("shift_factor", 0))
+            offset_x = float(values.get("offset_x_factor", 0))
             confidence = float(values.get("detection_confidence", .8))
             if not math.isfinite(confidence):
                 confidence = .8
             ratio = values.get("aspect_ratio", "124:150")
-            if not math.isfinite(scale) or not math.isfinite(shift):
+            if not math.isfinite(scale) or not math.isfinite(shift) or not math.isfinite(offset_x):
                 return cls()
-            return cls(max(.6, min(2.0, scale)), max(-.5, min(.5, shift)), ratio if ratio in ("124:150", "1:1", "3:4") else "124:150", max(.7, min(.95, confidence)), values.get("photos", {}) if isinstance(values.get("photos", {}), dict) else {})
+            return cls(
+                max(.6, min(2.0, scale)),
+                max(-5.0, min(5.0, shift)),
+                ratio if ratio in ("124:150", "1:1", "3:4") else "124:150",
+                max(.7, min(.95, confidence)),
+                values.get("photos", {}) if isinstance(values.get("photos", {}), dict) else {},
+                max(-5.0, min(5.0, offset_x)),
+            )
         except (AttributeError, ValueError, TypeError):
             return cls()
 
@@ -39,6 +51,7 @@ def crop_bounds(image_size, head, settings):
     x, y, w, h = head
     cx, cy = (x + w / 2) * width, (y + h / 2) * height
     base_h = h * height
+    cx += settings.offset_x_factor * base_h
     cy += settings.shift_factor * base_h
     a, b = map(float, settings.aspect_ratio.split(":"))
     crop_h = base_h * settings.scale_factor

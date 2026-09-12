@@ -277,6 +277,9 @@ def start_job(
         ),
         "groups_loaded_from_store": result is not None and (mode is not None or not regroup),
         "pages": [],
+        "focus_review_errors": [],
+        "focus_review_skipped": [],
+        "awaiting_focus_error_decision": False,
         "percent": 0,
     }
     job = ProcessingJob(root, data)
@@ -364,6 +367,56 @@ class ProcessingJob:
     def output(self) -> Path:
         return self.root / "output"
 
+    @property
+    def pending_focus_errors(self) -> tuple[dict, ...]:
+        """Errors collected during the latest explicit AI focus pass."""
+        rows = self._data.get("focus_review_errors", [])
+        if not isinstance(rows, list):
+            return ()
+        return tuple(dict(row) for row in rows if isinstance(row, Mapping))
+
+    @property
+    def awaiting_focus_error_decision(self) -> bool:
+        return bool(
+            self.mode == "focus"
+            and self._data.get("awaiting_focus_error_decision")
+            and self.pending_focus_errors
+        )
+
+    def retry_failed(self) -> None:
+        """Prepare a new pass containing only the failed focus-review photos."""
+        if not self.awaiting_focus_error_decision:
+            raise ProcessingJobError("当前没有等待重试的 AI 清晰度复核照片")
+        indices = []
+        for row in self.pending_focus_errors:
+            try:
+                index = int(row["index"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if 0 <= index < len(self.assets) and index not in indices:
+                indices.append(index)
+        if not indices:
+            raise ProcessingJobError("失败照片记录损坏，无法重试")
+        self._data["work_indices"] = indices
+        self._data["completed_photos"] = 0
+        self._data["focus_review_errors"] = []
+        self._data["awaiting_focus_error_decision"] = False
+        self._data["percent"] = 0
+        self._persist()
+
+    def skip_failed(self) -> None:
+        """Accept the failed photos as pending and allow the job to publish."""
+        if not self.awaiting_focus_error_decision:
+            raise ProcessingJobError("当前没有可跳过的 AI 清晰度复核照片")
+        skipped = self._data.get("focus_review_skipped", [])
+        if not isinstance(skipped, list):
+            skipped = []
+        skipped.extend(dict(row) for row in self.pending_focus_errors)
+        self._data["focus_review_skipped"] = skipped
+        self._data["focus_review_errors"] = []
+        self._data["awaiting_focus_error_decision"] = False
+        self._persist()
+
     def run(
         self,
         options: Mapping,
@@ -384,12 +437,19 @@ class ProcessingJob:
         if stop_event.is_set():
             return None
 
+        # A completed focus pass with individual failures must wait for an
+        # explicit UI decision.  Merely reopening/resuming the job must not
+        # repeat paid requests or silently skip failed photos.
+        if self.awaiting_focus_error_decision:
+            return None
+
         work_indices = self._data.get("work_indices")
         if not isinstance(work_indices, list):
             # Compatibility with interrupted v1 jobs created before staged modes.
             work_indices = list(range(len(self.assets)))
             self._data["work_indices"] = work_indices
-        if self.mode == "focus" and work_indices and focus_profile is None:
+        remaining_focus_work = int(self._data.get("completed_photos", 0)) < len(work_indices)
+        if self.mode == "focus" and remaining_focus_work and focus_profile is None:
             raise FocusReviewError("AI 复核需要先配置可用的 API 服务")
 
         while self._data["completed_photos"] < len(work_indices):
@@ -469,18 +529,53 @@ class ProcessingJob:
                         self._data["screening_results"][key] = asdict(screened)
                         _notify_log(on_log, _focus_review_log(asset, reviewed))
                     except Exception as exc:
-                        # Keep the completed local analysis while leaving this photo
-                        # incomplete, so the user can resume with a working profile.
-                        self._data["local_screening_pending"] = index
-                        self._checkpoint(progress)
                         message = f"AI 清晰度复核 {asset.primary_path.name} 失败：{exc}"
-                        _notify_log(on_log, message)
-                        raise FocusReviewError(message + "。任务进度已保存，可修复 API 配置后继续处理。") from exc
+                        _notify_log(on_log, message + "。已记录错误，将继续处理其余照片。")
+                        if self.mode != "focus":
+                            # Preserve the historical all-in-one behaviour.
+                            self._data["local_screening_pending"] = index
+                            self._checkpoint(progress)
+                            raise FocusReviewError(
+                                message + "。任务进度已保存，可修复 API 配置后继续处理。"
+                            ) from exc
+
+                        # An API/response failure is not a clarity verdict.  Keep
+                        # the asset pending, even if it carried an older paid
+                        # result before a face edit, and move on to the next photo.
+                        asset.ai_focus_result = None
+                        asset.ai_focus_dirty = False
+                        asset.auto_rejected = False
+                        # Preserve a current local pending reason.  A stale
+                        # screening-results row may still contain an older
+                        # completed verdict, so never restore that on failure.
+                        pending_reason = (
+                            asset.screening_reason
+                            if focus_review_status(asset) is True
+                            else "face_focus_uncertain"
+                        )
+                        screened.reason = pending_reason
+                        screened.rejected = False
+                        asset.screening_reason = pending_reason
+                        self._data["screening_results"][key] = asdict(screened)
+                        errors = self._data.get("focus_review_errors", [])
+                        if not isinstance(errors, list):
+                            errors = []
+                        errors.append({
+                            "index": index,
+                            "filename": asset.primary_path.name,
+                            "message": str(exc),
+                        })
+                        self._data["focus_review_errors"] = errors
             self._data.pop("local_screening_pending", None)
             self._data["completed_photos"] = position + 1
             self._checkpoint(progress)
             if stop_event.is_set():
                 return None
+
+        if self.mode == "focus" and self.pending_focus_errors:
+            self._data["awaiting_focus_error_decision"] = True
+            self._persist()
+            return None
 
         if not self._data["grouping_complete"]:
             loaded = False

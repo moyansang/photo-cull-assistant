@@ -55,6 +55,19 @@ def _asset_value(asset: Any, name: str, default: Any = None) -> Any:
     return getattr(asset, name, default)
 
 
+def _api_request_stubs(task: dict[str, Any], profile: dict[str, Any]) -> list[dict[str, Any]]:
+    """Create cheap request metadata without opening or hashing any images."""
+    return [{
+        "task": task,
+        "task_id": _task_id(task),
+        "batch": batch,
+        "batch_id": _batch_id(batch),
+        "profile": copy.deepcopy(profile),
+        "photo_count": len(batch.get("photo_ids", [])),
+        "image_count": len(batch.get("image_paths", [])),
+    } for batch in task.get("batches", []) if not _is_done(batch)]
+
+
 class PasteResponseDialog(tk.Toplevel):
     def __init__(
         self,
@@ -179,6 +192,7 @@ class ReviewDialog(tk.Toplevel):
         self._pause_requested = False
         self._closing_requested = False
         self._poll_token: str | None = None
+        self._review_dirty = True
 
         self.preference_vars = {
             "intensity": tk.StringVar(value="均衡保留"),
@@ -199,7 +213,6 @@ class ReviewDialog(tk.Toplevel):
         self._load_ui_settings()
         self._refresh_profiles()
         self._refresh_tasks(select_current=True)
-        self._refresh_review()
         self._refresh_export_status()
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.bind("<Left>", lambda _e: self._navigate_photo(-1))
@@ -238,7 +251,10 @@ class ReviewDialog(tk.Toplevel):
         # Keep the preference panel in place across tabs so returning never
         # repacks the API page or changes its available area.
         if hasattr(self, "review_tree") and self.notebook.index(self.notebook.select()) == 2:
-            self._show_selected_photo()
+            if self._review_dirty:
+                self._refresh_review()
+            else:
+                self._show_selected_photo()
 
     def _build_task_tab(self) -> None:
         tab = self.task_tab
@@ -387,8 +403,6 @@ class ReviewDialog(tk.Toplevel):
         if self._preparing_task:
             return
         selected = list(self.web_tree.selection())
-        import gc
-        gc.collect()
         self._set_preparing(True)
         self.status_var.set("正在准备网页联系表和清晰度细节图片…")
         def work():
@@ -586,6 +600,24 @@ class ReviewDialog(tk.Toplevel):
             self.batch_tree.selection_set(children[0])
         self._refresh_web()
 
+    def _update_batch_views(self, batch: dict[str, Any], *, select: bool = False) -> None:
+        """Update one batch without rebuilding both large batch trees."""
+        batch_id = _batch_id(batch)
+        status = str(batch.get("status", "pending"))
+        values = (
+            STATUS_LABELS.get(status.lower(), status),
+            len(batch.get("photo_ids", [])),
+            len(batch.get("image_paths", [])),
+            str(batch.get("error", "")),
+        )
+        if self.batch_tree.exists(batch_id):
+            self.batch_tree.item(batch_id, text=batch_id, values=values)
+            if select:
+                self.batch_tree.selection_set(batch_id)
+                self.batch_tree.see(batch_id)
+        if self.web_tree.exists(batch_id):
+            self.web_tree.item(batch_id, text=batch_id, values=values[:3])
+
     def _set_preparing(self, preparing):
         self._preparing_task = preparing
         if preparing:
@@ -605,18 +637,17 @@ class ReviewDialog(tk.Toplevel):
     def _create_task(self, kind: str, photo_ids=None, *, submit_after=False, reuse_unchanged=False) -> None:
         if self._api_active or self._preparing_task:
             return
-        eligible = [a for a in self.assets if not _asset_value(a, "auto_rejected", False)]
         if photo_ids == []:
             self.status_var.set("没有可提交 AI 的照片；初筛弃置结果仍可导出到 LR。")
             return
-        # Collect retired Tk variable/image cycles on the Tk thread before CPU work.
-        import gc
-        gc.collect()
         preferences = self._preferences()
         self._set_preparing(True)
         self.status_var.set("正在准备本轮联系表，请稍候…")
         def work():
             try:
+                # File fingerprint refresh can stat every source photo.  Keep it
+                # off the Tk thread even when the current task is reusable.
+                self.project.refresh(self.assets, self.crop_settings)
                 signature = self.project.home_sheet_signature(self.assets, self.crop_settings, self.home_pages)
                 if reuse_unchanged and self.project.can_reuse_task(signature):
                     self._api_queue.put(("prepared", self.project.current_task(), False, True))
@@ -730,30 +761,14 @@ class ReviewDialog(tk.Toplevel):
         if not profile:
             messagebox.showinfo("API 提交", "请在主页面配置并选择 API；也可以使用网页选片。", parent=self)
             return
-        pending: list[dict[str, Any]] = []
-        try:
-            for batch in task.get("batches", []):
-                if _is_done(batch):
-                    continue
-                images = self._batch_images(task, batch)
-                pending.append({
-                    "task": task,
-                    "task_id": _task_id(task),
-                    "batch": batch,
-                    "batch_id": _batch_id(batch),
-                    "profile": copy.deepcopy(profile),
-                    "prompt": str(self.project.prompt(task, batch)),
-                    "image_paths": tuple(str(path) for path in images),
-                    "photo_count": len(batch.get("photo_ids", [])),
-                })
-        except Exception as exc:
-            messagebox.showerror("无法准备 API 请求", str(exc), parent=self)
-            return
+        # Snapshot only cheap identifiers.  Hashing and source validation are
+        # performed for one batch at a time in its worker thread.
+        pending = _api_request_stubs(task, profile)
         if not pending:
             messagebox.showinfo("API 提交", "此任务的批次均已完成，不会重复提交。", parent=self)
             return
         photo_count = sum(item["photo_count"] for item in pending)
-        image_count = sum(len(item["image_paths"]) for item in pending)
+        image_count = sum(item["image_count"] for item in pending)
         summary = (
             f"配置：{profile.get('name', profile.get('id', '未命名'))}\n"
             f"接口：{profile.get('base_url', '')}\n"
@@ -788,25 +803,33 @@ class ReviewDialog(tk.Toplevel):
         except Exception as exc:
             self._finish_api(f"保存批次状态失败：{exc}")
             return
-        self._refresh_batches(select_id=request["batch_id"])
-        self.status_var.set(f"正在提交批次 {request['batch_id']}…")
+        self._update_batch_views(batch, select=True)
+        self.status_var.set(f"正在检查并提交批次 {request['batch_id']}…")
 
-        def work(snapshot: dict[str, Any]) -> None:
+        def work(snapshot: dict[str, Any], task_ref: dict[str, Any], batch_ref: dict[str, Any]) -> None:
             try:
                 from .ai_api import call_model
 
+                # Validate only the batch which is about to be submitted.  The
+                # all-photo refresh and snapshot hashes are intentionally kept
+                # in this worker so Tk remains responsive.
+                self.project.validate_batch_sources(self.assets, self.crop_settings, batch_ref)
+                images = self.project.batch_images(task_ref, batch_ref, refresh_state=False)
+                prompt = str(self.project.prompt(task_ref, batch_ref, refresh_state=False))
                 result = call_model(
-                    snapshot["profile"], snapshot["prompt"],
-                    [Path(path) for path in snapshot["image_paths"]],
+                    snapshot["profile"], prompt, images,
                 )
                 if not isinstance(result, dict) or not isinstance(result.get("text"), str):
                     raise ValueError("API 返回缺少文本结果")
+                # A source may be edited while the provider is responding.
+                self.project.validate_batch_sources(self.assets, self.crop_settings, batch_ref)
+                self.project.batch_images(task_ref, batch_ref, refresh_state=False)
                 self._api_queue.put(("success", snapshot["task_id"], snapshot["batch_id"], result.get("text", ""), result.get("usage")))
             except Exception as exc:
                 self._api_queue.put(("error", snapshot["task_id"], snapshot["batch_id"], str(exc)))
 
-        immutable = {key: request[key] for key in ("task_id", "batch_id", "profile", "prompt", "image_paths")}
-        threading.Thread(target=work, args=(immutable,), daemon=True).start()
+        immutable = {key: request[key] for key in ("task_id", "batch_id", "profile")}
+        threading.Thread(target=work, args=(immutable, request["task"], batch), daemon=True).start()
 
     def _pause_api(self) -> None:
         if self._api_active:
@@ -849,10 +872,14 @@ class ReviewDialog(tk.Toplevel):
         if event[0] in ("prepared", "prepare_error"):
             self._set_preparing(False)
             if event[0] == "prepared":
-                self._refresh_tasks()
-                self._refresh_review()
+                reused = len(event) > 3 and bool(event[3])
+                if not reused:
+                    self._refresh_tasks()
+                self._review_dirty = True
+                if self.notebook.index(self.notebook.select()) == 2:
+                    self._refresh_review()
                 self._refresh_export_status()
-                self.status_var.set("联系表未变化，已恢复上次任务和选片结果。" if len(event)>3 and event[3] else f"本轮已准备好，共 {len(event[1]['batches'])} 批。")
+                self.status_var.set("联系表未变化，已恢复上次任务和选片结果。" if reused else f"本轮已准备好，共 {len(event[1]['batches'])} 批。")
             else:
                 self.status_var.set("准备失败：" + event[1])
                 if not self._closing_requested:
@@ -871,7 +898,7 @@ class ReviewDialog(tk.Toplevel):
         if kind == "success":
             text, usage = event[3], event[4]
             try:
-                issues = self.project.ingest(task, batch, text)
+                issues = self.project.ingest(task, batch, text, refresh_state=False)
                 if usage is not None:
                     batch["usage"] = usage
                 if batch.get("raw_responses"):
@@ -885,10 +912,12 @@ class ReviewDialog(tk.Toplevel):
                 batch["error"] = f"返回结果保存失败：{exc}"
                 self._safe_save()
                 self._finish_api(f"批次 {batch_id} 保存失败，已停止：{exc}")
-                self._refresh_batches(select_id=batch_id)
+                self._update_batch_views(batch, select=True)
                 return
-            self._refresh_batches(select_id=batch_id)
-            self._refresh_review()
+            self._update_batch_views(batch, select=True)
+            self._review_dirty = True
+            if self.notebook.index(self.notebook.select()) == 2:
+                self._refresh_review()
             if issues:
                 self.status_var.set(f"批次 {batch_id} 已保存，发现 {len(issues)} 项异常；继续下一批。")
             self._start_next_api_batch()
@@ -897,7 +926,7 @@ class ReviewDialog(tk.Toplevel):
             batch["status"] = "failed"
             batch["error"] = error
             self._safe_save()
-            self._refresh_batches(select_id=batch_id)
+            self._update_batch_views(batch, select=True)
             self._finish_api(f"批次 {batch_id} 失败，已停止；修正后可继续未完成批次。")
             if not self._closing_requested:
                 hint = ""
@@ -1002,6 +1031,7 @@ class ReviewDialog(tk.Toplevel):
                 flag, reason, clarity), tags=("stale",) if photo.get("stale") else ())
             self._photo_ids.append(str(photo_id))
         self.review_tree.tag_configure("stale", foreground="#b05a00")
+        self._review_dirty = False
         if old and old in self._photo_ids:
             self.review_tree.selection_set(old)
             self.review_tree.see(old)
@@ -1087,6 +1117,9 @@ class ReviewDialog(tk.Toplevel):
             messagebox.showerror("打开原图失败", str(exc), parent=self)
 
     def _export_ai_ratings(self) -> None:
+        if self._api_active or self._preparing_task:
+            messagebox.showinfo("导出到 LR", "请等待当前批次完成或暂停后再导出。", parent=self)
+            return
         try:
             self.project.refresh(self.assets, self.crop_settings)
         except Exception as exc:

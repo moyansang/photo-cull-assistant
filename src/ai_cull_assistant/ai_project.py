@@ -75,8 +75,17 @@ def fingerprint(asset, crops):
         try:
             st=p.stat();paths.append((str(p.resolve()),st.st_size,st.st_mtime_ns))
         except OSError: paths.append((str(p.resolve()),None,None))
-    values=dict(paths=paths,group=asset.group_id,crop=asdict(crops.for_asset(asset)),
-                manual=crops.photos.get(crops.key(asset),{}),confidence=crops.detection_confidence)
+    crop_values=asdict(crops.for_asset(asset))
+    manual_values=dict(crops.photos.get(crops.key(asset),{}))
+    # offset_x_factor was added after v1.2.  Omitting its neutral value keeps
+    # every existing fingerprint valid; an actual horizontal move still
+    # invalidates the affected photo/group as intended.
+    if crop_values.get('offset_x_factor') == 0:
+        crop_values.pop('offset_x_factor',None)
+    if manual_values.get('offset_x_factor') == 0:
+        manual_values.pop('offset_x_factor',None)
+    values=dict(paths=paths,group=asset.group_id,crop=crop_values,
+                manual=manual_values,confidence=crops.detection_confidence)
     return hashlib.sha256(json.dumps(values,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 
 
@@ -292,13 +301,13 @@ class ReviewProject:
             if self._technical_rejected(photo):
                 raise ValueError(f'{context}包含当前技术筛选已弃置的照片，请创建新评审任务')
 
-    def prompt(self,task,batch):
-        if self._crops is not None:self.refresh(self._assets,self._crops)
+    def prompt(self,task,batch,*,refresh_state=True):
+        if refresh_state and self._crops is not None:self.refresh(self._assets,self._crops)
         self._validate_ai_photos(batch.get('photo_ids',[]),'本批')
         return batch['prompt']
 
-    def batch_images(self,task,batch):
-        if self._crops is not None:self.refresh(self._assets,self._crops)
+    def batch_images(self,task,batch,*,refresh_state=True):
+        if refresh_state and self._crops is not None:self.refresh(self._assets,self._crops)
         self._validate_ai_photos(batch.get('photo_ids',[]),'本批')
         for pid,fp in batch['fingerprints'].items():
             if self.data['photos'].get(pid,{}).get('fingerprint')!=fp:raise ValueError('本批照片或分组/裁切已改变，请创建新评审任务')
@@ -308,6 +317,24 @@ class ReviewProject:
             if not image.is_file() or hashlib.sha256(image.read_bytes()).hexdigest()!=sha:
                 raise ValueError('联系表快照丢失或被修改，请创建新任务')
         return images
+
+    def validate_batch_sources(self,assets,crops,batch):
+        """Validate source/group/crop identity without mutating project state."""
+        grouped={}
+        assets_by_id={}
+        for asset in assets:
+            pid=photo_id(asset)
+            if pid in assets_by_id:raise ValueError('重复原照片路径')
+            assets_by_id[pid]=asset
+            grouped.setdefault(asset.group_id,[]).append((pid,fingerprint(asset,crops)))
+        group_hashes={group_id:hashlib.sha256(json.dumps(sorted(values)).encode()).hexdigest()
+                      for group_id,values in grouped.items()}
+        for pid,expected in batch.get('fingerprints',{}).items():
+            asset=assets_by_id.get(pid)
+            if asset is None:raise ValueError(f'照片已不在当前项目中：{pid}')
+            if asset.auto_rejected:raise ValueError('本批包含当前技术筛选已弃置的照片，请创建新评审任务')
+            if group_hashes.get(asset.group_id)!=expected:
+                raise ValueError('本批照片或分组/裁切已改变，请创建新评审任务')
 
     def create_web_submission(self,task,batch_ids):
         """Freeze several existing review batches into one manual web submission."""
@@ -487,11 +514,11 @@ clear 表示主体清晰；blur 只用于主体明确失焦或拖影；无可靠
         self.save()
         return []
 
-    def ingest(self,task,batch,text):
+    def ingest(self,task,batch,text,*,refresh_state=True):
         response=dict(text=text,received_at=datetime.now(timezone.utc).isoformat())
         batch['raw_responses'].append(response)
         try:
-            self.batch_images(task,batch)
+            self.batch_images(task,batch,refresh_state=refresh_state)
             valid,issues=parse_answer(text,task['id'],batch['id'],batch['photo_ids'])
         except (ValueError,OSError) as exc:
             batch.update(status='invalid',error=str(exc));response['issues']=[str(exc)]

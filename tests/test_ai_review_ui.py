@@ -3,7 +3,7 @@ import time
 import tkinter as tk
 from pathlib import Path
 import pytest
-from ai_cull_assistant.ai_review_ui import ReviewDialog
+from ai_cull_assistant.ai_review_ui import ReviewDialog, _api_request_stubs
 from ai_cull_assistant import ai_api
 from ai_cull_assistant.crop_settings import CropSettings
 from test_ai_project import setup_project, answer
@@ -39,6 +39,21 @@ def drive(root,dialog):
     while (dialog._api_active or dialog._preparing_task) and time.monotonic()<end:
         root.update();time.sleep(.02)
     assert not dialog._api_active and not dialog._preparing_task
+
+
+def test_hundreds_of_api_batches_are_snapshotted_without_image_io(monkeypatch):
+    profile = {'id': 'test', 'model': 'vision'}
+    batches = [
+        {'id': f'B{i:03d}', 'status': 'pending', 'photo_ids': [str(i)], 'image_paths': [f'{i}.jpg']}
+        for i in range(450)
+    ]
+    batches[17]['status'] = 'complete'
+
+    requests = _api_request_stubs({'id': 'task', 'batches': batches}, profile)
+
+    assert len(requests) == 449
+    assert requests[0]['image_count'] == 1
+    assert all('prompt' not in item and 'image_paths' not in item for item in requests)
 
 
 def test_api_queue_ingests_records_provider_and_skips_completed(ui,monkeypatch):

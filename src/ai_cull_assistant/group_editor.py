@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -28,6 +29,13 @@ def grouped_assets(assets: list[PhotoAsset]) -> list[tuple[int, list[PhotoAsset]
     return groups
 
 
+def visible_group_range(count: int, viewport_top: int, viewport_height: int, row_height: int) -> range:
+    """Return visible row indexes plus one buffer row on either side."""
+    first = max(0, viewport_top // row_height - 1)
+    last = min(count, (viewport_top + max(row_height, viewport_height)) // row_height + 2)
+    return range(first, last)
+
+
 class GroupEditor(tk.Toplevel):
     ROW_H = 145
     ROW_THUMB = (105, 105)
@@ -43,6 +51,11 @@ class GroupEditor(tk.Toplevel):
         self.selected_stem: str | None = None
         self._row_images: list[ImageTk.PhotoImage] = []
         self._detail_images: list[ImageTk.PhotoImage] = []
+        self._thumb_cache: OrderedDict[tuple[int, tuple[int, int]], ImageTk.PhotoImage | None] = OrderedDict()
+        self._groups: list[tuple[int, list[PhotoAsset]]] = grouped_assets(self.assets)
+        self._members_by_group = {group_id: members for group_id, members in self._groups}
+        self._redraw_token: str | None = None
+        self._detail_redraw_token: str | None = None
         self._build_ui()
         fit_window(self, (1180, 820), minimum_size=(560, 420), parent=parent)
         self._redraw_rows()
@@ -65,29 +78,68 @@ class GroupEditor(tk.Toplevel):
         upper = ttk.Frame(self, padding=(10, 0, 10, 6))
         upper.pack(fill="both", expand=True)
         self.rows_canvas = tk.Canvas(upper, highlightthickness=0, background="#f4f4f4")
-        ybar = ttk.Scrollbar(upper, orient="vertical", command=self.rows_canvas.yview)
+        ybar = ttk.Scrollbar(upper, orient="vertical", command=self._scroll_rows)
         self.rows_canvas.configure(yscrollcommand=ybar.set)
         self.rows_canvas.pack(side="left", fill="both", expand=True)
         ybar.pack(side="right", fill="y")
         self.rows_canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self.rows_canvas.bind("<Configure>", lambda _event: self._schedule_rows_redraw())
 
         detail_frame = ttk.LabelFrame(self, text="当前组全部照片（点击照片选择拆分位置）", padding=8)
         detail_frame.pack(fill="x", padx=10, pady=(0, 10))
         self.detail_canvas = tk.Canvas(detail_frame, height=175, highlightthickness=0, background="white")
-        xbar = ttk.Scrollbar(detail_frame, orient="horizontal", command=self.detail_canvas.xview)
+        xbar = ttk.Scrollbar(detail_frame, orient="horizontal", command=self._scroll_detail)
         self.detail_canvas.configure(xscrollcommand=xbar.set)
         self.detail_canvas.pack(fill="x", expand=True)
         xbar.pack(fill="x")
+        self.detail_canvas.bind("<Configure>", lambda _event: self._schedule_detail_redraw())
 
     def _on_mousewheel(self, event) -> None:
         self.rows_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self._schedule_rows_redraw()
+        return "break"
+
+    def _scroll_rows(self, *args: str) -> None:
+        self.rows_canvas.yview(*args)
+        self._schedule_rows_redraw()
+
+    def _schedule_rows_redraw(self) -> None:
+        if self._redraw_token is not None:
+            return
+        self._redraw_token = self.after_idle(self._run_scheduled_redraw)
+
+    def _run_scheduled_redraw(self) -> None:
+        self._redraw_token = None
+        if self.winfo_exists():
+            self._redraw_rows()
+
+    def _scroll_detail(self, *args: str) -> None:
+        self.detail_canvas.xview(*args)
+        self._schedule_detail_redraw()
+
+    def _schedule_detail_redraw(self) -> None:
+        if self._detail_redraw_token is None:
+            self._detail_redraw_token = self.after_idle(self._run_scheduled_detail_redraw)
+
+    def _run_scheduled_detail_redraw(self) -> None:
+        self._detail_redraw_token = None
+        if self.winfo_exists():
+            self._redraw_detail()
 
     def _redraw_rows(self) -> None:
         self.rows_canvas.delete("all")
         self._row_images.clear()
-        groups = grouped_assets(self.assets)
         width = max(self.rows_canvas.winfo_width(), 1080)
-        for row_index, (group_id, members) in enumerate(groups):
+        total_h = max(len(self._groups) * self.ROW_H, 1)
+        self.rows_canvas.configure(scrollregion=(0, 0, width, total_h))
+
+        # A Canvas can describe thousands of rows, but only the rows around the
+        # viewport need widgets and decoded thumbnails.  Keeping a one-row
+        # buffer makes wheel and scrollbar movement appear continuous.
+        viewport_top = max(0, int(self.rows_canvas.canvasy(0)))
+        viewport_height = max(self.ROW_H, self.rows_canvas.winfo_height())
+        for row_index in visible_group_range(len(self._groups), viewport_top, viewport_height, self.ROW_H):
+            group_id, members = self._groups[row_index]
             y0 = row_index * self.ROW_H
             selected = group_id == self.selected_group_id
             fill = "#e9f2ff" if selected else "white"
@@ -99,7 +151,7 @@ class GroupEditor(tk.Toplevel):
             x = 105
             max_preview = 8
             for asset in members[:max_preview]:
-                photo = self._make_photo(asset, self.ROW_THUMB)
+                photo = self._cached_photo(asset, self.ROW_THUMB)
                 if photo is not None:
                     self._row_images.append(photo)
                     self.rows_canvas.create_image(x, y0 + 10, anchor="nw", image=photo, tags=(tag, f"asset:{asset.stem}"))
@@ -110,30 +162,33 @@ class GroupEditor(tk.Toplevel):
 
             self.rows_canvas.tag_bind(tag, "<Button-1>", lambda e, gid=group_id: self._select_group(gid))
 
-        total_h = max(len(groups) * self.ROW_H, 1)
-        self.rows_canvas.configure(scrollregion=(0, 0, width, total_h))
-        self.status_var.set(f"共 {len(groups)} 组选片组")
+        self.status_var.set(f"共 {len(self._groups)} 组选片组")
 
     def _redraw_detail(self) -> None:
         self.detail_canvas.delete("all")
         self._detail_images.clear()
         if self.selected_group_id is None:
             return
-        members = next((members for gid, members in grouped_assets(self.assets) if gid == self.selected_group_id), [])
-        x = 10
-        for asset in members:
+        members = self._members_by_group.get(self.selected_group_id, [])
+        total_width = max(10 + len(members) * 170, 1)
+        self.detail_canvas.configure(scrollregion=(0, 0, total_width, 170))
+        viewport_left = max(0, int(self.detail_canvas.canvasx(0)))
+        viewport_width = max(170, self.detail_canvas.winfo_width())
+        first = max(0, viewport_left // 170 - 1)
+        last = min(len(members), (viewport_left + viewport_width) // 170 + 2)
+        for index in range(first, last):
+            asset = members[index]
+            x = 10 + index * 170
             selected = asset.stem == self.selected_stem
             if selected:
                 self.detail_canvas.create_rectangle(x - 4, 5, x + 158, 158, outline="#4b7bec", width=3)
-            photo = self._make_photo(asset, self.DETAIL_THUMB)
+            photo = self._cached_photo(asset, self.DETAIL_THUMB)
             if photo is not None:
                 self._detail_images.append(photo)
                 item = self.detail_canvas.create_image(x, 10, anchor="nw", image=photo, tags=(f"detail:{asset.stem}",))
                 self.detail_canvas.tag_bind(item, "<Button-1>", lambda e, stem=asset.stem: self._select_asset(stem))
             text = self.detail_canvas.create_text(x, 140, anchor="nw", text=asset.stem, font=("Segoe UI", 9), tags=(f"detail:{asset.stem}",))
             self.detail_canvas.tag_bind(text, "<Button-1>", lambda e, stem=asset.stem: self._select_asset(stem))
-            x += 170
-        self.detail_canvas.configure(scrollregion=(0, 0, max(x, 1), 170))
 
     def _select_group(self, group_id: int) -> None:
         self.selected_group_id = group_id
@@ -178,8 +233,22 @@ class GroupEditor(tk.Toplevel):
 
     def _notify_change(self) -> None:
         self.on_change()
+        self._groups = grouped_assets(self.assets)
+        self._members_by_group = {group_id: members for group_id, members in self._groups}
         self._redraw_rows()
         self._redraw_detail()
+
+    def _cached_photo(self, asset: PhotoAsset, box: tuple[int, int]) -> ImageTk.PhotoImage | None:
+        key = (id(asset), box)
+        if key in self._thumb_cache:
+            photo = self._thumb_cache.pop(key)
+            self._thumb_cache[key] = photo
+            return photo
+        photo = self._make_photo(asset, box)
+        self._thumb_cache[key] = photo
+        while len(self._thumb_cache) > 160:
+            self._thumb_cache.popitem(last=False)
+        return photo
 
     @staticmethod
     def _make_photo(asset: PhotoAsset, box: tuple[int, int]) -> ImageTk.PhotoImage | None:

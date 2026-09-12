@@ -631,7 +631,7 @@ class App(tk.Tk):
             self.continue_button.configure(state="normal" if self._processing_job else "disabled")
         self.stop_button.configure(state="normal" if busy else "disabled")
 
-    def _start_processing(self, resume=False, mode="scan", regroup=False, regenerate=False):
+    def _start_processing(self, resume=False, mode="scan", regroup=False, regenerate=False, focus_errors_skipped=False):
         if self._processing_busy or self.updates.busy:
             return
         if not self._sync_selected_workspace():
@@ -669,6 +669,8 @@ class App(tk.Tk):
                 or (asset.ai_focus_result is None and focus_review_status(asset) is True)
                 for asset in self.scan_result.assets
             )
+        if focus_errors_skipped:
+            focus_work_exists = False
         selected_profile = (
             self._selected_api_profile()
             if mode == "legacy" or (mode == "focus" and focus_work_exists)
@@ -727,9 +729,13 @@ class App(tk.Tk):
                 elif event == "job":self._processing_job = value
                 elif event == "done":
                     job, result = value
+                    needs_error_decision = result is None and getattr(job, "awaiting_focus_error_decision", False)
                     if result is None:
                         self._processing_job = job
-                        self._log("已停止并保存进度，下次可点击继续处理。")
+                        if needs_error_decision:
+                            self._log(f"本轮 AI 复核已处理完，{len(job.pending_focus_errors)} 张出错，等待重试或跳过。")
+                        else:
+                            self._log("已停止并保存进度，下次可点击继续处理。")
                     else:
                         mode = self._job_mode(job)
                         self.scan_result = result
@@ -785,6 +791,8 @@ class App(tk.Tk):
                     if self._close_after_stop:
                         self._close_after_stop = False
                         self.after(50, self._close)
+                    elif needs_error_decision:
+                        self.after(0, lambda current=job: self._resolve_focus_errors(current))
                 elif event == "error":
                     self._log("处理未完成：" + value)
                     self._set_processing_busy(False)
@@ -793,6 +801,32 @@ class App(tk.Tk):
         except queue.Empty:
             pass
         self.after(100, self._poll_processing)
+
+    def _resolve_focus_errors(self, job):
+        if self._processing_job is not job or self._processing_busy:
+            return
+        errors = job.pending_focus_errors
+        if not errors:
+            return
+        names = "、".join(str(item["filename"]) for item in errors[:5])
+        if len(errors) > 5:
+            names += "等"
+        retry = messagebox.askyesno(
+            "AI 复核完成，有照片处理出错",
+            f"其余照片已处理，共 {len(errors)} 张出错：{names}\n\n"
+            "是否重新处理这些照片？\n"
+            "是：只重试出错照片。\n否：本轮跳过，保留清晰度待确认，不自动弃置。",
+            parent=self,
+        )
+        try:
+            if retry:
+                job.retry_failed()
+            else:
+                job.skip_failed()
+                self._log(f"本轮跳过 {len(errors)} 张出错照片的 AI 清晰度复核，保留待确认。")
+            self._start_processing(resume=True, focus_errors_skipped=not retry)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("处理出错照片", str(exc), parent=self)
 
     def _stop_processing(self):
         if self._processing_busy:
@@ -834,7 +868,11 @@ class App(tk.Tk):
         if self.scan_result:
             for asset in self.scan_result.assets:
                 key = settings.key(asset)
-                if (self.crop_settings.photos.get(key, {}) != settings.photos.get(key, {})
+                previous_entry = {k: v for k, v in self.crop_settings.photos.get(key, {}).items()
+                                  if k != 'offset_x_factor' or v != 0}
+                current_entry = {k: v for k, v in settings.photos.get(key, {}).items()
+                                 if k != 'offset_x_factor' or v != 0}
+                if (previous_entry != current_entry
                         or self.crop_settings.detection_confidence != settings.detection_confidence):
                     asset.ai_focus_dirty = True
             self._save_session()
@@ -1003,7 +1041,6 @@ class App(tk.Tk):
             from .ai_project import ReviewProject
             from .ai_review_ui import ReviewDialog
             self.review_project = ReviewProject(self.scan_result.workspace_dir)
-            self.review_project.refresh(self.scan_result.assets,self.crop_settings)
             ReviewDialog(self,self.review_project,self.scan_result.assets,self.crop_settings,self.settings_dir,
                 home_pages=list(self.scan_result.main_pages or []) + list(self.scan_result.rejected_pages or []))
         except Exception as exc:

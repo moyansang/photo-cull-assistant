@@ -1,9 +1,11 @@
+from dataclasses import asdict
 from datetime import datetime
+import hashlib
 import json
 from pathlib import Path
 import pytest
 from PIL import Image
-from ai_cull_assistant.ai_project import ReviewProject,photo_id,parse_answer
+from ai_cull_assistant.ai_project import ReviewProject,fingerprint,photo_id,parse_answer
 from ai_cull_assistant.models import PhotoAsset
 from ai_cull_assistant.crop_settings import CropSettings
 
@@ -21,6 +23,27 @@ def setup_project(tmp_path):
 
 def answer(task,batch,rating=4):
     return json.dumps(dict(task_id=task['id'],batch_id=batch['id'],photos=[dict(photo_id=pid,rating=rating,suggest_reject=False,reason='表情自然',review_items=[]) for pid in batch['photo_ids']]))
+
+
+def test_neutral_horizontal_crop_keeps_legacy_fingerprint(tmp_path):
+    project, assets, _task, _batch = setup_project(tmp_path)
+    asset = assets[0]
+    crops = CropSettings()
+    crop_values = asdict(crops.for_asset(asset))
+    crop_values.pop('offset_x_factor', None)
+    stat = asset.jpg_path.stat()
+    legacy_values = {
+        'paths': [(str(asset.jpg_path.resolve()), stat.st_size, stat.st_mtime_ns)],
+        'group': asset.group_id,
+        'crop': crop_values,
+        'manual': {},
+        'confidence': crops.detection_confidence,
+    }
+    legacy = hashlib.sha256(json.dumps(legacy_values, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    assert fingerprint(asset, crops) == legacy
+    moved = CropSettings(photos={crops.key(asset): {'offset_x_factor': .2}})
+    assert fingerprint(asset, moved) != legacy
 
 
 def test_snapshot_prompt_and_strict_answers(tmp_path):
@@ -127,6 +150,16 @@ def test_existing_batch_cannot_be_used_after_photo_becomes_technical_reject(tmp_
         project.prompt(task,batch)
     with pytest.raises(ValueError,match='技术筛选'):
         project.create_web_submission(task,[batch['id']])
+
+
+def test_worker_can_validate_batch_without_refreshing_shared_project(tmp_path, monkeypatch):
+    project, assets, task, batch = setup_project(tmp_path)
+    project.validate_batch_sources(assets, CropSettings(), batch)
+    monkeypatch.setattr(project, 'refresh', lambda *_args: pytest.fail('共享项目不应在批次工作线程刷新'))
+
+    assert project.batch_images(task, batch, refresh_state=False)
+    assert project.prompt(task, batch, refresh_state=False) == batch['prompt']
+    assert project.ingest(task, batch, answer(task, batch), refresh_state=False) == []
 
 
 def test_replacing_current_task_discards_history_and_resets_scoped_results(tmp_path):

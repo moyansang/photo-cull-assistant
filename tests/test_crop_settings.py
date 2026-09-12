@@ -15,8 +15,10 @@ def test_scale_shift_ratio_and_bounds():
     normal = crop_bounds((1000, 1000), head, CropSettings())
     bigger = crop_bounds((1000, 1000), head, CropSettings(1.5))
     up = crop_bounds((1000, 1000), head, CropSettings(1, -.2))
+    right = crop_bounds((1000, 1000), head, CropSettings(offset_x_factor=.4))
     assert bigger[2]-bigger[0] > normal[2]-normal[0]
     assert up[1] < normal[1]
+    assert right[0] > normal[0]
     square = crop_bounds((1000, 1000), head, CropSettings(aspect_ratio='1:1'))
     assert square[2]-square[0] == square[3]-square[1]
     edges = crop_bounds((100, 100), (0, 0, .7, .9), CropSettings(2, -.5))
@@ -33,6 +35,7 @@ def test_directory_and_crop_saves_preserve_each_other(tmp_path):
     assert CropSettings.from_dict({'scale_factor': float('nan')}) == CropSettings()
     assert CropSettings.from_dict({'scale_factor': 1.2}).detection_confidence == .8
     assert CropSettings.from_dict({'detection_confidence': .2}).detection_confidence == .7
+    assert CropSettings.from_dict({'offset_x_factor': .75}).offset_x_factor == .75
 
 
 def test_regenerate_reuses_detection_and_does_not_change_groups(tmp_path, monkeypatch):

@@ -104,6 +104,7 @@ def run(report_path: str) -> None:
                 review.update(); time.sleep(.02)
             assert not review._preparing_task
             task = project.current_task(); batch = task["batches"][0]
+            review.notebook.select(review.review_tab)
             review.update()
             assert len(review.review_tree.get_children()) == 1
             assert [review.notebook.tab(t, "text") for t in review.notebook.tabs()] == ["API 选片", "网页选片", "选片结果"]

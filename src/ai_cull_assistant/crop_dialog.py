@@ -24,13 +24,17 @@ class CropDialog(tk.Toplevel):
         self._loading = False
         self._drag = None
         self._image_rect = None
+        self._crop_rect = None
+        self._current_head = None
         self.candidates = []
         self.index = 0
         self.on_save = on_save
         self.scale = tk.DoubleVar(value=settings.scale_factor)
         self.shift = tk.DoubleVar(value=settings.shift_factor)
+        self.offset_x = tk.DoubleVar(value=settings.offset_x_factor)
         self.confidence = tk.DoubleVar(value=settings.detection_confidence)
         self.ratio = tk.StringVar(value=settings.aspect_ratio)
+        self.manual_mode = tk.BooleanVar(value=False)
         self._pending = None
         # Reserve the action footer before allocating the scrollable content.
         actions = ttk.Frame(self, padding=(16, 8))
@@ -44,20 +48,22 @@ class CropDialog(tk.Toplevel):
         body = scrollable_body(self, padding=16)
         ttk.Label(
             body,
-            text="小窗大小保持不变；范围增大可多留头发，负偏移向上，正偏移向下。",
+            text="拖动绿色裁切框调整位置；在图片上滚动鼠标滚轮调整范围。小窗输出大小保持不变。",
             wraplength=460,
         ).pack(fill="x", anchor="w")
-        for label, variable, start, end in (("置信度（全局）", self.confidence, .7, .95), ("裁切范围", self.scale, .6, 2), ("上下偏移", self.shift, -.5, .5)):
-            row = ttk.Frame(body)
-            row.pack(fill="x", pady=4)
-            ttk.Label(row, text=label, width=12).pack(side="left")
-            ttk.Scale(row, from_=start, to=end, variable=variable, length=300).pack(
-                side="left", fill="x", expand=True
-            )
-            value = ttk.Label(row, width=8)
-            value.pack(side="left", padx=12)
-            variable.trace_add("write", lambda *_, v=variable, widget=value: widget.configure(text=f"{v.get():.2f}"))
-            value.configure(text=f"{variable.get():.2f}")
+        row = ttk.Frame(body)
+        row.pack(fill="x", pady=4)
+        ttk.Label(row, text="置信度（全局）", width=12).pack(side="left")
+        ttk.Scale(row, from_=.7, to=.95, variable=self.confidence, length=300).pack(
+            side="left", fill="x", expand=True
+        )
+        confidence_value = ttk.Label(row, width=8)
+        confidence_value.pack(side="left", padx=12)
+        self.confidence.trace_add(
+            "write",
+            lambda *_, widget=confidence_value: widget.configure(text=f"{self.confidence.get():.2f}"),
+        )
+        confidence_value.configure(text=f"{self.confidence.get():.2f}")
         ttk.Label(
             body,
             text="检测置信度：默认 0.80；降低可减少漏脸，也可能增加错框。与分组灵敏度无关。",
@@ -76,9 +82,18 @@ class CropDialog(tk.Toplevel):
         self.canvas.bind('<ButtonPress-1>', self.pointer_down)
         self.canvas.bind('<B1-Motion>', self.pointer_move)
         self.canvas.bind('<ButtonRelease-1>', self.pointer_up)
-        ttk.Label(body, text="蓝框：检测候选；点击选择。没有候选时，拖框圈住脸部。裁切参数仅影响当前照片。").pack()
+        self.canvas.bind('<MouseWheel>', self.mouse_wheel)
+        self.canvas.bind('<Button-4>', self.mouse_wheel)
+        self.canvas.bind('<Button-5>', self.mouse_wheel)
+        ttk.Label(body, text="绿框：最终裁切范围。蓝框：检测候选。位置、范围和裁切比例仅影响当前照片。").pack()
         manual = ttk.Frame(body)
         manual.pack(pady=4)
+        ttk.Checkbutton(
+            manual,
+            text="手动选人脸",
+            variable=self.manual_mode,
+            command=self.render,
+        ).pack(side="left", padx=6)
         ttk.Button(manual, text="恢复本张自动选脸", command=self.auto_face).pack(side="left", padx=6)
         ttk.Button(manual, text="隐藏本张小窗", command=self.hide_face).pack(side="left", padx=6)
         navigation = ttk.Frame(body)
@@ -87,7 +102,7 @@ class CropDialog(tk.Toplevel):
         ttk.Button(navigation, text="下一张", command=lambda: self.navigate(1)).pack(side="left", padx=6)
         ttk.Button(navigation, text="下一张未标记", command=self.next_unmarked).pack(side="left", padx=6)
         ttk.Button(navigation, text="重置本张裁切", command=self.reset).pack(side="left", padx=6)
-        for variable in (self.scale, self.shift, self.ratio, self.confidence):
+        for variable in (self.scale, self.shift, self.offset_x, self.ratio, self.confidence):
             variable.trace_add("write", self.schedule_preview)
         fit_window(self, (850, 790), minimum_size=(520, 440), parent=parent)
         self.update_idletasks()
@@ -96,7 +111,13 @@ class CropDialog(tk.Toplevel):
         self.grab_set()
 
     def settings(self):
-        return CropSettings.from_dict(dict(scale_factor=round(self.scale.get(), 2), shift_factor=round(self.shift.get(), 2), aspect_ratio=self.ratio.get(), detection_confidence=round(self.confidence.get(), 2)))
+        return CropSettings.from_dict(dict(
+            scale_factor=round(self.scale.get(), 3),
+            shift_factor=round(self.shift.get(), 3),
+            offset_x_factor=round(self.offset_x.get(), 3),
+            aspect_ratio=self.ratio.get(),
+            detection_confidence=round(self.confidence.get(), 2),
+        ))
 
     def schedule_preview(self, *_):
         if self._loading:
@@ -136,6 +157,7 @@ class CropDialog(tk.Toplevel):
     def reset(self):
         self.scale.set(1)
         self.shift.set(0)
+        self.offset_x.set(0)
         self.ratio.set("124:150")
 
     def render(self):
@@ -144,13 +166,19 @@ class CropDialog(tk.Toplevel):
             self._pending = None
         self.store_current()
         self._image_rect = None
+        self._crop_rect = None
+        self._current_head = None
         self.canvas.delete("all")
         self.photos = []
         if not self.assets:
             self.caption.configure(text="扫描照片后可预览；现在可先保存全局置信度。")
             return
         asset = self.assets[self.index]
-        self.caption.configure(text=f"{self.index+1}/{len(self.assets)}  ·  {asset.stem}  ·  G{asset.group_id:03d}")
+        mode = "手动选人脸" if self.manual_mode.get() else "拖动绿框调整裁切"
+        self.caption.configure(text=(
+            f"{self.index+1}/{len(self.assets)}  ·  {asset.stem}  ·  G{asset.group_id:03d}"
+            f"  ·  范围 {self.scale.get():.2f}  ·  {mode}"
+        ))
         try:
             canvas_width = max(240, self.canvas.winfo_width())
             canvas_height = max(100, self.canvas.winfo_height())
@@ -171,7 +199,7 @@ class CropDialog(tk.Toplevel):
                 ImageDraw.Draw(marked).rectangle((x,y,x+w,y+h), outline="#3399ff", width=max(2, original.width//300))
             if subject and subject.face and subject.head:
                 bounds = crop_bounds(original.size, subject.head, self.settings())
-                ImageDraw.Draw(marked).rectangle(bounds, outline="#00dd88", width=max(2, original.width // 250))
+                self._current_head = subject.head
                 crop = face_crop(original, subject.face, subject.head, self.settings())
                 tile_size = (min(124, inset_width), min(150, max(60, canvas_height - 44)))
                 tile = Image.new("RGB", tile_size, "white")
@@ -186,6 +214,21 @@ class CropDialog(tk.Toplevel):
             self._image_rect = (preview_x-preview.width/2, canvas_height/2-preview.height/2, preview.width, preview.height, original.width, original.height)
             self.photos.append(ImageTk.PhotoImage(preview, master=self))
             self.canvas.create_image(preview_x, canvas_height / 2, image=self.photos[-1])
+            if subject and subject.face and subject.head:
+                ix, iy, dw, dh, iw, ih = self._image_rect
+                left, top, right, bottom = bounds
+                self._crop_rect = (
+                    ix + left / iw * dw,
+                    iy + top / ih * dh,
+                    ix + right / iw * dw,
+                    iy + bottom / ih * dh,
+                )
+                self.canvas.create_rectangle(
+                    *self._crop_rect,
+                    outline="#00aa66",
+                    width=3,
+                    tags="crop-outline",
+                )
         except (OSError, ValueError) as exc:
             self.canvas.create_text(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, text=f"预览不可用：{exc}")
 
@@ -198,7 +241,12 @@ class CropDialog(tk.Toplevel):
         key = self.global_settings().key(self.assets[self.index])
         entry = self.edits.setdefault(key, {})
         value = self.settings()
-        entry.update(scale_factor=value.scale_factor, shift_factor=value.shift_factor, aspect_ratio=value.aspect_ratio)
+        entry.update(
+            scale_factor=value.scale_factor,
+            shift_factor=value.shift_factor,
+            offset_x_factor=value.offset_x_factor,
+            aspect_ratio=value.aspect_ratio,
+        )
 
     def load_current(self):
         if not self.assets:
@@ -207,6 +255,7 @@ class CropDialog(tk.Toplevel):
         self._loading = True
         self.scale.set(value.scale_factor)
         self.shift.set(value.shift_factor)
+        self.offset_x.set(value.offset_x_factor)
         self.ratio.set(value.aspect_ratio)
         self._loading = False
 
@@ -226,20 +275,57 @@ class CropDialog(tk.Toplevel):
             self.render()
 
     def pointer_down(self, event):
-        if self._image_rect:
-            x,y,w,h,_,_ = self._image_rect
-            if x <= event.x <= x+w and y <= event.y <= y+h:
-                self._drag = (event.x, event.y)
+        if not self._image_rect:
+            return
+        x,y,w,h,_,_ = self._image_rect
+        if not (x <= event.x <= x+w and y <= event.y <= y+h):
+            return
+        if self.manual_mode.get():
+            self._drag = ("manual", event.x, event.y)
+            return
+        if self._crop_rect:
+            left, top, right, bottom = self._crop_rect
+            if left <= event.x <= right and top <= event.y <= bottom:
+                self._drag = (
+                    "crop", event.x, event.y,
+                    self.offset_x.get(), self.shift.get(), self._crop_rect,
+                )
+                self.canvas.itemconfigure("crop-outline", state="hidden")
 
     def pointer_move(self, event):
-        if self._drag:
-            self.canvas.delete('drag')
-            self.canvas.create_rectangle(*self._drag, event.x,event.y, outline='#ff9900', width=2, tags='drag')
+        if not self._drag:
+            return
+        self.canvas.delete('drag')
+        if self._drag[0] == "manual":
+            _, ax, ay = self._drag
+            self.canvas.create_rectangle(ax, ay, event.x, event.y, outline='#ff9900', width=2, tags='drag')
+        else:
+            dx, dy = self._clamped_crop_delta(event.x, event.y)
+            left, top, right, bottom = self._drag[5]
+            self.canvas.create_rectangle(
+                left + dx, top + dy, right + dx, bottom + dy,
+                outline='#00aa66', width=3, tags='drag',
+            )
 
     def pointer_up(self, event):
         if not self._drag or not self._image_rect:
             return
-        ax,ay = self._drag
+        if self._drag[0] == "crop":
+            _, ax, ay, original_x, original_y, _ = self._drag
+            dx, dy = self._clamped_crop_delta(event.x, event.y)
+            self._drag = None
+            self.canvas.delete('drag')
+            if self._current_head and self._image_rect:
+                _, _, display_width, display_height, image_width, image_height = self._image_rect
+                base_h = self._current_head[3] * image_height
+                if base_h > 0:
+                    self._loading = True
+                    self.offset_x.set(original_x + dx / display_width * image_width / base_h)
+                    self.shift.set(original_y + dy / display_height * image_height / base_h)
+                    self._loading = False
+            self.render()
+            return
+        _, ax, ay = self._drag
         self._drag = None
         self.canvas.delete('drag')
         x,y,w,h,iw,ih = self._image_rect
@@ -260,6 +346,30 @@ class CropDialog(tk.Toplevel):
             entry['manual_face'] = box
             entry.pop('hidden', None)
             self.render()
+
+    def _clamped_crop_delta(self, event_x, event_y):
+        """Keep a dragged crop frame inside the displayed source image."""
+        if not self._drag or self._drag[0] != "crop" or not self._image_rect:
+            return 0.0, 0.0
+        _, start_x, start_y, _, _, crop = self._drag
+        image_x, image_y, image_w, image_h, _, _ = self._image_rect
+        left, top, right, bottom = crop
+        dx = max(image_x - left, min(event_x - start_x, image_x + image_w - right))
+        dy = max(image_y - top, min(event_y - start_y, image_y + image_h - bottom))
+        return dx, dy
+
+    def mouse_wheel(self, event):
+        if not self.assets or not self._image_rect:
+            return "break"
+        image_x, image_y, image_w, image_h, _, _ = self._image_rect
+        if not (image_x <= event.x <= image_x + image_w and image_y <= event.y <= image_y + image_h):
+            return "break"
+        direction = getattr(event, "delta", 0)
+        if not direction:
+            direction = 120 if getattr(event, "num", 0) == 4 else -120
+        factor = .92 if direction > 0 else 1.08
+        self.scale.set(max(.6, min(2.0, round(self.scale.get() * factor, 3))))
+        return "break"
 
     def save(self):
         try:

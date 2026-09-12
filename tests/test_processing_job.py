@@ -576,6 +576,115 @@ def test_staged_focus_stop_resume_keeps_completed_api_result(tmp_path, monkeypat
     assert [asset.ai_focus_result["status"] for asset in result.assets] == ["clear", "clear"]
 
 
+def test_staged_focus_collects_errors_then_retries_only_failed_photos(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from ai_cull_assistant.subject import SubjectFeatures
+
+    photos = _photos(tmp_path, 3)
+    workspace = tmp_path / "workspace"
+    first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
+        _options(), CropSettings(), Event(), None
+    )
+    for asset in first.assets:
+        asset.screening_reason = "face_focus_uncertain"
+        asset.subject_checked = True
+        asset.subject_features = SubjectFeatures("", "", None, (.25, .2, .2, .2))
+
+    calls = []
+
+    def review(asset, *_args):
+        calls.append(asset.stem)
+        if asset.stem == "P0001" and calls.count("P0001") == 1:
+            raise ValueError("返回的不是严格 JSON")
+        status = "blur" if asset.stem == "P0002" else "clear"
+        return {"status": status, "reason": f"{asset.stem} verdict"}
+
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
+    logs = []
+    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode="focus")
+    assert job.run(
+        _options(), CropSettings(), Event(), None,
+        focus_profile={"id": "profile"}, on_log=logs.append,
+    ) is None
+
+    assert calls == ["P0000", "P0001", "P0002"]
+    assert job.awaiting_focus_error_decision is True
+    assert job.pending_focus_errors == ({
+        "index": 1,
+        "filename": "P0001.jpg",
+        "message": "返回的不是严格 JSON",
+    },)
+    assert job.assets[0].ai_focus_result["status"] == "clear"
+    assert job.assets[1].ai_focus_result is None
+    assert job.assets[1].screening_reason == "face_focus_uncertain"
+    assert job.assets[1].auto_rejected is False
+    assert job.assets[2].ai_focus_result["status"] == "blur"
+    assert any("将继续处理其余照片" in line for line in logs)
+
+    restored = load_job(workspace, photos)
+    assert restored is not None and restored.awaiting_focus_error_decision
+    # Resume without a UI decision waits and never spends another API request.
+    assert restored.run(
+        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+    ) is None
+    assert calls == ["P0000", "P0001", "P0002"]
+
+    restored.retry_failed()
+    result = restored.run(
+        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+    )
+    assert result is not None
+    assert calls == ["P0000", "P0001", "P0002", "P0001"]
+    assert [asset.ai_focus_result["status"] for asset in result.assets] == [
+        "clear", "clear", "blur"
+    ]
+
+
+def test_staged_focus_can_skip_failed_photos_and_keep_them_pending(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from ai_cull_assistant.subject import SubjectFeatures
+
+    photos = _photos(tmp_path, 2)
+    workspace = tmp_path / "workspace"
+    first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
+        _options(), CropSettings(), Event(), None
+    )
+    for asset in first.assets:
+        asset.screening_reason = "face_focus_uncertain"
+        asset.subject_checked = True
+        asset.subject_features = SubjectFeatures("", "", None, (.25, .2, .2, .2))
+
+    calls = []
+
+    def review(asset, *_args):
+        calls.append(asset.stem)
+        if asset.stem == "P0000":
+            raise RuntimeError("service unavailable")
+        return {"status": "clear", "reason": "清晰"}
+
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
+    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode="focus")
+    assert job.run(
+        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+    ) is None
+    assert calls == ["P0000", "P0001"]
+
+    restored = load_job(workspace, photos)
+    restored.skip_failed()
+    result = restored.run(
+        _options(), CropSettings(), Event(), None, focus_profile=None
+    )
+    assert result is not None
+    assert calls == ["P0000", "P0001"]
+    failed = result.assets[0]
+    assert failed.ai_focus_result is None
+    assert failed.screening_reason == "face_focus_uncertain"
+    assert failed.auto_rejected is False
+    assert result.assets[1].ai_focus_result["status"] == "clear"
+
+
 def test_staged_sheets_only_renders_current_result(tmp_path, monkeypatch):
     import sys
     from types import SimpleNamespace
