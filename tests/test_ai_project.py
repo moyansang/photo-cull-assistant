@@ -372,3 +372,17 @@ def test_home_sheet_identity_ignores_timestamp_and_tracks_content(tmp_path):
     assert all(p.get('ai') for p in restored.data['photos'].values())
     page.write_bytes(b'changed')
     assert not restored.can_reuse_task(restored.home_sheet_signature(assets,CropSettings(),[page]))
+
+
+def test_focus_review_keyword_only_export_and_clearing(tmp_path):
+    project, assets, task, batch = setup_project(tmp_path)
+    assets[0].screening_reason='face_focus_uncertain'
+    project.refresh(assets, project._crops)
+    data=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
+    assert len(data['photos'])==1
+    assert data['photos'][0]['focus_review'] is True
+    assert 'rating' not in data['photos'][0] and 'pick_status' not in data['photos'][0]
+    assets[0].screening_reason='subject_not_obviously_blurred'
+    project.refresh(assets, project._crops)
+    data=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
+    assert data['photos'][0]['focus_review'] is False

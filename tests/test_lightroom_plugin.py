@@ -89,3 +89,45 @@ def test_lua_entrypoint_confirmation_and_catalog_gate(answer,expected):
     info=lua.execute((PLUGIN/'Info.lua').read_text('utf-8'))
     assert len(info['LrLibraryMenuItems'])==1
     assert info['LrLibraryMenuItems'][1]['file']=='ImportResults.lua'
+
+
+def test_focus_keyword_add_remove_and_legacy_preserves_other_metadata():
+    from lupa.lua51 import LuaRuntime
+    lua=LuaRuntime(unpack_returned_tuples=True)
+    core=lua.execute((PLUGIN/'Core.lua').read_text('utf-8'))
+    decoder=lua.execute((PLUGIN/'json.lua').read_text('utf-8'))
+    lua.execute('''
+        keyword={getName=function() return 'AI选片_清晰度待确认' end}
+        photo={rating=4,pickStatus=1,keywords={travel=true}}
+        function photo:getRawMetadata(k) return self[k] end
+        function photo:setRawMetadata(k,v) self[k]=v end
+        function photo:addKeyword(k) self.keywords[k:getName()]=true end
+        function photo:removeKeyword(k) self.keywords[k:getName()]=nil end
+        catalog={}
+        function catalog:findPhotoByPath(p) return photo end
+        function catalog:createKeyword(name,synonyms,export,parent,reuse)
+            assert(export==false and reuse==true); return keyword
+        end
+        function catalog:getKeywords() return {keyword} end
+        function catalog:createSmartCollection(name,rule,parent,reuse)
+            assert(rule[1].criteria=='keywords' and rule[1].value==name and reuse==true)
+            collection=name
+        end
+    ''')
+    def apply(row):
+        payload={'format':'photo-cull-assistant','version':1,'photos':[{'path':'/photos/a.RW2',**row}]}
+        rows=core.validate(decoder.decode(json.dumps(payload)))
+        matched,_,_=core.plan(rows,lua.globals().catalog)
+        keyword=core.prepareFocus(lua.globals().catalog,matched)
+        core.apply(matched,keyword)
+    apply({'focus_review':True});apply({'focus_review':True})
+    photo=lua.globals().photo
+    assert photo['keywords']['AI选片_清晰度待确认'] is True
+    assert lua.globals().collection=='AI选片_清晰度待确认'
+    assert photo['rating']==4 and photo['pickStatus']==1
+    apply({'rating':5})
+    assert photo['keywords']['AI选片_清晰度待确认'] is True
+    apply({'focus_review':False})
+    assert photo['keywords']['AI选片_清晰度待确认'] is None
+    assert photo['keywords']['travel'] is True and photo['rating']==5 and photo['pickStatus']==1
+    with pytest.raises(Exception):apply({'focus_review':'true'})

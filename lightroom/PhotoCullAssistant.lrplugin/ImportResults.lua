@@ -33,13 +33,18 @@ Tasks.startAsyncTask(function()
             '匹配 '..#matched..' 张；未匹配 '..#missing..' 张。\n将更新结果中指定的星级/标记，其他字段保持不变。\n插件不写 XMP；若希望照片目录无 XMP，请关闭 LR 的“自动将更改写入 XMP”。',
             '应用到当前目录','取消')
         if answer~='ok' then return end
+        local focusKeyword
+        local prepared=catalog:withWriteAccessDo('准备清晰度待确认标记',function()
+            focusKeyword=Core.prepareFocus(catalog,matched)
+        end,{timeout=30})
+        assert(prepared=='executed', '未能准备清晰度标记，请稍后重试')
         local status=catalog:withWriteAccessDo('导入 AI选片助手结果',function()
-            Core.apply(matched)
+            Core.apply(matched,focusKeyword)
             report.status='applied'
             catalog:setPropertyForPlugin(_PLUGIN, 'lastImportReport', json.encode(report))
         end,{timeout=30})
         assert(status=='executed', '未取得 Lightroom 目录写入权限，请稍后重试')
-        Dialogs.message('导入完成', '已更新 '..#matched..' 张；跳过 '..#missing..' 张。', 'info')
+        Dialogs.message('导入完成', '已更新 '..#matched..' 张；跳过 '..#missing..' 张。\n清晰度待确认照片可在同名智能收藏夹中查看。', 'info')
     end)
     if not ok then Dialogs.message('导入失败', tostring(err), 'critical') end
 end)

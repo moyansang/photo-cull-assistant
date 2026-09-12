@@ -5,6 +5,19 @@ import json
 from pathlib import Path
 
 
+# None means no current technical assessment: leave Lightroom's keyword alone.
+def focus_review_status(asset):
+    if asset.auto_rejected or asset.screening_reason == 'subject_not_obviously_blurred':
+        return False
+    if asset.screening_reason in {
+        'face_focus_uncertain', 'face_too_small_for_focus', 'no_reliable_face',
+        'source_preview_geometry_mismatch', 'source_unreadable_for_focus',
+        'preview_unreadable', 'preview_unavailable',
+    }:
+        return True
+    return None
+
+
 def write_lightroom_results(assets, destination, ratings=None):
     ratings = ratings or {}
     counts = Counter(a.stem for a in assets)
@@ -14,7 +27,8 @@ def write_lightroom_results(assets, destination, ratings=None):
         rating = ratings.get(asset.stem)
         if rating is not None and counts[asset.stem] != 1:
             raise ValueError(f'文件名重复，无法安全应用评级：{asset.stem}')
-        if rating is None and not asset.auto_rejected:
+        focus_review = focus_review_status(asset)
+        if rating is None and not asset.auto_rejected and focus_review is None:
             continue
         fields = {}
         if rating is not None:
@@ -25,6 +39,8 @@ def write_lightroom_results(assets, destination, ratings=None):
                 fields['pick_status'] = 0  # Explicit review overrides automatic rejection.
         elif asset.auto_rejected:
             fields.update(pick_status=-1, reason=asset.screening_reason or 'technical_screening')
+        if focus_review is not None:
+            fields["focus_review"] = focus_review
         for path in asset.rating_target_paths:
             absolute = str(path.resolve())
             key = absolute.casefold()

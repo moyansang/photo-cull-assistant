@@ -11,6 +11,7 @@ import shutil
 import uuid
 
 from .contact_sheet import generate_contact_sheets
+from .lightroom_results import focus_review_status
 
 PROMPT = '''你是一名舞台与 Cosplay 人像摄影选片助手。
 任务：{kind}。比较清单中的摄影作品，提出星级、弃置建议和待人工复核事项。
@@ -116,6 +117,7 @@ class ReviewProject:
                 preview_path=str(asset.preview_path) if asset.preview_path else '',group_id=asset.group_id,
                 fingerprint=fp,technical_rejected=bool(asset.auto_rejected),
                 technical_reason=asset.screening_reason if asset.auto_rejected else '')
+            row['focus_review'] = focus_review_status(asset)
             row.setdefault('final',dict(rating=None,pick_status=None,confirmed=False))
             row.setdefault('stale',False);row.setdefault('history',[])
             active[pid]=row
@@ -464,6 +466,8 @@ class ReviewProject:
                 if p['stale']:continue
                 if not f['confirmed'] or f.get('fingerprint')!=p['fingerprint']:continue
                 fields={k:f[k] for k in ('rating','pick_status') if f[k] is not None}
+            if ai_ratings and type(p.get('focus_review')) is bool:
+                fields['focus_review'] = p['focus_review']
             if not fields:continue
             for path in p['target_paths']:
                 if path.casefold() in seen:raise ValueError('重复原照片路径，未导出')
@@ -476,7 +480,7 @@ class ReviewProject:
         self.data['last_export_id']=export_id
         self.data['export_dirty']=False
         self.data['last_export_rows']=rows
-        self.data['export_status']='结果已导出，尚无 Lightroom 应用回执';self.save();return target
+        self.data['export_status']='结果已导出，请在 Lightroom 插件中应用';self.save();return target
 
     def import_receipt(self,text):
         if self._crops is not None:self.refresh(self._assets,self._crops)

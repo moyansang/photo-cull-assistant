@@ -1,4 +1,5 @@
 local M = {}
+M.focusKeyword = 'AI选片_清晰度待确认'
 function M.validate(data)
     assert(type(data)=='table' and data.format=='photo-cull-assistant' and data.version==1, '结果文件格式或版本不支持')
     assert(type(data.photos)=='table', '缺少 photos 列表')
@@ -16,7 +17,8 @@ function M.validate(data)
         local key=path:lower()
         assert(not seen[key], '重复照片路径：'..row.path)
         seen[key]=true
-        assert(row.rating~=nil or row.pick_status~=nil, '缺少评级或标记')
+        assert(row.rating~=nil or row.pick_status~=nil or row.focus_review~=nil, '缺少评级、标记或清晰度状态')
+        if row.focus_review~=nil then assert(type(row.focus_review)=='boolean', '清晰度待确认必须为布尔值') end
         if row.rating~=nil then
             assert(type(row.rating)=='number' and row.rating%1==0 and row.rating>=1 and row.rating<=5, '无效星级')
         end
@@ -43,10 +45,43 @@ function M.plan(rows, catalog)
     return matched, missing, report
 end
 
-function M.apply(matched)
+-- Call inside a separate write gate; newly created keywords become usable
+-- once that gate completes. Never export this workflow keyword with images.
+function M.prepareFocus(catalog, matched)
+    local required=false
+    for _, item in ipairs(matched) do
+        if item.row.focus_review==true then required=true end
+    end
+    local keyword=nil
+    if required then
+        keyword=catalog:createKeyword(M.focusKeyword, {}, false, nil, true)
+        assert(keyword, '无法创建清晰度待确认关键词')
+        catalog:createSmartCollection(M.focusKeyword, {
+            combine='intersect',
+            { criteria='keywords', operation='all', value=M.focusKeyword }
+        }, nil, true)
+    else
+        local hasStatus=false
+        for _, item in ipairs(matched) do if item.row.focus_review~=nil then hasStatus=true end end
+        if hasStatus then
+            for _, existing in ipairs(catalog:getKeywords()) do
+                if existing:getName()==M.focusKeyword then keyword=existing; break end
+            end
+        end
+    end
+    return keyword
+end
+
+function M.apply(matched, focusKeyword)
     for _, item in ipairs(matched) do
         if item.row.rating~=nil then item.photo:setRawMetadata('rating', item.row.rating) end
         if item.row.pick_status~=nil then item.photo:setRawMetadata('pickStatus', item.row.pick_status) end
+        if item.row.focus_review==true then
+            assert(focusKeyword, '缺少清晰度待确认关键词')
+            item.photo:addKeyword(focusKeyword)
+        elseif item.row.focus_review==false and focusKeyword then
+            item.photo:removeKeyword(focusKeyword)
+        end
     end
 end
 return M
