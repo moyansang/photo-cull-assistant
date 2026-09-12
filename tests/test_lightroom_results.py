@@ -65,3 +65,13 @@ def test_api_focus_status_uses_existing_lightroom_keyword(tmp_path):
     write_lightroom_results([a],output)
     row=json.loads(output.read_text('utf-8'))['photos'][0]
     assert row['pick_status']==-1 and row['focus_review'] is False
+
+
+def test_focus_only_export_contains_reason_without_overwriting_selection(tmp_path):
+    a=asset(tmp_path/'photos')
+    a.screening_reason='ai_focus_blur';a.auto_rejected=True
+    a.ai_focus_result=dict(status='blur',reason='双眼存在运动拖影',source='api')
+    output=write_lightroom_results([a],tmp_path/'result.json')
+    row=json.loads(output.read_text('utf-8'))['photos'][0]
+    assert row['ai_metadata']==dict(clarity_status='模糊',clarity_reason='双眼存在运动拖影')
+    assert not list(a.primary_path.parent.glob('*.xmp'))

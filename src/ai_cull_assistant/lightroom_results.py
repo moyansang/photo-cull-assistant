@@ -18,6 +18,21 @@ def focus_review_status(asset):
     return None
 
 
+def ai_metadata(selection=None, focus=None, pending=None, technical_reason=''):
+    """Human-readable plugin fields; callers pass only current valid results."""
+    fields = {}
+    if selection is not None:
+        fields['selection_reason'] = selection.get('reason', '')
+        fields['review_items'] = '\n'.join(selection.get('review_items', []))
+    status = {'clear': '清晰', 'blur': '模糊', 'uncertain': '清晰度待确认'}
+    if isinstance(focus, dict) and focus.get('status') in status:
+        fields.update(clarity_status=status[focus['status']], clarity_reason=focus.get('reason', ''))
+    else:
+        fields.update(clarity_status='清晰度待确认' if pending else ('本地初筛弃置' if technical_reason else ''),
+                      clarity_reason=('本地检测判定主体明显模糊或抖动，未提供 AI 核查理由。' if technical_reason else ''))
+    return fields
+
+
 def write_lightroom_results(assets, destination, ratings=None):
     ratings = ratings or {}
     counts = Counter(a.stem for a in assets)
@@ -41,6 +56,9 @@ def write_lightroom_results(assets, destination, ratings=None):
             fields.update(pick_status=-1, reason=asset.screening_reason or 'technical_screening')
         if focus_review is not None:
             fields["focus_review"] = focus_review
+        fields['ai_metadata'] = ai_metadata(
+            focus=asset.ai_focus_result if not asset.ai_focus_dirty else None,
+            pending=focus_review, technical_reason=asset.screening_reason if asset.auto_rejected else '')
         for path in asset.rating_target_paths:
             absolute = str(path.resolve())
             key = absolute.casefold()

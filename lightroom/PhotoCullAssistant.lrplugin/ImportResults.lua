@@ -30,7 +30,7 @@ Tasks.startAsyncTask(function()
             return
         end
         local answer=Dialogs.confirm('导入 AI选片助手结果',
-            '匹配 '..#matched..' 张；未匹配 '..#missing..' 张。\n将更新结果中指定的星级/标记，其他字段保持不变。\n插件不写 XMP；若希望照片目录无 XMP，请关闭 LR 的“自动将更改写入 XMP”。',
+            '匹配 '..#matched..' 张；未匹配 '..#missing..' 张。\n将更新结果中指定的星级、标记、清晰度状态和 AI 分析信息，未指定字段保持不变。\n导入后在图库的“元数据”面板下拉菜单选择“AI选片助手”，即可查看所选照片的分析信息。\n插件不写标题、说明或 XMP；若希望照片目录无 XMP，请关闭 LR 的“自动将更改写入 XMP”。',
             '应用到当前目录','取消')
         if answer~='ok' then return end
         local focusKeyword
@@ -44,7 +44,7 @@ Tasks.startAsyncTask(function()
             catalog:setPropertyForPlugin(_PLUGIN, 'lastImportReport', json.encode(report))
         end,{timeout=30})
         assert(status=='executed', '未取得 Lightroom 目录写入权限，请稍后重试')
-        Dialogs.message('导入完成', '已更新 '..#matched..' 张；跳过 '..#missing..' 张。\n清晰度待确认照片可在同名智能收藏夹中查看。', 'info')
+        Dialogs.message('导入完成', '已更新 '..#matched..' 张；跳过 '..#missing..' 张。\n在图库“元数据”面板下拉菜单选择“AI选片助手”，可查看当前所选照片的分析信息。\n清晰度待确认照片也可在同名智能收藏夹中查看。', 'info')
     end)
     if not ok then Dialogs.message('导入失败', tostring(err), 'critical') end
 end)

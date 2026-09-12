@@ -481,3 +481,25 @@ def test_web_reuses_existing_api_focus_result_without_new_supplements(tmp_path,m
     assert submission['focus_photo_ids']==[]
     assert submission['known_focus_results'][pid]['status']=='uncertain'
     assert f'{pid} | uncertain | 接口复查仍无法确定' in submission['prompt']
+
+
+def test_export_ai_metadata_tracks_current_photo_reply_and_focus(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[0].ai_focus_result=dict(status='uncertain',reason='眼部细节不足',source='api')
+    project.refresh(assets,project._crops)
+    response=json.loads(answer(task,batch,rating=None))
+    response['photos'][0]['review_items']=['检查双眼','检查拖影']
+    assert project.ingest(task,batch,json.dumps(response))==[]
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    by_name={r['filename']:r for r in rows}
+    assert by_name['A.jpg']['ai_metadata']==dict(selection_reason='表情自然',
+        review_items='检查双眼\n检查拖影',clarity_status='清晰度待确认',clarity_reason='眼部细节不足')
+    assert by_name['B.jpg']['ai_metadata']['selection_reason']=='表情自然'
+    assert 'rating' not in by_name['B.jpg']
+    # Stale selection text must not be attached to a current local discard.
+    assets[0].auto_rejected=True;assets[0].screening_reason='obvious_subject_blur'
+    assets[0].group_id=2
+    project.refresh(assets,project._crops)
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    first=next(r for r in rows if r['filename']=='A.jpg')
+    assert first['ai_metadata']['selection_reason']==''

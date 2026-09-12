@@ -13,7 +13,7 @@ import uuid
 from PIL import Image, ImageDraw
 
 from .contact_sheet import generate_contact_sheets
-from .lightroom_results import focus_review_status
+from .lightroom_results import focus_review_status, ai_metadata
 
 PROMPT = '''你是一名舞台与 Cosplay 人像摄影选片助手。
 任务：{kind}。比较清单中的摄影作品，提出星级、弃置建议和待人工复核事项。
@@ -564,7 +564,13 @@ clear 表示主体清晰；blur 只用于主体明确失焦或拖影；无可靠
                 fields['pick_status']=-1
             if ai_ratings and type(p.get('focus_review')) is bool:
                 fields['focus_review'] = p['focus_review']
-            if not fields:continue
+            current_ai=p.get('ai', {})
+            if p['stale'] or current_ai.get('fingerprint')!=p['fingerprint']:
+                current_ai={}
+            current_focus=focus if (_valid_focus_result(focus) and p.get('focus_fingerprint')==p['fingerprint']) else None
+            metadata=ai_metadata(current_ai,current_focus,p.get('focus_review'),p.get('technical_reason',''))
+            if not fields and not any(metadata.values()):continue
+            fields['ai_metadata']=metadata
             for path in p['target_paths']:
                 if path.casefold() in seen:raise ValueError('重复原照片路径，未导出')
                 if not Path(path).is_file():raise ValueError('原照片已移动或丢失：'+path)

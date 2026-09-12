@@ -50,6 +50,105 @@ def test_lua_catalog_import_validation_and_metadata_scope():
     lua.execute('assert(loadstring(...))',(PLUGIN/'ImportResults.lua').read_text('utf-8'))
     info=lua.execute((PLUGIN/'Info.lua').read_text('utf-8'))
     assert info['LrLibraryMenuItems'][1]['file']=='ImportResults.lua'
+    assert info['LrMetadataProvider']=='MetadataProvider.lua'
+    assert info['LrMetadataTagsetFactory'][1]=='MetadataTagset.lua'
+
+
+def test_lua_ai_metadata_validation_apply_and_lightroom_schema():
+    from lupa.lua51 import LuaRuntime
+    lua=LuaRuntime(unpack_returned_tuples=True)
+    core=lua.execute((PLUGIN/'Core.lua').read_text('utf-8'))
+    decoder=lua.execute((PLUGIN/'json.lua').read_text('utf-8'))
+    lua.execute('''
+        _PLUGIN={id='com.photocullassistant.catalogimport'}
+        pluginWrites={}
+        rawWrites={}
+        photo={
+          rating=4,
+          pickStatus=1,
+          caption='原说明',
+          title='原标题',
+          properties={selection_reason='旧理由',clarity_status='旧状态'}
+        }
+        function photo:getRawMetadata(k) return self[k] end
+        function photo:setRawMetadata(k,v) self[k]=v; table.insert(rawWrites,k) end
+        function photo:setPropertyForPlugin(plugin,k,v)
+            assert(plugin==_PLUGIN)
+            self.properties[k]=v
+            table.insert(pluginWrites,{field=k,value=v})
+        end
+        catalog={findPhotoByPath=function(self,path) return photo end}
+    ''')
+
+    def apply(row):
+        payload={'format':'photo-cull-assistant','version':1,'photos':[{'path':'/photos/a.RW2',**row}]}
+        rows=core.validate(decoder.decode(json.dumps(payload,ensure_ascii=False)))
+        matched,_,_=core.plan(rows,lua.globals().catalog)
+        core.apply(matched)
+
+    # A metadata-only row is valid, and empty strings intentionally clear fields.
+    apply({'ai_metadata':{
+        'selection_reason':'表情自然',
+        'clarity_status':'清晰度待确认',
+        'clarity_reason':'眼部可能轻微虚焦',
+        'review_items':'检查双眼',
+    }})
+    apply({'ai_metadata':{'clarity_reason':''}})
+    photo=lua.globals().photo
+    assert photo['properties']['selection_reason']=='表情自然'
+    assert photo['properties']['clarity_status']=='清晰度待确认'
+    assert photo['properties']['clarity_reason']==''
+    assert photo['properties']['review_items']=='检查双眼'
+    assert photo['caption']=='原说明' and photo['title']=='原标题'
+    assert len(lua.globals().rawWrites)==0
+
+    # Legacy rows never touch existing plug-in metadata.
+    writes_before=len(lua.globals().pluginWrites)
+    apply({'rating':5})
+    assert len(lua.globals().pluginWrites)==writes_before
+    assert photo['properties']['selection_reason']=='表情自然'
+
+    invalid_metadata=[
+        {},
+        {'unknown':'x'},
+        {'selection_reason':False},
+        {'selection_reason':3},
+    ]
+    for metadata in invalid_metadata:
+        payload={'format':'photo-cull-assistant','version':1,'photos':[
+            {'path':'/photos/a.RW2','ai_metadata':metadata}
+        ]}
+        with pytest.raises(Exception):
+            core.validate(decoder.decode(json.dumps(payload)))
+
+    provider=lua.execute((PLUGIN/'MetadataProvider.lua').read_text('utf-8'))
+    assert provider['schemaVersion']==1
+    fields=list(provider['metadataFieldsForPhotos'].values())
+    assert [field['id'] for field in fields]==list(core['aiMetadataFields'].values())
+    assert all(field['dataType']=='string' for field in fields)
+    assert all(field['readOnly'] is True and field['searchable'] is True for field in fields)
+    assert [field['title'] for field in fields]==[
+        'AI 选片理由','清晰度状态','清晰度核查理由','待确认事项'
+    ]
+
+    tagset=lua.execute((PLUGIN/'MetadataTagset.lua').read_text('utf-8'))
+    assert tagset['title']=='AI选片助手'
+    assert tagset['id']=='AIPhotoCullAssistant'
+    tagset_items=list(tagset['items'].values())
+    qualified=[]
+    for item in tagset_items:
+        if isinstance(item,str):
+            value=item
+        else:
+            value=item[1]
+        if value.startswith('com.photocullassistant.catalogimport.'):
+            qualified.append(value)
+    assert qualified==[
+        'com.photocullassistant.catalogimport.selection_reason',
+        'com.photocullassistant.catalogimport.clarity_status',
+        'com.photocullassistant.catalogimport.clarity_reason',
+        'com.photocullassistant.catalogimport.review_items',
+    ]
 
 
 @pytest.mark.parametrize('answer,expected', [('ok',5),('cancel',2)])

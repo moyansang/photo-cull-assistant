@@ -1,5 +1,14 @@
 local M = {}
 M.focusKeyword = 'AI选片_清晰度待确认'
+M.aiMetadataFields = {
+    'selection_reason',
+    'clarity_status',
+    'clarity_reason',
+    'review_items',
+}
+local aiMetadataFieldSet = {}
+for _, field in ipairs(M.aiMetadataFields) do aiMetadataFieldSet[field]=true end
+
 function M.validate(data)
     assert(type(data)=='table' and data.format=='photo-cull-assistant' and data.version==1, '结果文件格式或版本不支持')
     assert(type(data.photos)=='table', '缺少 photos 列表')
@@ -17,7 +26,17 @@ function M.validate(data)
         local key=path:lower()
         assert(not seen[key], '重复照片路径：'..row.path)
         seen[key]=true
-        assert(row.rating~=nil or row.pick_status~=nil or row.focus_review~=nil, '缺少评级、标记或清晰度状态')
+        local hasAiMetadata=false
+        if row.ai_metadata~=nil then
+            assert(type(row.ai_metadata)=='table', 'AI 元数据必须为对象')
+            for field, value in pairs(row.ai_metadata) do
+                assert(type(field)=='string' and aiMetadataFieldSet[field], '未知 AI 元数据字段：'..tostring(field))
+                assert(type(value)=='string', 'AI 元数据字段必须为字符串：'..field)
+                hasAiMetadata=true
+            end
+        end
+        assert(row.rating~=nil or row.pick_status~=nil or row.focus_review~=nil or hasAiMetadata,
+            '缺少评级、标记、清晰度状态或 AI 元数据')
         if row.focus_review~=nil then assert(type(row.focus_review)=='boolean', '清晰度待确认必须为布尔值') end
         if row.rating~=nil then
             assert(type(row.rating)=='number' and row.rating%1==0 and row.rating>=1 and row.rating<=5, '无效星级')
@@ -81,6 +100,12 @@ function M.apply(matched, focusKeyword)
             item.photo:addKeyword(focusKeyword)
         elseif item.row.focus_review==false and focusKeyword then
             item.photo:removeKeyword(focusKeyword)
+        end
+        if item.row.ai_metadata~=nil then
+            for _, field in ipairs(M.aiMetadataFields) do
+                local value=item.row.ai_metadata[field]
+                if value~=nil then item.photo:setPropertyForPlugin(_PLUGIN,field,value) end
+            end
         end
     end
 end
