@@ -183,10 +183,9 @@ class GroupEditor(tk.Toplevel):
 
     @staticmethod
     def _make_photo(asset: PhotoAsset, box: tuple[int, int]) -> ImageTk.PhotoImage | None:
-        if not asset.preview_path or not Path(asset.preview_path).exists():
-            return None
         try:
-            with Image.open(asset.preview_path) as img:
+            from .preview import ensure_preview
+            with Image.open(ensure_preview(asset)) as img:
                 img = ImageOps.exif_transpose(img).convert("RGB")
                 thumb = ImageOps.contain(img, box)
                 return ImageTk.PhotoImage(thumb)

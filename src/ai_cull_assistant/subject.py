@@ -13,6 +13,9 @@ from .crop_settings import CropSettings, crop_bounds
 
 def asset_features(asset, score_threshold=.8):
     if not asset.subject_checked or asset.subject_confidence != score_threshold:
+        if asset.preview_path and not Path(asset.preview_path).is_file():
+            from .preview import ensure_preview
+            ensure_preview(asset)
         asset.subject_features = features(Path(asset.preview_path), score_threshold) if asset.preview_path else None
         asset.subject_checked = True
         asset.subject_confidence = score_threshold
@@ -90,6 +93,8 @@ def detail_features(asset, settings):
     if box and len(box) == 4 and all(np.isfinite(v) for v in box):
         x, y, w, h = box
         if 0 <= x < 1 and 0 <= y < 1 and w > 0 and h > 0 and x+w <= 1.000001 and y+h <= 1.000001:
+            from .preview import ensure_preview
+            ensure_preview(asset)
             with Image.open(asset.preview_path) as image:
                 iw, ih = ImageOps.exif_transpose(image).size
             from .yunet import FaceDetection

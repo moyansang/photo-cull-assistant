@@ -52,6 +52,8 @@ def workspace_for(settings_dir,input_dir,preferred=None):
     for other,target in registry.items():
         if other!=source and _key(target)==_key(chosen):
             raise ValueError('这个工作区已关联其他照片文件夹，请选择独立工作区。')
+    from .workspace_archive import restore_workspace
+    restore_workspace(chosen)
     session=chosen/'scan-session.json'
     if session.is_file():
         data=json.loads(session.read_text(encoding='utf-8'))
@@ -64,6 +66,8 @@ def workspace_for(settings_dir,input_dir,preferred=None):
     return chosen
 
 def load_workspace_preferences(settings_dir,workspace,input_dir):
+    from .workspace_archive import restore_workspace
+    restore_workspace(workspace)
     file=Path(workspace)/'workspace-settings.json'
     if file.exists():
         data=json.loads(file.read_text(encoding='utf-8'))

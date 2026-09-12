@@ -26,12 +26,13 @@ from .preview import build_preview
 from .scanner import iter_image_files, scan_folder
 from .screening import ScreeningResult, save_screening_results, screen_assets
 from .session_store import save_session
-from .subject import SubjectFeatures
+from .subject import SubjectFeatures, detail_features
 from .workflow import ScanResult
 from .workspace_layout import workspace_path as resolve_workspace_path
 
 
 JOB_VERSION = 1
+STAGED_MODES = {"scan", "rescan", "focus", "sheets"}
 ProgressCallback = Callable[[int], None]
 LogCallback = Callable[[str], None]
 
@@ -135,8 +136,51 @@ def _focus_review_log(asset: PhotoAsset, reviewed: Mapping) -> str:
     return f"AI 清晰度复核 {asset.primary_path.name}：{labels[reviewed['status']]}；{reason}"
 
 
+def _valid_focus_result(value: object) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and value.get("status") in {"clear", "blur", "uncertain"}
+        and isinstance(value.get("reason"), str)
+        and bool(value["reason"].strip())
+    )
+
+
+def _has_reliable_face(asset: PhotoAsset, crops: CropSettings) -> bool:
+    try:
+        subject = detail_features(asset, crops)
+        face = getattr(subject, "face", None) if subject else None
+        return bool(face and len(face) == 4)
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 def _active_path(workspace: Path) -> Path:
     return resolve_workspace_path(workspace, ".processing") / "active.json"
+
+
+def _existing_screening_results(workspace: Path, assets: list[PhotoAsset]) -> dict[str, dict]:
+    """Load prior technical details while keying them by the job's stable asset key."""
+    try:
+        payload = json.loads((workspace / "screening_results.json").read_text("utf-8"))
+        rows = payload.get("results", {})
+    except (OSError, ValueError, TypeError):
+        rows = {}
+    results: dict[str, dict] = {}
+    for asset in assets:
+        row = rows.get(asset.stem) if isinstance(rows, dict) else None
+        if isinstance(row, dict):
+            try:
+                results[_asset_key(asset)] = asdict(ScreeningResult(**row))
+                continue
+            except TypeError:
+                pass
+        results[_asset_key(asset)] = asdict(ScreeningResult(
+            bool(asset.auto_rejected),
+            str(asset.screening_reason or "preview_unavailable"),
+            bool(asset.face_found),
+            laplacian_variance=asset.focus_score,
+        ))
+    return results
 
 
 def start_job(
@@ -146,8 +190,15 @@ def start_job(
     crops: CropSettings | Mapping | None,
     result: ScanResult | None = None,
     regroup: bool = False,
+    *,
+    mode: str | None = None,
 ) -> "ProcessingJob":
-    """Create a persisted scan or regeneration job without touching live output."""
+    """Create a persisted processing stage without touching live output.
+
+    ``mode=None`` keeps the historical all-in-one scan/regeneration behaviour.
+    Explicit modes split the workflow into local scan, changed-photo rescan,
+    API focus review, and contact-sheet rendering.
+    """
     input_path = Path(input_dir).resolve()
     workspace_path = Path(workspace).resolve()
     if not input_path.is_dir():
@@ -164,6 +215,13 @@ def start_job(
             raise ProcessingJobError("已有未完成任务，请先继续处理")
         active_path.unlink(missing_ok=True)
 
+    if mode is not None and mode not in STAGED_MODES:
+        raise ValueError(f"未知处理阶段：{mode}")
+    if mode == "scan" and result is not None:
+        raise ValueError("扫描图片阶段不能复用旧扫描结果")
+    if mode in {"rescan", "focus", "sheets"} and result is None:
+        raise ValueError(f"{mode} 阶段需要已有扫描结果")
+
     assets = list(result.assets) if result is not None else scan_folder(input_path)
     if not assets:
         raise ValueError("照片文件夹中没有支持的照片")
@@ -172,11 +230,29 @@ def start_job(
     (root / "output").mkdir(parents=True, exist_ok=False)
     normalised = _normalise_options(options)
     kind = "regenerate" if result is not None else "scan"
+    stage = mode or "legacy"
+    if stage == "rescan":
+        work_indices = [index for index, asset in enumerate(assets) if asset.ai_focus_dirty]
+    elif stage == "focus":
+        from .lightroom_results import focus_review_status
+        work_indices = [
+            index for index, asset in enumerate(assets)
+            if asset.ai_focus_dirty
+            or (
+                not _valid_focus_result(asset.ai_focus_result)
+                and focus_review_status(asset) is True
+            )
+        ]
+    elif stage == "sheets":
+        work_indices = []
+    else:
+        work_indices = list(range(len(assets)))
     completed_photos = 0
     data = {
         "version": JOB_VERSION,
         "id": identifier,
         "kind": kind,
+        "mode": stage,
         "input_dir": str(input_path),
         "workspace": str(workspace_path),
         "created_options": normalised,
@@ -187,11 +263,19 @@ def start_job(
         "assets": [_asset_to_dict(asset) for asset in assets],
         "completed_photos": completed_photos,
         "photo_options": {},
-        "screening_results": {},
-        "grouping_complete": result is not None and not regroup,
+        "screening_results": (
+            _existing_screening_results(workspace_path, assets)
+            if result is not None else {}
+        ),
+        "work_indices": work_indices,
+        # Split follow-up stages always preserve the current asset group IDs.
+        # ``regroup`` remains meaningful only to the legacy all-in-one path.
+        "grouping_complete": result is not None and (mode is not None or not regroup),
         "actual_grouping_preset": None,
-        "group_source": "preserved" if result is not None and not regroup else None,
-        "groups_loaded_from_store": result is not None and not regroup,
+        "group_source": (
+            "preserved" if result is not None and (mode is not None or not regroup) else None
+        ),
+        "groups_loaded_from_store": result is not None and (mode is not None or not regroup),
         "pages": [],
         "percent": 0,
     }
@@ -251,6 +335,10 @@ class ProcessingJob:
         return str(self._data["kind"])
 
     @property
+    def mode(self) -> str:
+        return str(self._data.get("mode", "legacy"))
+
+    @property
     def percent(self) -> int:
         return int(self._data.get("percent", 0))
 
@@ -296,12 +384,23 @@ class ProcessingJob:
         if stop_event.is_set():
             return None
 
-        while self._data["completed_photos"] < len(self.assets):
-            index = int(self._data["completed_photos"])
+        work_indices = self._data.get("work_indices")
+        if not isinstance(work_indices, list):
+            # Compatibility with interrupted v1 jobs created before staged modes.
+            work_indices = list(range(len(self.assets)))
+            self._data["work_indices"] = work_indices
+        if self.mode == "focus" and work_indices and focus_profile is None:
+            raise FocusReviewError("AI 复核需要先配置可用的 API 服务")
+
+        while self._data["completed_photos"] < len(work_indices):
+            position = int(self._data["completed_photos"])
+            index = int(work_indices[position])
             asset = self.assets[index]
             key = _asset_key(asset)
             locally_saved = self._data.get("local_screening_pending") == index and key in self._data["screening_results"]
             if locally_saved:
+                screened = ScreeningResult(**self._data["screening_results"][key])
+            elif self.mode == "focus":
                 screened = ScreeningResult(**self._data["screening_results"][key])
             else:
                 if self.kind == "scan":
@@ -318,7 +417,13 @@ class ProcessingJob:
                     asset.focus_score = None
                     asset.face_found = False
                     screened = ScreeningResult(False, "screening_disabled", False)
-                if self.kind == "regenerate" and asset.ai_focus_result and not asset.ai_focus_dirty:
+                if self.mode == "rescan":
+                    # A manually changed face selection invalidates only this
+                    # photo's earlier paid verdict.  The new local result decides
+                    # whether a later focus stage needs to submit it again.
+                    asset.ai_focus_result = None
+                    asset.ai_focus_dirty = False
+                elif self.kind == "regenerate" and asset.ai_focus_result and not asset.ai_focus_dirty:
                     # Layout/face edits reuse the completed AI verdict. They are
                     # not an instruction to make another paid review request.
                     _apply_focus_review(asset, screened, asset.ai_focus_result)
@@ -328,11 +433,31 @@ class ProcessingJob:
                 self._data["photo_options"][str(index)] = {
                     "technical_screening": current["technical_screening"]
                 }
-            if focus_profile is not None and (self.kind == "scan" or asset.ai_focus_dirty):
+            should_review = (
+                self.mode == "focus"
+                or (
+                    self.mode == "legacy"
+                    and focus_profile is not None
+                    and (self.kind == "scan" or asset.ai_focus_dirty)
+                )
+            )
+            if should_review:
                 from .lightroom_results import focus_review_status
-                if asset.ai_focus_dirty or focus_review_status(asset) is True:
+                if self.mode == "focus" or asset.ai_focus_dirty or focus_review_status(asset) is True:
                     try:
                         from .ai_focus import review_focus
+                        if self.mode == "focus" and not _has_reliable_face(asset, crop_settings):
+                            _notify_log(
+                                on_log,
+                                f"AI 清晰度复核跳过 {asset.primary_path.name}："
+                                "未检测到可靠人脸，请先在检测/调整人脸框中处理。",
+                            )
+                            self._data.pop("local_screening_pending", None)
+                            self._data["completed_photos"] = position + 1
+                            self._checkpoint(progress)
+                            if stop_event.is_set():
+                                return None
+                            continue
                         reviewed = review_focus(
                             asset,
                             crop_settings,
@@ -352,7 +477,7 @@ class ProcessingJob:
                         _notify_log(on_log, message)
                         raise FocusReviewError(message + "。任务进度已保存，可修复 API 配置后继续处理。") from exc
             self._data.pop("local_screening_pending", None)
-            self._data["completed_photos"] = index + 1
+            self._data["completed_photos"] = position + 1
             self._checkpoint(progress)
             if stop_event.is_set():
                 return None
@@ -377,6 +502,10 @@ class ProcessingJob:
         elif self._data.get("actual_grouping_preset") is None:
             self._data["actual_grouping_preset"] = self._prior_grouping_preset(current)
             self._persist()
+
+        if self.mode not in {"legacy", "sheets"}:
+            self._validate_sources()
+            return self._publish(progress)
 
         for mode in ("main", "rejected"):
             completed_keys = {
@@ -440,7 +569,20 @@ class ProcessingJob:
         return str(source) if source in ("manual", "auto") else "stored"
 
     def _progress_value(self) -> int:
-        count = max(1, len(self.assets))
+        work_indices = self._data.get("work_indices")
+        work_count = len(work_indices) if isinstance(work_indices, list) else len(self.assets)
+        count = max(1, work_count)
+        if self.mode in {"scan", "rescan", "focus"}:
+            photo_part = 94 * int(self._data["completed_photos"]) // count
+            group_part = 5 if self._data["grouping_complete"] else 0
+            return min(99, photo_part + group_part)
+        if self.mode == "sheets":
+            estimate = max(
+                1,
+                (len(self.assets) + max(1, int(self._data["created_options"]["photos_per_page"])) - 1)
+                // max(1, int(self._data["created_options"]["photos_per_page"])),
+            )
+            return min(99, 99 * len(self._data["pages"]) // estimate)
         photo_part = 70 * int(self._data["completed_photos"]) // count
         group_part = 5 if self._data["grouping_complete"] else 0
         estimate = max(1, (len(self.assets) + max(1, int(self._data["created_options"]["photos_per_page"])) - 1)
@@ -477,7 +619,14 @@ class ProcessingJob:
             raise SourceChangedError("照片文件夹中的照片出现问题，本次中断任务结果已清除") from exc
 
     def _check_artifacts(self) -> None:
-        for asset in self.assets[: int(self._data.get("completed_photos", 0))]:
+        work_indices = self._data.get("work_indices")
+        completed = int(self._data.get("completed_photos", 0))
+        completed_assets = (
+            [self.assets[int(index)] for index in work_indices[:completed]]
+            if isinstance(work_indices, list)
+            else self.assets[:completed]
+        )
+        for asset in completed_assets:
             if self.kind == "scan" and (asset.preview_path is None or not Path(asset.preview_path).is_file()):
                 raise ProcessingJobError("已完成的预览文件丢失")
         for page in self._data.get("pages", []):
@@ -505,20 +654,29 @@ class ProcessingJob:
             for asset in self.assets
             if _asset_key(asset) in self._data["screening_results"]
         }
-        save_screening_results(screening, output / "screening_results.json")
-        save_groups(
-            self.assets,
-            output / "groups.json",
-            source=str(self._data.get("group_source") or "auto"),
-            collection_key=str(self.input_dir),
-        )
+        if self.mode != "sheets":
+            save_screening_results(screening, output / "screening_results.json")
+        if self.mode == "legacy" or self.mode == "scan":
+            save_groups(
+                self.assets,
+                output / "groups.json",
+                source=str(self._data.get("group_source") or "auto"),
+                collection_key=str(self.input_dir),
+            )
 
-        destinations: list[tuple[Path, Path]] = [(output / "contact_sheets", self.workspace / "contact_sheets"), (output / "screening_results.json", self.workspace / "screening_results.json")]
+        # Every analysis-changing stage invalidates old sheets transactionally.
+        # A missing staged contact_sheets source means the old directory is
+        # removed only after the stage has otherwise completed successfully.
+        destinations: list[tuple[Path, Path]] = [
+            (output / "contact_sheets", self.workspace / "contact_sheets")
+        ]
+        if self.mode != "sheets":
+            destinations.append((output / "screening_results.json", self.workspace / "screening_results.json"))
         if self.kind == "scan":
             destinations.extend([
                 (output / "previews", self.workspace / "previews"),
             ])
-        if self.kind == "scan" or self._data.get("regroup"):
+        if self.mode == "scan" or (self.mode == "legacy" and (self.kind == "scan" or self._data.get("regroup"))):
             destinations.append((output / "groups.json", self.workspace / "groups.json"))
 
         backup = self.root / "backup"

@@ -32,3 +32,7 @@ settings.json.tmp
 /workspace-settings.json
 /session.log
 /update-cache.json
+/workflow-stage.json
+/.workspace-archive.zip
+/.workspace-storage.json
+/.workspace-restore-*/

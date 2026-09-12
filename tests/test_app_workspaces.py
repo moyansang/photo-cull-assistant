@@ -221,3 +221,30 @@ def test_processing_syncs_typed_paths_before_reading_options(tmp_path, monkeypat
     finally:
         app._processing_busy = False
         app._close()
+
+
+def test_corrupt_archived_workspace_is_blocked_without_overwrite(tmp_path, monkeypatch):
+    source = make_source(tmp_path, "photos")
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    archive = workspace / ".workspace-archive.zip"
+    archive.write_bytes(b"not a zip file")
+    save_values(tmp_path, {"input": str(source), "workspace": str(workspace)})
+    errors = []
+    monkeypatch.setattr(app_module.messagebox, "showerror", lambda *args, **kwargs: errors.append(args))
+
+    app = App(settings_dir=tmp_path)
+    app.withdraw()
+    try:
+        app.update()
+        app._show_workspace_error()
+        assert app._workspace_blocked is True
+        assert app.scan_result is None
+        assert archive.read_bytes() == b"not a zip file"
+        assert not (workspace / "workspace-settings.json").exists()
+        assert "清空工作区或选择其他工作区" in app.next_step_var.get()
+        assert errors
+    finally:
+        app._close()
+    assert archive.read_bytes() == b"not a zip file"
+    assert not (workspace / "workspace-settings.json").exists()

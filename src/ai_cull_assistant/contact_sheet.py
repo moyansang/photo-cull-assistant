@@ -267,6 +267,9 @@ def _draw_cell(
     draw.rectangle([x0, y0, x0 + CELL_W - 8, y0 + CELL_H - 8], outline=border, width=1)
 
     bottom = y0 + THUMB_BOX[1]
+    if asset.preview_path and not Path(asset.preview_path).exists():
+        from .preview import ensure_preview
+        ensure_preview(asset)
     if asset.preview_path and Path(asset.preview_path).exists():
         with Image.open(asset.preview_path) as img:
             img = ImageOps.exif_transpose(img)

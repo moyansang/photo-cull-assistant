@@ -14,14 +14,17 @@ def make_app(tmp_path):
     return app
 
 
-def test_clear_log_removes_queued_and_persisted_history(tmp_path):
+def test_clear_workspace_removes_all_project_state(tmp_path, monkeypatch):
     app=make_app(tmp_path)
-    app._log('must disappear')
-    app._clear_log();app.update()
-    assert 'must disappear' not in app.log_text.get('1.0','end')
-    app._close()
-    app=make_app(tmp_path);app.update()
-    try:assert 'must disappear' not in app.log_text.get('1.0','end')
+    workspace=Path(app.workspace_var.get()); workspace.mkdir(parents=True, exist_ok=True)
+    (workspace/'scan-session.json').write_text('{}')
+    (workspace/'nested').mkdir();(workspace/'nested'/'preview.jpg').write_bytes(b'x')
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno',lambda *a,**kw:True)
+    try:
+        app._clear_workspace();app.update()
+        assert list(workspace.iterdir()) == []
+        assert app.scan_result is None
+        assert app.next_step_var.get() == '推荐下一步：扫描图片'
     finally:app._close()
 
 
@@ -37,7 +40,7 @@ def test_busy_controls_and_stop(tmp_path):
         app._set_processing_busy(False)
         assert str(app.stop_button.cget('state'))=='disabled'
         app._set_progress(45)
-        assert app.progress_label.get()=='生成联系表进度：'
+        assert app.progress_label.get()=='扫描图片进度：'
         assert app.progress_text.get()=='45%'
     finally:app._close()
 
@@ -55,16 +58,16 @@ def test_update_progress_temporarily_replaces_scan_progress_and_disables_scan(tm
         assert app.progress_text.get()=='23%'
         app._restore_scan_progress()
         app._set_update_busy(False)
-        assert app.progress_label.get()=='生成联系表进度：'
+        assert app.progress_label.get()=='扫描图片进度：'
         assert app.progress_text.get()=='60%'
         assert str(app.scan_button.cget('state'))=='normal'
     finally:app._close()
 
 
-def test_saving_face_settings_regenerates_existing_scan_without_main_button(tmp_path,monkeypatch):
+def test_saving_face_settings_rescans_only_changed_photos(tmp_path,monkeypatch):
     app=make_app(tmp_path)
-    regenerated=[]
-    monkeypatch.setattr(app,'_regenerate_contacts',lambda:regenerated.append(True))
+    started=[]
+    monkeypatch.setattr(app,'_start_processing',lambda **kwargs:started.append(kwargs))
     try:
         first=SimpleNamespace(primary_path=tmp_path/'first.jpg', ai_focus_dirty=False)
         second=SimpleNamespace(primary_path=tmp_path/'second.jpg', ai_focus_dirty=False)
@@ -75,7 +78,7 @@ def test_saving_face_settings_regenerates_existing_scan_without_main_button(tmp_
         app._save_crop_settings(settings)
         assert first.ai_focus_dirty and not second.ai_focus_dirty
         assert saved == [True]
-        assert regenerated==[True]
+        assert started==[{'mode':'rescan'}]
         assert not hasattr(app,'regenerate_button')
     finally:
         app.scan_result=None
@@ -98,7 +101,7 @@ def test_regroup_confirmation_and_layout_only(tmp_path,monkeypatch):
         app.preset_var.set('严格');app._regenerate_contacts()
         assert not started
         app.preset_var.set('标准');app.per_page_var.set(24);app._regenerate_contacts()
-        assert started==[dict(regenerate=True,regroup=False)]
+        assert started==[dict(mode='rescan',regroup=False)]
     finally:
         app.scan_result=None;app._close()
 
@@ -126,7 +129,7 @@ def test_continue_from_saved_job_updates_main_window(tmp_path):
         assert not app._processing_busy
         assert app.scan_result and len(app.scan_result.assets)==1
         assert app.progress_var.get()==100
-        assert app.next_step_var.get()=='推荐下一步：AI 选片与 LR 导出'
+        assert app.next_step_var.get()=='推荐下一步：AI 选片与导出'
         log=app.log_text.get('1.0','end')
         assert '初筛技术模糊/抖动弃置 0 张' in log
         assert '剩余可进入 AI 选片 1 张' in log
@@ -162,6 +165,59 @@ def test_homepage_api_selection_persists_only_profile_id(tmp_path):
         assert app.api_profile_var.get() == "视觉模型"
     finally:
         app._close()
+
+
+def test_homepage_staged_button_layout(tmp_path):
+    app=make_app(tmp_path)
+    try:
+        expected = [
+            '扫描图片','编辑选片组','检测/调整人脸框',
+            'AI 复核','生成联系表','AI 选片与导出',
+            '停止处理','继续处理','打开联系表目录','清空工作区',
+            'LR 插件','检查更新',
+        ]
+        found=[]
+        def walk(widget):
+            for child in widget.winfo_children():
+                if isinstance(child,tk.ttk.Button):
+                    found.append(child.cget('text'))
+                walk(child)
+        walk(app)
+        assert [name for name in found if name in expected] == expected
+        checks=[]
+        def collect_checks(widget):
+            for child in widget.winfo_children():
+                if isinstance(child,tk.ttk.Checkbutton):checks.append(child.cget('text'))
+                collect_checks(child)
+        collect_checks(app)
+        assert '不再自动检查更新' in checks
+    finally:app._close()
+
+
+def test_staged_scan_then_contact_sheet_flow(tmp_path):
+    import time
+    from PIL import Image
+    source=tmp_path/'photos';source.mkdir()
+    Image.new('RGB',(80,120),'white').save(source/'a.jpg')
+    app=make_app(tmp_path)
+    try:
+        app.screening_var.set(False)
+        app._run_scan_thread()
+        deadline=time.monotonic()+15
+        while app._processing_busy and time.monotonic()<deadline:
+            app.update();time.sleep(.01)
+        assert app.scan_result and not app.scan_result.main_pages
+        assert not app._sheets_ready()
+        assert app.next_step_var.get()=='推荐下一步：检测/调整人脸框'
+
+        app._generate_contact_sheets()
+        deadline=time.monotonic()+15
+        while app._processing_busy and time.monotonic()<deadline:
+            app.update();time.sleep(.01)
+        assert app.scan_result.main_pages
+        assert app._sheets_ready()
+        assert app.next_step_var.get()=='推荐下一步：AI 选片与导出'
+    finally:app._close()
 def test_homepage_reopens_one_api_editor_and_restores_owner_grab(tmp_path):
     app = make_app(tmp_path)
     try:

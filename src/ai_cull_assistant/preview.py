@@ -46,6 +46,24 @@ def build_preview(asset: PhotoAsset, cache_dir: Path) -> Path:
     return out_path
 
 
+def ensure_preview(asset: PhotoAsset, preview_dir: Path | None = None) -> Path:
+    """Return an existing preview or recreate one from the original on demand.
+
+    Archived sessions retain the intended preview path.  This lets callers use
+    the helper with only an asset while still keeping regenerated files inside
+    the workspace-owned preview directory.
+    """
+    existing = Path(asset.preview_path) if asset.preview_path else None
+    if existing is not None and existing.is_file():
+        return existing
+    cache_dir = Path(preview_dir) if preview_dir is not None else None
+    if cache_dir is None and existing is not None and existing.parent.name == "v04":
+        cache_dir = existing.parent.parent
+    if cache_dir is None:
+        raise ValueError("无法确定预览图缓存目录")
+    return build_preview(asset, cache_dir)
+
+
 def _load_standard_image(path: Path) -> Optional[Image.Image]:
     try:
         with Image.open(path) as img:

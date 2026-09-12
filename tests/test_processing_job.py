@@ -357,3 +357,247 @@ def test_api_failure_keeps_local_analysis_for_resumable_retry(tmp_path, monkeypa
     assert local_calls == ["P0000"]
     assert review_calls == ["P0000", "P0000"]
     assert result.assets[0].screening_reason == "ai_focus_clear"
+
+
+def test_staged_scan_only_builds_previews_screens_and_groups(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from ai_cull_assistant.screening import ScreeningResult
+
+    photos = _photos(tmp_path, 2)
+    workspace = tmp_path / "workspace"
+    stale = workspace / "contact_sheets" / "main" / "old.jpg"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"old")
+    calls = []
+
+    def screen(assets, **_kwargs):
+        asset = assets[0]
+        calls.append(asset.stem)
+        asset.auto_rejected = False
+        asset.screening_reason = "subject_not_obviously_blurred"
+        asset.face_found = True
+        return {asset.stem: ScreeningResult(False, asset.screening_reason, True)}
+
+    def forbidden_review(*_args, **_kwargs):
+        raise AssertionError("scan stage must not call the API")
+
+    monkeypatch.setattr("ai_cull_assistant.processing_job.screen_assets", screen)
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=forbidden_review))
+    result = start_job(
+        photos, workspace, _options(technical_screening=True), CropSettings(), mode="scan"
+    ).run(
+        _options(technical_screening=True), CropSettings(), Event(), None,
+        focus_profile={"id": "configured-but-unused"},
+    )
+
+    assert result is not None
+    assert calls == ["P0000", "P0001"]
+    assert all(asset.preview_path.is_file() for asset in result.assets)
+    assert (workspace / "groups.json").is_file()
+    assert (workspace / "scan-session.json").is_file()
+    assert result.main_pages == [] and result.rejected_pages == []
+    assert not (workspace / "contact_sheets").exists()
+
+
+def test_staged_rescan_only_changed_assets_and_preserves_manual_groups(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from ai_cull_assistant.screening import ScreeningResult
+
+    photos = _photos(tmp_path, 3)
+    workspace = tmp_path / "workspace"
+    first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
+        _options(), CropSettings(), Event(), None
+    )
+    for index, asset in enumerate(first.assets):
+        asset.group_id = 10 + index
+    from ai_cull_assistant.workflow import persist_manual_groups
+    persist_manual_groups(first)
+    groups_before = (workspace / "groups.json").read_bytes()
+    first.assets[1].ai_focus_result = {"status": "blur", "reason": "old crop"}
+    first.assets[1].ai_focus_dirty = True
+    first.assets[1].auto_rejected = True
+    first.assets[1].screening_reason = "ai_focus_blur"
+    calls = []
+
+    def screen(assets, **_kwargs):
+        asset = assets[0]
+        calls.append(asset.stem)
+        asset.auto_rejected = False
+        asset.screening_reason = "no_reliable_face"
+        asset.face_found = False
+        return {asset.stem: ScreeningResult(False, asset.screening_reason, False)}
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("rescan must neither rebuild previews nor call API")
+
+    monkeypatch.setattr("ai_cull_assistant.processing_job.screen_assets", screen)
+    monkeypatch.setattr("ai_cull_assistant.processing_job.build_preview", forbidden)
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=forbidden))
+    result = start_job(
+        photos, workspace, _options(technical_screening=True), CropSettings(),
+        result=first, mode="rescan",
+    ).run(
+        _options(technical_screening=True), CropSettings(), Event(), None,
+        focus_profile={"id": "unused"},
+    )
+
+    assert calls == ["P0001"]
+    assert [asset.group_id for asset in result.assets] == [10, 11, 12]
+    assert (workspace / "groups.json").read_bytes() == groups_before
+    changed = result.assets[1]
+    assert changed.ai_focus_result is None and changed.ai_focus_dirty is False
+    assert changed.screening_reason == "no_reliable_face"
+    assert result.main_pages == [] and result.rejected_pages == []
+
+
+def test_staged_focus_reviews_only_pending_without_repeating_valid_result(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    photos = _photos(tmp_path, 3)
+    workspace = tmp_path / "workspace"
+    first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
+        _options(), CropSettings(), Event(), None
+    )
+    first.assets[0].screening_reason = "no_reliable_face"
+    from ai_cull_assistant.subject import SubjectFeatures
+    first.assets[0].subject_checked = True
+    first.assets[0].subject_features = SubjectFeatures("", "", None, (.25, .2, .2, .2))
+    first.assets[1].screening_reason = "ai_focus_uncertain"
+    first.assets[1].ai_focus_result = {"status": "uncertain", "reason": "already reviewed"}
+    first.assets[2].screening_reason = "subject_not_obviously_blurred"
+    stale = workspace / "contact_sheets" / "main" / "stale.jpg"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"stale")
+    calls = []
+
+    def review(asset, *_args):
+        calls.append(asset.stem)
+        return {"status": "blur", "reason": "face is blurred"}
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("focus stage must not rerun local analysis")
+
+    monkeypatch.setattr("ai_cull_assistant.processing_job.screen_assets", forbidden)
+    monkeypatch.setattr("ai_cull_assistant.processing_job.build_preview", forbidden)
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
+    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode="focus")
+    result = job.run(
+        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+    )
+
+    assert calls == ["P0000"]
+    assert result.assets[0].auto_rejected is True
+    assert result.assets[1].ai_focus_result == {"status": "uncertain", "reason": "already reviewed"}
+    assert result.main_pages == [] and result.rejected_pages == []
+    assert not (workspace / "contact_sheets").exists()
+    assert (workspace / "scan-session.json").is_file()
+
+
+def test_staged_focus_skips_pending_photo_without_reliable_face(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    photos = _photos(tmp_path, 1)
+    workspace = tmp_path / "workspace"
+    first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
+        _options(), CropSettings(), Event(), None
+    )
+    asset = first.assets[0]
+    asset.screening_reason = "no_reliable_face"
+    asset.face_found = False
+    asset.subject_checked = True
+    asset.subject_features = None
+    calls = []
+    logs = []
+
+    def review(*_args):
+        calls.append("called")
+        return {"status": "clear", "reason": "unexpected"}
+
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(
+        review_focus=review,
+        _subject_face=lambda *_args: None,
+    ))
+    result = start_job(
+        photos, workspace, _options(), CropSettings(), result=first, mode="focus"
+    ).run(
+        _options(), CropSettings(), Event(), None,
+        focus_profile={"id": "profile"}, on_log=logs.append,
+    )
+
+    assert calls == []
+    assert result.assets[0].ai_focus_result is None
+    assert result.assets[0].screening_reason == "no_reliable_face"
+    assert len(logs) == 1 and "未检测到可靠人脸" in logs[0]
+
+
+def test_staged_focus_stop_resume_keeps_completed_api_result(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from ai_cull_assistant.subject import SubjectFeatures
+
+    photos = _photos(tmp_path, 2)
+    workspace = tmp_path / "workspace"
+    first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
+        _options(), CropSettings(), Event(), None
+    )
+    for asset in first.assets:
+        asset.screening_reason = "face_focus_uncertain"
+        asset.subject_checked = True
+        asset.subject_features = SubjectFeatures("", "", None, (.25, .2, .2, .2))
+    calls = []
+
+    def review(asset, *_args):
+        calls.append(asset.stem)
+        return {"status": "clear", "reason": "face clear"}
+
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
+    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode="focus")
+    stop = Event()
+
+    def stop_after_first(_percent):
+        if len(calls) == 1:
+            stop.set()
+
+    assert job.run(
+        _options(), CropSettings(), stop, stop_after_first, focus_profile={"id": "profile"}
+    ) is None
+    assert calls == ["P0000"]
+    restored = load_job(workspace, photos)
+    assert restored is not None and restored.mode == "focus"
+    result = restored.run(
+        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+    )
+    assert result is not None
+    assert calls == ["P0000", "P0001"]
+    assert [asset.ai_focus_result["status"] for asset in result.assets] == ["clear", "clear"]
+
+
+def test_staged_sheets_only_renders_current_result(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    photos = _photos(tmp_path, 3)
+    workspace = tmp_path / "workspace"
+    first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
+        _options(), CropSettings(), Event(), None
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("sheet stage must not rerun analysis or API")
+
+    monkeypatch.setattr("ai_cull_assistant.processing_job.screen_assets", forbidden)
+    monkeypatch.setattr("ai_cull_assistant.processing_job.build_preview", forbidden)
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=forbidden))
+    result = start_job(
+        photos, workspace, _options(), CropSettings(), result=first, mode="sheets"
+    ).run(
+        _options(), CropSettings(), Event(), None, focus_profile={"id": "unused"}
+    )
+
+    assert result.main_pages and all(path.is_file() for path in result.main_pages)
+    assert result.rejected_pages == []
+    assert (workspace / "scan-session.json").is_file()

@@ -50,7 +50,10 @@ def load_session(workspace,input_dir):
             for key in ('face','head'):
                 if feature.get(key):feature[key]=tuple(feature[key])
             row['subject_features']=SubjectFeatures(**feature)
-        if row['preview_path'] and not row['preview_path'].is_file():raise ValueError('预览图丢失，请重新扫描')
+        if row['preview_path'] and not row['preview_path'].is_file():
+            from .workspace_archive import previews_were_compacted
+            if not previews_were_compacted(workspace):
+                raise ValueError('预览图丢失，请重新扫描')
         assets.append(PhotoAsset(**row))
     data['assets']=assets
     for key in ('preview_dir','contact_dir','workspace_dir','group_store_path','input_dir','screening_results_path'):

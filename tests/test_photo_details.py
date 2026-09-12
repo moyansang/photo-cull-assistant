@@ -110,11 +110,11 @@ def test_crop_title_and_footer_visible_on_small_screen(tmp_path, monkeypatch):
     try:
         d=CropDialog(root,[a],CropSettings(),lambda s:None)
         root.update()
-        assert d.title()=='检查／调整人脸框'
+        assert d.title()=='检测/调整人脸框'
         buttons=[]
         def walk(w):
             for c in w.winfo_children():
-                if isinstance(c,tk.ttk.Button) and c.cget('text') in ('取消','保存并重新生成联系表'):buttons.append(c)
+                if isinstance(c,tk.ttk.Button) and c.cget('text') in ('取消','重新扫描修改过的图片'):buttons.append(c)
                 walk(c)
         walk(d)
         assert len(buttons)==2

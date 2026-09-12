@@ -955,9 +955,15 @@ class ReviewDialog(tk.Toplevel):
 
     def _preview_path(self, photo: dict[str, Any]) -> Path | None:
         value = photo.get("preview_path")
-        if value:
+        if value and Path(value).is_file():
             return Path(value)
         asset = self._asset_for_photo(photo)
+        if asset is not None:
+            try:
+                from .preview import ensure_preview
+                return ensure_preview(asset)
+            except (OSError, ValueError, RuntimeError, AttributeError):
+                pass
         value = _asset_value(asset, "preview_path") if asset is not None else None
         return Path(value) if value else None
 

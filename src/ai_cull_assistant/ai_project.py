@@ -118,6 +118,8 @@ def parse_answer(text,task_id,batch_id,expected,clarity_expected=()):
 class ReviewProject:
     def __init__(self, workspace):
         self.workspace=Path(workspace).resolve()
+        from .workspace_archive import restore_workspace
+        restore_workspace(self.workspace)
         self.path=self.workspace/'ai_project.json'
         if self.path.exists():
             self.data=json.loads(self.path.read_text('utf-8'))

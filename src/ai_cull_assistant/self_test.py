@@ -164,6 +164,18 @@ def run(report_path: str) -> None:
             assert completed is not None and completed.main_pages
             assert load_job(resumed_workspace, photos) is None
             report['stop_restart_resume_processing'] = True
+            staged_workspace = root / 'staged-smoke'
+            local = start_job(photos, staged_workspace, options, CropSettings(), mode='scan').run(
+                options, CropSettings(), Event(), lambda percent: None)
+            assert local is not None and not local.main_pages
+            local.assets[0].ai_focus_dirty = True
+            rescanned = start_job(photos, staged_workspace, options, CropSettings(), result=local, mode='rescan').run(
+                options, CropSettings(), Event(), lambda percent: None)
+            assert rescanned is not None and not rescanned.main_pages and not rescanned.assets[0].ai_focus_dirty
+            rendered = start_job(photos, staged_workspace, options, CropSettings(), result=rescanned, mode='sheets').run(
+                options, CropSettings(), Event(), lambda percent: None)
+            assert rendered.main_pages and all(page.is_file() for page in rendered.main_pages)
+            report['separate_scan_rescan_sheets'] = True
 
         report.update(ok=True, opencv=cv2.__version__, rawpy=rawpy.__version__)
     except Exception:

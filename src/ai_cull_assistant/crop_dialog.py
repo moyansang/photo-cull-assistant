@@ -10,15 +10,16 @@ from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 from .crop_settings import CropSettings, crop_bounds
 from .subject import asset_features, face_crop, detail_features
+from .preview import ensure_preview
 from .window_layout import fit_window, scrollable_body
 
 
 class CropDialog(tk.Toplevel):
     def __init__(self, parent, assets, settings, on_save):
         super().__init__(parent)
-        self.title("检查／调整人脸框")
+        self.title("检测/调整人脸框")
         self.transient(parent)
-        self.assets = [a for a in assets if a.preview_path]
+        self.assets = [a for a in assets if a.preview_path or a.primary_path]
         self.edits = deepcopy(settings.photos)
         self._loading = False
         self._drag = None
@@ -35,7 +36,11 @@ class CropDialog(tk.Toplevel):
         actions = ttk.Frame(self, padding=(16, 8))
         actions.pack(side="bottom", fill="x")
         ttk.Button(actions, text="取消", command=self.destroy).pack(side="right", padx=6)
-        ttk.Button(actions, text="保存并重新生成联系表" if self.assets else "保存设置", command=self.save).pack(side="right")
+        ttk.Button(
+            actions,
+            text="重新扫描修改过的图片" if self.assets else "保存设置",
+            command=self.save,
+        ).pack(side="right")
         body = scrollable_body(self, padding=16)
         ttk.Label(
             body,
@@ -155,7 +160,8 @@ class CropDialog(tk.Toplevel):
             preview_height = max(80, canvas_height - padding * 2)
             preview_x = padding + preview_width / 2
             final_x = canvas_width - padding - inset_width / 2
-            with Image.open(asset.preview_path) as source:
+            preview_path = ensure_preview(asset)
+            with Image.open(preview_path) as source:
                 original = ImageOps.exif_transpose(source).convert("RGB")
             subject = detail_features(asset, self.global_settings())
             self.candidates = detect(cv2.cvtColor(np.asarray(original), cv2.COLOR_RGB2BGR), self.confidence.get())
