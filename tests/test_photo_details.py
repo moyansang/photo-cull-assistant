@@ -63,15 +63,17 @@ def test_all_main_options_survive_restart(tmp_path):
 
 def _check_restart(tmp_path):
     from ai_cull_assistant.app import App
+    photos=tmp_path/'photos';photos.mkdir()
     app=App(settings_dir=tmp_path); app.withdraw()
+    app.input_var.set(str(photos));app._sync_selected_workspace()
     app.preset_var.set('宽松'); app.per_page_var.set(24); app.columns_var.set(3)
-    app.screening_var.set(False); app.input_var.set('E:/photos'); app.no_updates_var.set(True)
+    app.screening_var.set(False); app.no_updates_var.set(True)
     app._close()
     app=App(settings_dir=tmp_path); app.withdraw()
     try:
         assert app.preset_var.get()=='宽松'
         assert app.per_page_var.get()==24 and app.columns_var.get()==3
-        assert not app.screening_var.get() and app.input_var.get()=='E:/photos'
+        assert not app.screening_var.get() and app.input_var.get()==str(photos)
         assert app.no_updates_var.get()
     finally:
         app._close()

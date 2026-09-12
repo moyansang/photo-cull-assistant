@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 import tempfile
 
+from .workspace_layout import workspace_path
+
 
 _PUBLIC_PAGE = re.compile(r"(?:sheet|contact_sheet)_\d{3,}(?:_[^/\\]+)?\.jpg", re.IGNORECASE)
 _TASK_ID = re.compile(r"[0-9a-f]{32}")
@@ -190,7 +192,7 @@ def clear_generated_outputs(workspace: str | Path, *, protected_paths=()) -> Cle
         except (OSError, ValueError) as exc:
             errors.append(f"{root / 'scan-session.json'}: {exc}")
 
-    log_path = root / "session.log"
+    log_path = workspace_path(root, "session.log")
     log_removed = False
     try:
         if log_path.exists():

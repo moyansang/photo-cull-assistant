@@ -1,6 +1,6 @@
 """Crash-safe, resumable scanning and contact-sheet generation jobs.
 
-Generated files stay below ``workspace/.processing`` until the entire job is
+Generated files stay below the workspace processing cache until the entire job is
 complete.  The public workspace is replaced only during the final publish.
 """
 from __future__ import annotations
@@ -28,6 +28,7 @@ from .screening import ScreeningResult, save_screening_results, screen_assets
 from .session_store import save_session
 from .subject import SubjectFeatures
 from .workflow import ScanResult
+from .workspace_layout import workspace_path as resolve_workspace_path
 
 
 JOB_VERSION = 1
@@ -135,7 +136,7 @@ def _focus_review_log(asset: PhotoAsset, reviewed: Mapping) -> str:
 
 
 def _active_path(workspace: Path) -> Path:
-    return workspace / ".processing" / "active.json"
+    return resolve_workspace_path(workspace, ".processing") / "active.json"
 
 
 def start_job(
@@ -151,7 +152,7 @@ def start_job(
     workspace_path = Path(workspace).resolve()
     if not input_path.is_dir():
         raise ValueError("照片文件夹不存在")
-    processing_root = workspace_path / ".processing"
+    processing_root = resolve_workspace_path(workspace_path, ".processing")
     active_path = _active_path(workspace_path)
     if active_path.exists():
         try:
@@ -214,8 +215,9 @@ def load_job(workspace: str | Path, input_dir: str | Path) -> "ProcessingJob | N
         identifier = str(active["job_id"])
         if uuid.UUID(identifier).hex != identifier:
             raise ValueError("invalid job id")
-        root = workspace_path / ".processing" / identifier
-        if root.resolve().parent != (workspace_path / ".processing").resolve():
+        processing_root = resolve_workspace_path(workspace_path, ".processing")
+        root = processing_root / identifier
+        if root.resolve().parent != processing_root.resolve():
             raise ValueError("invalid job path")
         data = json.loads((root / "job.json").read_text("utf-8"))
         if Path(data.get("workspace", "")).resolve() != workspace_path:
@@ -229,7 +231,7 @@ def load_job(workspace: str | Path, input_dir: str | Path) -> "ProcessingJob | N
     except SourceChangedError:
         raise
     except Exception as exc:
-        safe_parent = (workspace_path / ".processing").resolve()
+        safe_parent = resolve_workspace_path(workspace_path, ".processing").resolve()
         if "root" in locals() and root.is_dir() and root.resolve().parent == safe_parent:
             shutil.rmtree(root, ignore_errors=True)
         active_path.unlink(missing_ok=True)
@@ -305,7 +307,11 @@ class ProcessingJob:
                 if self.kind == "scan":
                     build_preview(asset, self.output / "previews")
                 if current["technical_screening"]:
-                    screened = screen_assets([asset], crop_settings=crop_settings, cache_dir=self.workspace / ".analysis-cache")[asset.stem]
+                    screened = screen_assets(
+                        [asset],
+                        crop_settings=crop_settings,
+                        cache_dir=resolve_workspace_path(self.workspace, ".analysis-cache"),
+                    )[asset.stem]
                 else:
                     asset.auto_rejected = False
                     asset.screening_reason = "screening_disabled"
@@ -331,7 +337,7 @@ class ProcessingJob:
                             asset,
                             crop_settings,
                             focus_profile,
-                            self.workspace / ".analysis-cache",
+                            resolve_workspace_path(self.workspace, ".analysis-cache"),
                         )
                         _apply_focus_review(asset, screened, reviewed)
                         asset.ai_focus_dirty = False
@@ -479,7 +485,7 @@ class ProcessingJob:
                 raise ProcessingJobError("已完成的联系表文件丢失")
 
     def _invalidate(self) -> None:
-        processing_root = self.workspace / ".processing"
+        processing_root = resolve_workspace_path(self.workspace, ".processing")
         try:
             if self.root.resolve().parent == processing_root.resolve():
                 shutil.rmtree(self.root, ignore_errors=True)

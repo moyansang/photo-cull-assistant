@@ -10,3 +10,25 @@ settings.json
 settings.json.tmp
 工作区/
 精选/
+
+# Runtime user data (legacy root layout and portable data directories)
+/settings/
+/workspaces/
+/.analysis-cache/
+/.processing/
+/cache/
+/logs/
+/exports/
+/previews/
+/contact_sheets/
+/ai_tasks/
+/ai-api-profiles.json
+/ai_project.json
+/groups.json
+/lightroom_results.json
+/processing-settings.json
+/scan-session.json
+/screening_results.json
+/workspace-settings.json
+/session.log
+/update-cache.json

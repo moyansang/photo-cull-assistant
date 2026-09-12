@@ -13,7 +13,13 @@ from .group_editor import GroupEditor
 from .version import VERSION
 from .update_ui import UpdateController
 import sys
-from .settings import application_dir, load_paths, save_paths, read_values, save_values
+from .settings import application_dir, load_paths, read_values, save_values
+from .project_storage import (
+    load_workspace_preferences,
+    prepare_runtime_settings,
+    save_workspace_preferences,
+    workspace_for,
+)
 from .crop_settings import CropSettings
 from .crop_dialog import CropDialog
 from .shared_api import (
@@ -25,6 +31,7 @@ from .shared_api import (
     selected_profile_id,
 )
 from .window_layout import fit_window, scrollable_body
+from .workspace_layout import workspace_path
 from dataclasses import asdict
 from .workflow import (
     ScanResult,
@@ -41,12 +48,37 @@ class App(tk.Tk):
         self.title(f"AI 选片助手 v{VERSION}")
         self.review_project = None
         self.scan_result: ScanResult | None = None
-        self.settings_dir = settings_dir if settings_dir is not None else application_dir()
+        self.settings_dir = Path(settings_dir) if settings_dir is not None else prepare_runtime_settings()
         self.saved_paths = load_paths(self.settings_dir)
-        self.crop_settings = CropSettings.from_dict(read_values(self.settings_dir).get("face_crop", {}))
-        self.saved_options = read_values(self.settings_dir).get("options", {})
+        global_values = read_values(self.settings_dir)
+        global_options = global_values.get("options", {})
+        if not isinstance(global_options, dict):
+            global_options = {}
+        input_dir = self.saved_paths["input"].strip()
+        workspace = self.saved_paths["workspace"].strip()
+        workspace_values = {}
+        if input_dir:
+            try:
+                selected = workspace_for(
+                    self.settings_dir,
+                    input_dir,
+                    preferred=workspace or None,
+                )
+            except (OSError, ValueError, json.JSONDecodeError):
+                selected = workspace_for(self.settings_dir, input_dir)
+            workspace = str(selected)
+            self.saved_paths["workspace"] = workspace
+            workspace_values = load_workspace_preferences(self.settings_dir, selected, input_dir)
+        self.crop_settings = CropSettings.from_dict(workspace_values.get("face_crop", {}))
+        self.saved_options = workspace_values.get("options", {})
         if not isinstance(self.saved_options, dict):
             self.saved_options = {}
+        self.saved_options = dict(self.saved_options)
+        self.saved_options["no_auto_updates"] = global_options.get("no_auto_updates") is True
+        self._active_input = input_dir
+        self._active_workspace = workspace
+        self._workspace_user_custom = False
+        self._suppress_settings_trace = False
         self._loaded_grouping = GROUPING_LABELS.get(self.saved_options.get("grouping"), "standard")
         self._processing_busy = False
         self._processing_job = None
@@ -63,7 +95,9 @@ class App(tk.Tk):
         self._api_selection_changed()
         fit_window(self, (980, 780), minimum_size=(640, 520))
         self._restore_session()
-        for variable in (self.input_var, self.workspace_var, self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.no_updates_var):
+        self.input_var.trace_add("write", self._input_path_changed)
+        self.workspace_var.trace_add("write", self._workspace_path_changed)
+        for variable in (self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.no_updates_var):
             variable.trace_add("write", self._schedule_settings_save)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.updates = UpdateController(self)
@@ -81,8 +115,10 @@ class App(tk.Tk):
                 self._log(f"分析记录保存失败：{exc}")
 
     def _restore_session(self):
+        if not self.input_var.get().strip() or not self.workspace_var.get().strip():
+            return
         workspace = Path(self.workspace_var.get())
-        logfile = workspace / 'session.log'
+        logfile = workspace_path(workspace, 'session.log')
         if logfile.exists():
             try:
                 self.log_text.configure(state="normal")
@@ -105,27 +141,140 @@ class App(tk.Tk):
             return default
 
     def _schedule_settings_save(self, *_):
+        if self._suppress_settings_trace or self._processing_busy:
+            return
         if self._settings_pending:
             self.after_cancel(self._settings_pending)
         self._settings_pending = self.after(500, self._save_preferences)
 
-    def _save_preferences(self):
-        self._settings_pending = None
+    def _input_path_changed(self, *_):
+        self._schedule_settings_save()
+
+    def _workspace_path_changed(self, *_):
+        if not self._suppress_settings_trace:
+            self._workspace_user_custom = True
+        self._schedule_settings_save()
+
+    def _workspace_options(self):
         options = dict(self.saved_options)
+        options.pop("no_auto_updates", None)
         options['grouping'] = self.preset_var.get()
         options['screening'] = self.screening_var.get()
-        options['no_auto_updates'] = self.no_updates_var.get()
-        for key, variable, low, high in [('per_page',self.per_page_var,8,60), ('columns',self.columns_var,2,6)]:
+        for key, variable, low, high in [('per_page', self.per_page_var, 8, 60), ('columns', self.columns_var, 2, 6)]:
             try:
                 value = variable.get()
                 if low <= value <= high:
                     options[key] = value
             except tk.TclError:
-                pass  # Keep the previous valid value while a spinbox is being edited.
+                pass
+        return options
+
+    def _save_active_workspace_preferences(self):
+        if not self._active_input or not self._active_workspace:
+            return
+        save_workspace_preferences(
+            Path(self._active_workspace),
+            asdict(self.crop_settings),
+            self._workspace_options(),
+        )
+
+    def _activate_workspace(self, input_dir: str, workspace: Path) -> None:
+        self._save_active_workspace_preferences()
+        values = load_workspace_preferences(self.settings_dir, workspace, input_dir)
+        options = values.get("options", {})
+        if not isinstance(options, dict):
+            options = {}
+        self._active_input = input_dir
+        self._active_workspace = str(workspace)
+        self.crop_settings = CropSettings.from_dict(values.get("face_crop", {}))
+        self.saved_options = dict(options)
+        self.saved_options["no_auto_updates"] = self.no_updates_var.get()
+        self._loaded_grouping = GROUPING_LABELS.get(self.saved_options.get("grouping"), "standard")
+        self._suppress_settings_trace = True
         try:
-            save_values(self.settings_dir, dict(input=self.input_var.get(), workspace=self.workspace_var.get(), options=options))
-            self.saved_options = options
-        except OSError as exc:
+            self.workspace_var.set(str(workspace))
+            grouping = self.saved_options.get("grouping")
+            self.preset_var.set(grouping if grouping in GROUPING_LABELS else "标准")
+            self.per_page_var.set(self._option_int("per_page", 16, 8, 60))
+            self.columns_var.set(self._option_int("columns", 4, 2, 6))
+            screening = self.saved_options.get("screening", True)
+            self.screening_var.set(screening if isinstance(screening, bool) else True)
+        finally:
+            self._suppress_settings_trace = False
+        self.scan_result = None
+        self.review_project = None
+        self._processing_job = None
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", "end")
+        self.log_text.configure(state="disabled")
+        self._restore_session()
+        self._restore_processing_job()
+
+    def _sync_selected_workspace(self) -> bool:
+        if self._processing_busy:
+            return False
+        input_dir = self.input_var.get().strip()
+        requested_workspace = self.workspace_var.get().strip()
+        if not input_dir:
+            if self._active_input:
+                self._save_active_workspace_preferences()
+            self._active_input = ""
+            self._active_workspace = ""
+            self.scan_result = None
+            self.review_project = None
+            self._processing_job = None
+            self._suppress_settings_trace = True
+            try:
+                self.workspace_var.set("")
+            finally:
+                self._suppress_settings_trace = False
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", "end")
+            self.log_text.configure(state="disabled")
+            self._restore_processing_job()
+            self._workspace_user_custom = False
+            return True
+        changed_input = input_dir != self._active_input
+        changed_workspace = requested_workspace != self._active_workspace
+        if not changed_input and not changed_workspace:
+            self._workspace_user_custom = False
+            return True
+        if changed_input and not Path(input_dir).is_dir():
+            return False
+        preferred = requested_workspace if self._workspace_user_custom and requested_workspace else None
+        try:
+            selected = workspace_for(self.settings_dir, input_dir, preferred=preferred)
+            self._activate_workspace(input_dir, selected)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            self._suppress_settings_trace = True
+            try:
+                self.input_var.set(self._active_input)
+                self.workspace_var.set(self._active_workspace)
+            finally:
+                self._suppress_settings_trace = False
+            self._workspace_user_custom = False
+            self._log(f"工作区切换失败：{exc}")
+            return False
+        self._workspace_user_custom = False
+        return True
+
+    def _save_preferences(self):
+        self._settings_pending = None
+        try:
+            if not self._sync_selected_workspace():
+                return
+            self._save_active_workspace_preferences()
+            self.saved_options = self._workspace_options()
+            self.saved_options["no_auto_updates"] = self.no_updates_var.get()
+            save_values(
+                self.settings_dir,
+                dict(
+                    input=self.input_var.get().strip(),
+                    workspace=self.workspace_var.get().strip(),
+                    options={"no_auto_updates": self.no_updates_var.get()},
+                ),
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
             self._log(f"设置保存失败：{exc}")
 
     def _close(self) -> None:
@@ -297,6 +446,11 @@ class App(tk.Tk):
             messagebox.showerror("配置 API", str(exc), parent=self)
 
     def _restore_processing_job(self):
+        if not self.input_var.get().strip() or not self.workspace_var.get().strip():
+            self._processing_job = None
+            self.continue_button.configure(state="disabled")
+            self.next_step_var.set("推荐下一步：扫描并生成联系表")
+            return
         try:
             from .processing_job import load_job
             self._processing_job = load_job(self.workspace_var.get(), self.input_var.get())
@@ -361,6 +515,8 @@ class App(tk.Tk):
 
     def _start_processing(self, resume=False, regenerate=False, regroup=False):
         if self._processing_busy or self.updates.busy:
+            return
+        if not self._sync_selected_workspace():
             return
         if not self.input_var.get().strip():
             messagebox.showinfo("处理照片", "请先选择照片文件夹。", parent=self)
@@ -468,7 +624,13 @@ class App(tk.Tk):
         CropDialog(self, assets, self.crop_settings, self._save_crop_settings)
 
     def _save_crop_settings(self, settings: CropSettings) -> None:
-        save_values(self.settings_dir, {"face_crop": asdict(settings)})
+        self._sync_selected_workspace()
+        if self._active_input and self._active_workspace:
+            save_workspace_preferences(
+                Path(self._active_workspace),
+                asdict(settings),
+                self._workspace_options(),
+            )
         if self.scan_result:
             for asset in self.scan_result.assets:
                 key = settings.key(asset)
@@ -528,6 +690,9 @@ class App(tk.Tk):
         ):
             messagebox.showinfo("暂不能清理", "请等待当前扫描、更新或窗口中的任务结束。", parent=self)
             return
+        if not self.input_var.get().strip() or not self.workspace_var.get().strip():
+            messagebox.showinfo("暂不能清理", "请先选择照片文件夹。", parent=self)
+            return
         self._ensure_selected_session()
         with self._log_lock:
             self._log_epoch += 1
@@ -565,6 +730,8 @@ class App(tk.Tk):
             messagebox.showinfo("联系表目录", str(path))
 
     def _ensure_selected_session(self):
+        if not self._sync_selected_workspace():
+            return
         if self.scan_result and (self.scan_result.workspace_dir.resolve() != Path(self.workspace_var.get()).resolve() or (self.scan_result.input_dir and self.scan_result.input_dir.resolve() != Path(self.input_var.get()).resolve())):
             self.scan_result = None
             self._restore_session()
@@ -600,10 +767,12 @@ class App(tk.Tk):
         with self._log_lock:
             epoch = self._log_epoch
             try:
-                workspace = Path(self.workspace_var.get())
-                workspace.mkdir(parents=True, exist_ok=True)
-                with (workspace / "session.log").open("a", encoding="utf-8") as stream:
-                    stream.write(text + "\n")
+                workspace_value = self.workspace_var.get().strip()
+                if workspace_value:
+                    logfile = workspace_path(Path(workspace_value), "session.log")
+                    logfile.parent.mkdir(parents=True, exist_ok=True)
+                    with logfile.open("a", encoding="utf-8") as stream:
+                        stream.write(text + "\n")
             except OSError:
                 pass
         def append():

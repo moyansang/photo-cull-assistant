@@ -211,7 +211,7 @@ def test_regenerate_refreshes_focus_without_rebuilding_previews(tmp_path, monkey
     first = start_job(photos, workspace, _options(), CropSettings()).run(
         _options(), CropSettings(), Event(), None)
     def screen(assets, **kwargs):
-        assert kwargs['cache_dir'] == workspace / '.analysis-cache'
+        assert kwargs['cache_dir'] == workspace / 'cache' / 'analysis'
         a = assets[0]
         a.auto_rejected = True
         a.screening_reason = 'obvious_subject_blur'
@@ -256,7 +256,7 @@ def test_api_focus_review_is_checkpointed_once_and_never_serialises_profile(tmp_
         calls.append(asset.stem)
         assert crop_settings == CropSettings()
         assert profile["id"] == "saved-profile"
-        assert cache_dir == workspace / ".analysis-cache"
+        assert cache_dir == workspace / "cache" / "analysis"
         return answers[asset.stem]
 
     monkeypatch.setattr("ai_cull_assistant.processing_job.screen_assets", screen)

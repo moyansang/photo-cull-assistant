@@ -153,13 +153,13 @@ def test_export_current_results_after_unscored_confirmation(ui, monkeypatch):
     opened = []
     monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
     dialog._export_ai_ratings()
-    payload = json.loads((project.workspace / 'lightroom_results.json').read_text('utf-8'))
+    payload = json.loads((project.workspace / 'exports' / 'lightroom_results.json').read_text('utf-8'))
     assert len(payload['photos']) == 2
     first = next(row for row in payload['photos'] if row['filename'].casefold().startswith('a.'))
     second = next(row for row in payload['photos'] if row['filename'].casefold().startswith('b.'))
     assert first['pick_status'] == -1 and 'rating' not in first
     assert second['rating'] == 4
-    assert opened == [project.workspace]
+    assert opened == [project.workspace / "exports"]
 
 
 def test_enter_creates_fresh_task_without_api_or_history_controls(ui):

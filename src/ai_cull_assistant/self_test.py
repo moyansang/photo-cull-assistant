@@ -29,7 +29,8 @@ def run(report_path: str) -> None:
             from .app import GROUPING_LABELS
             assert app.preset_var.get() == "标准"
             assert list(GROUPING_LABELS.values()) == ["strict", "standard", "loose"]
-            assert app.workspace_var.get() == str(root)
+            assert app.workspace_var.get() != str(root)
+            (root / "测试照片").mkdir()
             app.input_var.set(str(root / "测试照片"))
             app.workspace_var.set(str(root / "自选工作区"))
             app._close()

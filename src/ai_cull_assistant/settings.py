@@ -1,4 +1,4 @@
-"""Directory preferences stored beside the portable executable."""
+"""Global preferences stored in the selected settings directory."""
 import json
 from pathlib import Path
 import sys
@@ -11,7 +11,7 @@ def application_dir() -> Path:
 
 
 def load_paths(base: Path) -> dict[str, str]:
-    defaults = {"input": "", "workspace": str(base), "export": str(base)}
+    defaults = {"input": "", "workspace": "", "export": ""}
     try:
         saved = json.loads((base / "settings.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -34,6 +34,8 @@ def read_values(base: Path) -> dict:
 
 
 def save_values(base: Path, values: dict) -> None:
+    base = Path(base)
+    base.mkdir(parents=True, exist_ok=True)
     saved = read_values(base)
     saved.update(values)
     temporary = base / "settings.json.tmp"

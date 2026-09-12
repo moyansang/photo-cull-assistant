@@ -11,6 +11,7 @@ from .crop_settings import CropSettings
 from .preview import build_preview
 from .scanner import scan_folder
 from .screening import ScreeningResult, save_screening_results, screen_assets
+from .workspace_layout import workspace_path
 
 
 @dataclass(slots=True)
@@ -56,7 +57,11 @@ def run_scan(
 
     rejected_count = 0
     if technical_screening:
-        screening_results = screen_assets(assets, crop_settings=crop_settings, cache_dir=workspace / ".analysis-cache")
+        screening_results = screen_assets(
+            assets,
+            crop_settings=crop_settings,
+            cache_dir=workspace_path(workspace, ".analysis-cache"),
+        )
         save_screening_results(screening_results, screening_results_path)
         rejected_count = apply_auto_rejects(assets, screening_results)
     else:

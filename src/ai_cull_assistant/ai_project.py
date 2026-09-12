@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 
 from .contact_sheet import generate_contact_sheets
 from .lightroom_results import focus_review_status, ai_metadata
+from .workspace_layout import workspace_path
 
 PROMPT = '''你是一名舞台与 Cosplay 人像摄影选片助手。
 任务：{kind}。比较清单中的摄影作品，提出星级、弃置建议和待人工复核事项。
@@ -556,7 +557,7 @@ clear 表示主体清晰；blur 只用于主体明确失焦或拖影；无可靠
                 if not Path(path).is_file():raise ValueError('原照片已移动或丢失：'+path)
                 seen.add(path.casefold());rows.append(dict(path=path,filename=Path(path).name,**fields))
         if not rows:raise ValueError('没有有效且未过时的评分可导出' if ai_ratings else '没有已确认且有效的评级/标记可导出')
-        target=self.workspace/'lightroom_results.json'
+        target=workspace_path(self.workspace,'lightroom_results.json')
         export_id=uuid.uuid4().hex
         atomic_json(target,dict(format='photo-cull-assistant',version=1,photos=rows,project_id=str(self.path),export_id=export_id))
         self.data['last_export_id']=export_id

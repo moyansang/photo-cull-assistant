@@ -3,8 +3,8 @@ import sys
 from ai_cull_assistant.settings import application_dir, load_paths, save_paths
 
 
-def test_first_launch_defaults_are_inside_app(tmp_path):
-    assert load_paths(tmp_path) == {"input": "", "workspace": str(tmp_path), "export": str(tmp_path)}
+def test_first_launch_waits_for_workspace_selection(tmp_path):
+    assert load_paths(tmp_path) == {"input": "", "workspace": "", "export": ""}
 
 
 def test_paths_round_trip_even_if_not_mounted(tmp_path):
@@ -17,7 +17,7 @@ def test_corrupt_and_wrong_type_settings_fall_back(tmp_path):
     path = tmp_path / "settings.json"
     for content in ('broken', '[]', '{"workspace": null}'):
         path.write_text(content, encoding="utf-8")
-        assert load_paths(tmp_path)["workspace"] == str(tmp_path)
+        assert load_paths(tmp_path)["workspace"] == ""
 
 
 def test_frozen_base_uses_executable_not_working_directory(tmp_path, monkeypatch):
