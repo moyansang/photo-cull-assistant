@@ -271,8 +271,9 @@ def review_focus(
     digest = _cache_digest(asset, face, profile)
     root = Path(cache_dir)
     cache_path = root / PROMPT_VERSION / f"{digest}.json"
-    if cached := _cached_result(cache_path):
-        return cached
+    if not getattr(asset, "ai_focus_dirty", False):
+        if cached := _cached_result(cache_path):
+            return cached
 
     image_paths, face_found = _prepare_focus_images(
         asset, settings, root / PROMPT_VERSION / "images" / digest, face

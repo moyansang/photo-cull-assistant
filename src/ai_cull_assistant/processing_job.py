@@ -312,14 +312,19 @@ class ProcessingJob:
                     asset.focus_score = None
                     asset.face_found = False
                     screened = ScreeningResult(False, "screening_disabled", False)
-                asset.ai_focus_result = None
+                if self.kind == "regenerate" and asset.ai_focus_result and not asset.ai_focus_dirty:
+                    # Layout/face edits reuse the completed AI verdict. They are
+                    # not an instruction to make another paid review request.
+                    _apply_focus_review(asset, screened, asset.ai_focus_result)
+                else:
+                    asset.ai_focus_result = None
                 self._data["screening_results"][key] = asdict(screened)
                 self._data["photo_options"][str(index)] = {
                     "technical_screening": current["technical_screening"]
                 }
-            if focus_profile is not None:
+            if focus_profile is not None and (self.kind == "scan" or asset.ai_focus_dirty):
                 from .lightroom_results import focus_review_status
-                if focus_review_status(asset) is True:
+                if asset.ai_focus_dirty or focus_review_status(asset) is True:
                     try:
                         from .ai_focus import review_focus
                         reviewed = review_focus(
@@ -329,6 +334,7 @@ class ProcessingJob:
                             self.workspace / ".analysis-cache",
                         )
                         _apply_focus_review(asset, screened, reviewed)
+                        asset.ai_focus_dirty = False
                         self._data["screening_results"][key] = asdict(screened)
                         _notify_log(on_log, _focus_review_log(asset, reviewed))
                     except Exception as exc:

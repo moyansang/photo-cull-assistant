@@ -220,8 +220,10 @@ def test_regenerate_refreshes_focus_without_rebuilding_previews(tmp_path, monkey
     def fail_preview(*args, **kwargs):
         raise AssertionError('regeneration should reuse preview')
     monkeypatch.setattr('ai_cull_assistant.processing_job.build_preview', fail_preview)
+    monkeypatch.setattr('ai_cull_assistant.ai_focus.review_focus', fail_preview)
+
     updated = start_job(photos, workspace, _options(technical_screening=True), CropSettings(), result=first).run(
-        _options(technical_screening=True), CropSettings(), Event(), None)
+        _options(technical_screening=True), CropSettings(), Event(), None, focus_profile={"id": "p"})
     assert updated.assets[0].auto_rejected
     assert not updated.main_pages and updated.rejected_pages
     report = json.loads((workspace / 'screening_results.json').read_text('utf-8'))
@@ -288,6 +290,31 @@ def test_api_focus_review_is_checkpointed_once_and_never_serialises_profile(tmp_
     assert [asset.auto_rejected for asset in result.assets] == [False, True, False]
     assert result.assets[2].ai_focus_result == answers["P0002"]
     assert len(logs) == 3 and all("AI 清晰度复核" in line for line in logs)
+
+    # Editing face crops and rebuilding sheets must preserve every AI outcome,
+    # including uncertain, even after a restart and a profile change.
+    crops = CropSettings(1.8, -.2, '1:1', .8)
+    rebuilt = start_job(photos, workspace, _options(technical_screening=True), crops, result=result)
+    rebuilt = load_job(workspace, photos).run(
+        _options(technical_screening=True), crops, Event(), None,
+        focus_profile={"id": "different-profile"}, on_log=logs.append,
+    )
+    assert calls == ["P0000", "P0001", "P0002"]
+    assert [a.ai_focus_result for a in rebuilt.assets] == list(answers.values())
+    assert [a.auto_rejected for a in rebuilt.assets] == [False, True, False]
+    assert [a.screening_reason for a in rebuilt.assets] == [
+        "ai_focus_clear", "ai_focus_blur", "ai_focus_uncertain"]
+    rebuilt.assets[1].ai_focus_dirty = True
+    reviewed_again = start_job(photos, workspace, _options(technical_screening=True), CropSettings(), result=rebuilt)
+    reviewed_again = load_job(workspace, photos).run(
+        _options(technical_screening=True), CropSettings(), Event(), None,
+        focus_profile=profile,
+    )
+    assert calls == ["P0000", "P0001", "P0002", "P0001"]
+    assert not any(a.ai_focus_dirty for a in reviewed_again.assets)
+    assert [a.ai_focus_result for a in reviewed_again.assets] == list(answers.values())
+
+
 
 
 def test_api_failure_keeps_local_analysis_for_resumable_retry(tmp_path, monkeypatch):

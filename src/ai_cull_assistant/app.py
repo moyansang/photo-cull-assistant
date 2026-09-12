@@ -472,6 +472,13 @@ class App(tk.Tk):
 
     def _save_crop_settings(self, settings: CropSettings) -> None:
         save_values(self.settings_dir, {"face_crop": asdict(settings)})
+        if self.scan_result:
+            for asset in self.scan_result.assets:
+                key = settings.key(asset)
+                if (self.crop_settings.photos.get(key, {}) != settings.photos.get(key, {})
+                        or self.crop_settings.detection_confidence != settings.detection_confidence):
+                    asset.ai_focus_dirty = True
+            self._save_session()
         self.crop_settings = settings
         if self.scan_result:
             self._log("人脸设置已保存，正在按当前设置和分组灵敏度重新生成联系表。")

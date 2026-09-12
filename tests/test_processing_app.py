@@ -66,8 +66,15 @@ def test_saving_face_settings_regenerates_existing_scan_without_main_button(tmp_
     regenerated=[]
     monkeypatch.setattr(app,'_regenerate_contacts',lambda:regenerated.append(True))
     try:
-        app.scan_result=SimpleNamespace(assets=[])
-        app._save_crop_settings(CropSettings(scale_factor=1.2))
+        first=SimpleNamespace(primary_path=tmp_path/'first.jpg', ai_focus_dirty=False)
+        second=SimpleNamespace(primary_path=tmp_path/'second.jpg', ai_focus_dirty=False)
+        app.scan_result=SimpleNamespace(assets=[first,second])
+        saved=[]
+        monkeypatch.setattr(app, '_save_session', lambda: saved.append(True))
+        settings=CropSettings(photos={str(first.primary_path.resolve()).casefold(): {'manual_face':[.1,.1,.2,.2]}})
+        app._save_crop_settings(settings)
+        assert first.ai_focus_dirty and not second.ai_focus_dirty
+        assert saved == [True]
         assert regenerated==[True]
         assert not hasattr(app,'regenerate_button')
     finally:
