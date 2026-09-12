@@ -258,9 +258,9 @@ class App(tk.Tk):
     def _processing_options(self):
         return dict(grouping_preset=GROUPING_LABELS[self.preset_var.get()], photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), technical_screening=self.screening_var.get())
 
-    def _refresh_api_profiles(self) -> None:
+    def _refresh_api_profiles(self, preferred_id=None) -> None:
         current_id = self._api_profile_ids.get(self.api_profile_var.get()) if hasattr(self, "_api_profile_ids") else None
-        chosen_id = current_id or selected_profile_id(self.settings_dir)
+        chosen_id = preferred_id or current_id or selected_profile_id(self.settings_dir)
         choices = profile_options(self.settings_dir)
         self._api_profile_ids = {label: profile_id for label, profile_id in choices}
         labels = [label for label, _profile_id in choices]
@@ -276,7 +276,7 @@ class App(tk.Tk):
             self._log(f"API 选择保存失败：{exc}")
 
     def _api_profiles_saved(self) -> None:
-        self._refresh_api_profiles()
+        self._refresh_api_profiles(selected_profile_id(self.settings_dir))
         self._api_selection_changed()
 
     def _selected_api_profile(self) -> dict | None:

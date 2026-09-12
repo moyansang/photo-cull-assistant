@@ -155,6 +155,11 @@ def test_homepage_api_selection_persists_only_profile_id(tmp_path):
         saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
         assert saved["selected_api_profile_id"] == "manual-web"
         assert "base_url" not in saved and "secret" not in saved
+        # A successful dialog test selects its profile even if the UI was manual.
+        save_values(tmp_path, {"selected_api_profile_id": profile['id']})
+        app._api_profiles_saved()
+        assert app._selected_api_profile() == profile
+        assert app.api_profile_var.get() == "视觉模型"
     finally:
         app._close()
 def test_homepage_reopens_one_api_editor_and_restores_owner_grab(tmp_path):

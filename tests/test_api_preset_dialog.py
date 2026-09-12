@@ -215,3 +215,5 @@ def test_successful_connection_saves_and_closes_without_popup(tk_root, tmp_path,
     dialog._test_worker(dialog._form_values()[0],'secret')
     dialog._poll_events()
     assert dialog._closed and not dialog.winfo_exists() and refreshed==[True]
+    from ai_cull_assistant.shared_api import selected_profile_id
+    assert selected_profile_id(tmp_path) == 'connected'

@@ -302,6 +302,12 @@ class ApiConfigDialog(tk.Toplevel):
             self.advanced_frame.grid()
         else:
             self.advanced_frame.grid_remove()
+        previous = getattr(self, "_advanced_visible", None)
+        self._advanced_visible = visible
+        if previous is visible:
+            # Avoid update_idletasks/geometry re-entry while a native combobox
+            # popdown is completing a selection that does not change the layout.
+            return
         fit_window(
             self,
             (680, 590 if visible else 420),
@@ -358,7 +364,7 @@ class ApiConfigDialog(tk.Toplevel):
         profile, key = self._form_values()
         self._busy = True
         self._set_busy(True)
-        self.status_var.set("正在保存…" if operation == "save" else "正在发送一张 1×1 测试图片…")
+        self.status_var.set("正在保存…" if operation == "save" else "正在发送一张 512×512 测试图片…")
         target = self._save_worker if operation == "save" else self._test_worker
         self._worker = threading.Thread(target=target, args=(profile, key), daemon=True)
         self._worker.start()
@@ -419,7 +425,7 @@ class ApiConfigDialog(tk.Toplevel):
             self.status_var.set("配置已保存。")
         else:
             saved, result = value  # type: ignore[misc]
-            self._saved(saved)
+            self._saved(saved, activate=True)
             text = str(result.get("text", "")).strip()
             self.status_var.set("连接测试成功。")
             self.destroy()
@@ -429,12 +435,15 @@ class ApiConfigDialog(tk.Toplevel):
             return
         self._poll_token = self.after(100, self._poll_events)
 
-    def _saved(self, profile: dict) -> None:
+    def _saved(self, profile: dict, *, activate: bool = False) -> None:
         self.profiles = load_profiles(self.settings_dir)
         selected = next((item for item in self.profiles if item["id"] == profile["id"]), profile)
         self.profile_var.set(selected["name"])
         self._refresh_profile_choices()
         self._load_profile(selected)
+        if activate:
+            from .shared_api import save_selected_profile_id
+            save_selected_profile_id(self.settings_dir, selected['id'])
         if self.on_saved is not None:
             self.on_saved()
 
