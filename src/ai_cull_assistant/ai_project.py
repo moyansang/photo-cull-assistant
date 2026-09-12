@@ -507,26 +507,6 @@ clear 表示主体清晰；blur 只用于主体明确失焦或拖影；无可靠
         batch.update(status='complete' if not issues else 'partial',error='\n'.join(issues))
         response['issues']=issues;self.save();return issues
 
-    def ingest_legacy(self,task,batch,text):
-        # Strict compatibility: no free-form token extraction or guessed filenames.
-        mapping={}
-        for pid in batch['photo_ids']:
-            stem=self.data['photos'].get(pid,{}).get('stem','')
-            mapping.setdefault(stem,[]).append(pid)
-        rows=[]
-        for line in text.strip().splitlines():
-            if not line.strip():continue
-            match=re.fullmatch(r'\s*([^,，]+)\s*[,，]\s*([1-5])\s*',line)
-            if not match or len(mapping.get(match[1].strip(),[]))!=1:
-                error='简化结果含未知/同名文件或格式错误，请使用照片编号 JSON'
-                batch['raw_responses'].append(dict(text=text,issues=[error],format='legacy'))
-                batch.update(status='invalid',error=error);self.save();return [error]
-            rows.append(dict(photo_id=mapping[match[1].strip()][0],rating=int(match[2]),suggest_reject=False,
-                reason='简化评级结果，未提供判断理由',review_items=['简化结果，需要人工确认']))
-        issues=self.ingest(task,batch,json.dumps(dict(task_id=task['id'],batch_id=batch['id'],photos=rows),ensure_ascii=False))
-        batch['raw_responses'][-1]['text']=text
-        batch['raw_responses'][-1]['format']='legacy'
-        self.save();return issues
 
     def confirm(self,pid,rating,pick_status):
         if rating is not None and (type(rating) is not int or not 1<=rating<=5):raise ValueError('星级必须为 1～5 或留空')
@@ -583,24 +563,3 @@ clear 表示主体清晰；blur 只用于主体明确失焦或拖影；无可靠
         self.data['export_dirty']=False
         self.data['last_export_rows']=rows
         self.data['export_status']='结果已导出，请在 Lightroom 插件中应用';self.save();return target
-
-    def import_receipt(self,text):
-        if self._crops is not None:self.refresh(self._assets,self._crops)
-        if self.data.get('export_dirty'):raise ValueError('照片或人工结果已变化，请重新导出并在 Lightroom 应用')
-        try:receipt=json.loads(text)
-        except ValueError as exc:raise ValueError('回执不是有效 JSON') from exc
-        if not isinstance(receipt,dict) or receipt.get('status')!='applied' or not self.data.get('last_export_id') or receipt.get('export_id')!=self.data['last_export_id']:
-            raise ValueError('回执未成功应用或不属于本次导出，未更新状态')
-        expected={r['path']:r for r in self.data['last_export_rows']}
-        changes=receipt.get('changes')
-        if not isinstance(changes,list):raise ValueError('回执缺少匹配明细')
-        matched=set()
-        for row in changes:
-            path=row.get('path') if isinstance(row,dict) else None
-            if path not in expected or path in matched:raise ValueError('回执照片路径异常')
-            for name in ('rating','pick_status'):
-                if row.get('requested_'+name)!=expected[path].get(name):raise ValueError('回执内容与导出不一致')
-            matched.add(path)
-        status=f'Lightroom 已应用 {len(matched)}/{len(expected)} 张'
-        if len(matched)<len(expected):status+='（部分未匹配）'
-        self.data['export_status']=status;self.data['last_receipt']=receipt;self.save();return status

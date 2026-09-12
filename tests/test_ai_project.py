@@ -61,15 +61,16 @@ def test_changed_group_invalidates_results_but_keeps_human_values(tmp_path):
     assert json.loads(project.export_final().read_text('utf-8'))['photos'][0]['pick_status']==0
 
 
-def test_restart_and_legacy(tmp_path):
+def test_restart_recovers_interrupted_task(tmp_path):
     project,assets,task,batch=setup_project(tmp_path)
     batch['status']='running';project.save()
     loaded=ReviewProject(project.workspace)
     assert loaded.current_task()['batches'][0]['status']=='failed'
     loaded.refresh(assets,CropSettings())
-    assert loaded.ingest_legacy(task,batch,'A,4\nB,3')==[]
-    assert loaded.ingest_legacy(task,batch,'A,5\nunknown,4')
-    assert '简化结果' in loaded.data['photos'][photo_id(assets[0])]['ai']['review_items'][0]
+    current=loaded.current_task();current_batch=current['batches'][0]
+    assert loaded.ingest(current,current_batch,answer(current,current_batch))==[]
+    assert loaded.data['photos'][photo_id(assets[0])]['ai']['rating']==4
+
 
 
 def test_snapshot_tampering_is_rejected(tmp_path):
@@ -78,14 +79,6 @@ def test_snapshot_tampering_is_rejected(tmp_path):
     with pytest.raises(ValueError,match='快照'):project.batch_images(task,batch)
 
 
-def test_receipt_requires_current_export_and_matching_values(tmp_path):
-    project,assets,task,batch=setup_project(tmp_path)
-    project.confirm(photo_id(assets[0]),4,1)
-    output=json.loads(project.export_final().read_text('utf-8'))
-    report=dict(status='applied',export_id=output['export_id'],changes=[dict(path=output['photos'][0]['path'],requested_rating=4,requested_pick_status=1)])
-    assert '已应用 1/1' in project.import_receipt(json.dumps(report))
-    report['export_id']='older-export'
-    with pytest.raises(ValueError):project.import_receipt(json.dumps(report))
 
 def test_group_membership_changes_invalidate_other_group_photos(tmp_path):
     project,assets,task,batch=setup_project(tmp_path)
@@ -96,13 +89,6 @@ def test_group_membership_changes_invalidate_other_group_photos(tmp_path):
     with pytest.raises(ValueError):project.batch_images(task,batch)
 
 
-def test_old_receipt_cannot_claim_changed_decisions_applied(tmp_path):
-    project,assets,task,batch=setup_project(tmp_path)
-    pid=photo_id(assets[0]);project.confirm(pid,4,1)
-    output=json.loads(project.export_final().read_text('utf-8'))
-    project.confirm(pid,5,1)
-    receipt=dict(status='applied',export_id=output['export_id'],changes=[])
-    with pytest.raises(ValueError,match='重新导出'):project.import_receipt(json.dumps(receipt))
 
 
 def test_explicit_split_retry_leaves_old_task_and_human_results(tmp_path):

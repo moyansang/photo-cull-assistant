@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from PIL import Image, ImageOps
 
@@ -109,11 +108,6 @@ def hamming_distance(hash_a: str, hash_b: str) -> int:
     return (a ^ b).bit_count()
 
 
-def group_summary(assets: Iterable[PhotoAsset]) -> list[tuple[int, list[str]]]:
-    summary: dict[int, list[str]] = {}
-    for asset in assets:
-        summary.setdefault(asset.group_id, []).append(asset.stem)
-    return sorted(summary.items())
 
 
 def renumber_groups(assets: list[PhotoAsset]) -> list[PhotoAsset]:

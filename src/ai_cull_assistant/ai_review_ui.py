@@ -13,14 +13,6 @@ from PIL import Image, ImageOps, ImageTk
 from .window_layout import fit_window, ScrollableFrame
 
 
-RATING_UNSET = "未指定 / 不修改"
-PICK_LABELS = {
-    "保持原标记": None,
-    "留用": 1,
-    "无标记": 0,
-    "弃置": -1,
-}
-PICK_VALUES = {value: label for label, value in PICK_LABELS.items()}
 DONE_STATUSES = {"completed", "complete", "done", "已完成"}
 STATUS_LABELS = {
     "pending": "待发送",
@@ -68,7 +60,6 @@ class PasteResponseDialog(tk.Toplevel):
         self,
         parent: tk.Misc,
         on_submit: Callable[[str], bool],
-        on_legacy: Callable[[str], bool] | None = None,
         *,
         title: str = "粘贴模型回答",
         instruction: str = "粘贴模型返回的完整内容（可包含 JSON 代码块）：",
@@ -78,7 +69,6 @@ class PasteResponseDialog(tk.Toplevel):
         self.title(title)
         self.transient(parent)
         self.on_submit = on_submit
-        self.on_legacy = on_legacy
         viewport = ScrollableFrame(self, padding=12)
         viewport.pack(fill="both", expand=True)
         body = viewport.content
@@ -94,8 +84,6 @@ class PasteResponseDialog(tk.Toplevel):
         row.pack(fill="x")
         ttk.Button(row, text="取消", command=self.destroy).pack(side="right")
         ttk.Button(row, text=submit_text, command=self._submit).pack(side="right", padx=(0, 8))
-        if on_legacy is not None:
-            ttk.Button(row, text="导入简化评级（文件名,星级）", command=self._submit_legacy).pack(side="right", padx=(0, 8))
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         fit_window(self, (760, 560), minimum_size=(480, 360), parent=parent)
         self.grab_set()
@@ -107,14 +95,6 @@ class PasteResponseDialog(tk.Toplevel):
             messagebox.showinfo("模型回答", "请先粘贴模型回答。", parent=self)
             return
         if self.on_submit(raw):
-            self.destroy()
-
-    def _submit_legacy(self) -> None:
-        raw = self.text.get("1.0", "end-1c")
-        if not raw.strip():
-            messagebox.showinfo("简化评级", "请先粘贴“文件名,星级”内容。", parent=self)
-            return
-        if self.on_legacy is not None and self.on_legacy(raw):
             self.destroy()
 
 
@@ -191,12 +171,10 @@ class ReviewDialog(tk.Toplevel):
         self._photo_ids: list[str] = []
         self._task_labels: dict[str, str] = {}
         self._profile_labels: dict[str, dict[str, Any]] = {}
-        self._tree_photos: list[ImageTk.PhotoImage] = []
         self._preview_photo: ImageTk.PhotoImage | None = None
         self._api_queue: queue.Queue[tuple[Any, ...]] = queue.Queue()
         self._api_pending: list[dict[str, Any]] = []
         self._api_active = False
-        self._api_config_window = None
         self._preparing_task = False
         self._pause_requested = False
         self._closing_requested = False
@@ -212,8 +190,6 @@ class ReviewDialog(tk.Toplevel):
         self.task_var = tk.StringVar()
         self.profile_var = tk.StringVar()
         self.filter_var = tk.StringVar(value="全部")
-        self.rating_var = tk.StringVar(value=RATING_UNSET)
-        self.pick_var = tk.StringVar(value="保持原标记")
         self.status_var = tk.StringVar(value="就绪")
         self.export_status_var = tk.StringVar(value="")
         self.review_caption_var = tk.StringVar(value="请选择照片")
@@ -566,12 +542,10 @@ class ReviewDialog(tk.Toplevel):
 
     def _save_ui_settings(self) -> None:
         data = _state(self.project)
-        profile = self._profile_labels.get(self.profile_var.get())
         data["preferences"] = self._preferences()
         data["ui_settings"] = {
             "review_filter": self.filter_var.get(),
             "submission_tab": self.notebook.index(self.notebook.select()),
-            "api_profile_id": profile.get("id") if profile else None,
         }
         self._safe_save()
 
@@ -589,13 +563,6 @@ class ReviewDialog(tk.Toplevel):
     def _refresh_tasks(self, select_current=False, selected_id=None) -> None:
         self._refresh_batches()
 
-    def _select_task(self) -> None:
-        task = self._current_task()
-        if task and isinstance(task.get("preferences"), dict):
-            for key, variable in self.preference_vars.items():
-                if key in task["preferences"]:
-                    variable.set(str(task["preferences"][key]))
-        self._refresh_batches()
 
     def _refresh_batches(self, select_id: str | None = None) -> None:
         old = select_id or (self.batch_tree.selection()[0] if self.batch_tree.selection() else None)
@@ -671,18 +638,6 @@ class ReviewDialog(tk.Toplevel):
             return
         self._create_task("initial", submit_after=True)
 
-    def _create_initial(self) -> None:
-        self._create_task("initial")
-
-    def _create_group_review(self) -> None:
-        photo_id = self._selected_photo_id()
-        if not photo_id:
-            messagebox.showinfo("重新评审所选组", "请先在“人工复核”中选择一张照片。", parent=self)
-            return
-        selected = self._photos().get(photo_id, {})
-        group_id = selected.get("group_id")
-        ids = [pid for pid, photo in self._photos().items() if photo.get("group_id") == group_id]
-        self._create_task("initial", ids)
 
     def _create_refine(self) -> None:
         ids: list[str] = []
@@ -728,79 +683,12 @@ class ReviewDialog(tk.Toplevel):
         self._refresh_tasks(selected_id=_task_id(created))
         self.status_var.set(f"已把批次 {_batch_id(batch)} 拆成更小的新任务；原任务记录仍保留。")
 
-    def _refresh_project(self) -> None:
-        if self._api_active:
-            messagebox.showinfo("刷新照片状态", "请先等待当前 API 请求结束或暂停。", parent=self)
-            return
-        try:
-            self.project.refresh(self.assets, self.crop_settings)
-            self.project.save()
-        except Exception as exc:
-            messagebox.showerror("刷新失败", str(exc), parent=self)
-            return
-        self._refresh_tasks()
-        self._refresh_review()
-        self.status_var.set("已按当前照片、分组和裁切设置刷新；变化项会显示为结果已过时。")
 
     # ---- manual and API submission ------------------------------------
-    def _copy_prompt(self) -> None:
-        task, batch = self._current_task(), self._selected_batch()
-        if not task or not batch:
-            messagebox.showinfo("复制提示词", "请先创建任务并选择批次。", parent=self)
-            return
-        try:
-            self._batch_images(task, batch)
-            prompt = self.project.prompt(task, batch)
-            self.clipboard_clear()
-            self.clipboard_append(str(prompt))
-            self.update_idletasks()
-        except Exception as exc:
-            messagebox.showerror("复制失败", str(exc), parent=self)
-            return
-        self.status_var.set(f"已复制批次 {_batch_id(batch)} 的提示词。")
 
     def _batch_images(self, task: dict[str, Any], batch: dict[str, Any]) -> list[Path]:
         return [Path(path) for path in self.project.batch_images(task, batch)]
 
-    def _open_batch_folder(self) -> None:
-        task, batch = self._current_task(), self._selected_batch()
-        if not task or not batch:
-            messagebox.showinfo("批次图片", "请先选择批次。", parent=self)
-            return
-        try:
-            images = self._batch_images(task, batch)
-            if not images:
-                raise FileNotFoundError("本批没有可打开的图片")
-            os.startfile(str(images[0].parent))  # type: ignore[attr-defined]
-        except Exception as exc:
-            messagebox.showerror("打开失败", str(exc), parent=self)
-
-    def _paste_response(self) -> None:
-        if self._api_active:
-            messagebox.showinfo("粘贴回答", "请先等待当前 API 请求结束或暂停，避免同时修改当前批次。", parent=self)
-            return
-        task, batch = self._current_task(), self._selected_batch()
-        if not task or not batch:
-            messagebox.showinfo("粘贴回答", "请先选择批次。", parent=self)
-            return
-
-        def store(raw: str, legacy: bool = False) -> bool:
-            try:
-                method = self.project.ingest_legacy if legacy else self.project.ingest
-                issues = method(task, batch, raw)
-                self.project.save()
-            except Exception as exc:
-                messagebox.showerror("校验失败", str(exc), parent=self)
-                return False
-            self._refresh_batches(select_id=_batch_id(batch))
-            self._refresh_review()
-            if issues:
-                messagebox.showwarning("已保存，存在异常", "\n".join(map(str, issues)), parent=self)
-            else:
-                messagebox.showinfo("模型回答", "校验通过并已保存。", parent=self)
-            return True
-
-        PasteResponseDialog(self, store, lambda raw: store(raw, True))
 
     def _show_raw_responses(self) -> None:
         batch = self._selected_batch()
@@ -1090,15 +978,11 @@ class ReviewDialog(tk.Toplevel):
     def _refresh_review(self, select_id: str | None = None) -> None:
         old = select_id or self._selected_photo_id()
         self.review_tree.delete(*self.review_tree.get_children())
-        self._tree_photos.clear()
         self._photo_ids.clear()
         for photo_id, photo in self._photos().items():
             if not self._matches_filter(photo):
                 continue
             ai = photo.get("ai") or {}
-            final = photo.get("final") or {}
-            review_items = ai.get("review_items") or []
-            thumb = None
             focus_result = photo.get("ai_focus_result") or {}
             focus_blur = focus_result.get("status") == "blur"
             clarity = "清晰度待确认" if photo.get("focus_review") else {"clear": "AI 复查清楚", "blur": "AI 复查模糊"}.get(focus_result.get("status"), "已初筛" if photo.get("focus_review") is False else "未检查")
@@ -1136,16 +1020,9 @@ class ReviewDialog(tk.Toplevel):
             self.preview_label.configure(image="", text="无预览")
             self._preview_photo = None
             self._set_details("")
-            self.rating_var.set(RATING_UNSET)
-            self.pick_var.set("保持原标记")
             return
-        final = photo.get("final") or {}
         ai = {} if photo.get("technical_reason") else (photo.get("ai") or {})
         self.review_caption_var.set(f"{photo.get('stem', photo_id)}  ·  分组 {photo.get('group_id', '')}{'  ·  结果已过时' if photo.get('stale') else ''}")
-        suggested_rating = ai.get("rating") if not final.get("confirmed") else None
-        visible_rating = final.get("rating") if final.get("rating") is not None else suggested_rating
-        self.rating_var.set(RATING_UNSET if visible_rating is None else str(visible_rating))
-        self.pick_var.set(PICK_VALUES.get(final.get("pick_status"), "保持原标记"))
         review = "；".join(map(str, ai.get("review_items") or [])) or "无"
         details = (
             f"AI 建议：{'未评分' if ai.get('rating') is None else str(ai.get('rating')) + ' 星'}"
@@ -1175,26 +1052,6 @@ class ReviewDialog(tk.Toplevel):
         self.details.insert("1.0", value)
         self.details.configure(state="disabled")
 
-    def _confirm_photo(self) -> None:
-        photo_id = self._selected_photo_id()
-        if not photo_id:
-            messagebox.showinfo("人工确认", "请先选择照片。", parent=self)
-            return
-        try:
-            rating = None if self.rating_var.get() == RATING_UNSET else int(self.rating_var.get())
-            pick_status = PICK_LABELS[self.pick_var.get()]
-            self.project.confirm(photo_id, rating, pick_status)
-            self.project.save()
-        except Exception as exc:
-            messagebox.showerror("保存失败", str(exc), parent=self)
-            return
-        current_index = self._photo_ids.index(photo_id) if photo_id in self._photo_ids else -1
-        self._refresh_review(select_id=photo_id)
-        self._refresh_export_status()
-        if photo_id not in self._photo_ids and self._photo_ids:
-            self.review_tree.selection_set(self._photo_ids[min(current_index, len(self._photo_ids) - 1)])
-            self._show_selected_photo()
-        self.status_var.set(f"已确认 {photo_id}；AI 建议仍保留作为参考。")
 
     def _navigate_photo(self, step: int) -> None:
         if not self._photo_ids:
@@ -1268,17 +1125,6 @@ class ReviewDialog(tk.Toplevel):
         self._refresh_export_status()
         messagebox.showinfo("到 Lightroom 复核", f"已导出 {count} 张结果到：\n{path}\n\n在 Lightroom 插件中导入此文件，再查看原图调整星级。\n优先使用已人工确认结果，其余合并导出 AI 星级、AI 弃置建议和技术筛选弃置。在 Lightroom 中查看原图复核。", parent=self)
 
-    def _export_final(self) -> None:
-        try:
-            path = Path(self.project.export_final())
-            count = len(_state(self.project).get("last_export_rows", []))
-            os.startfile(str(path.parent))  # type: ignore[attr-defined]
-        except Exception as exc:
-            messagebox.showerror("导出失败", str(exc), parent=self)
-            return
-        messagebox.showinfo("结果已导出", f"已导出 {count} 张已确认且未过时的照片。\n{path}", parent=self)
-        self._refresh_export_status()
-        self.status_var.set(f"已导出 {count} 张确认结果；仍需在 Lightroom 中导入应用。")
 
     def _refresh_export_status(self) -> None:
         self.export_status_var.set("导出状态：" + str(_state(self.project).get("export_status", "未导出")))

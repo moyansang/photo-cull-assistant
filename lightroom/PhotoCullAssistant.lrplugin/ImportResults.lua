@@ -19,12 +19,7 @@ Tasks.startAsyncTask(function()
         local payload=json.decode(text)
         local rows=Core.validate(payload)
         local catalog=Application.activeCatalog()
-        local matched, missing, changes=Core.plan(rows,catalog)
-        local report={ catalog=catalog:getPath(), source=path, export_id=payload.export_id, status='not_applied', changes=changes, missing=missing }
-        local reportStatus=catalog:withPrivateWriteAccessDo(function()
-            catalog:setPropertyForPlugin(_PLUGIN, 'lastImportReport', json.encode(report))
-        end,{timeout=30})
-        assert(reportStatus=='executed', '未能保存导入报告，请稍后重试')
+        local matched, missing=Core.plan(rows,catalog)
         if #matched==0 then
             Dialogs.message('没有可应用的照片', '请先把原照片导入当前 LR 目录，确保完整路径一致。', 'info')
             return
@@ -40,8 +35,6 @@ Tasks.startAsyncTask(function()
         assert(prepared=='executed', '未能准备清晰度标记，请稍后重试')
         local status=catalog:withWriteAccessDo('导入 AI选片助手结果',function()
             Core.apply(matched,focusKeyword)
-            report.status='applied'
-            catalog:setPropertyForPlugin(_PLUGIN, 'lastImportReport', json.encode(report))
         end,{timeout=30})
         assert(status=='executed', '未取得 Lightroom 目录写入权限，请稍后重试')
         Dialogs.message('导入完成', '已更新 '..#matched..' 张；跳过 '..#missing..' 张。\n在图库“元数据”面板下拉菜单选择“AI选片助手”，可查看当前所选照片的分析信息。\n清晰度待确认照片也可在同名智能收藏夹中查看。', 'info')

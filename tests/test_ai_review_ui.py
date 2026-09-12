@@ -3,7 +3,7 @@ import time
 import tkinter as tk
 from pathlib import Path
 import pytest
-from ai_cull_assistant.ai_review_ui import ReviewDialog, RATING_UNSET
+from ai_cull_assistant.ai_review_ui import ReviewDialog
 from ai_cull_assistant import ai_api
 from ai_cull_assistant.crop_settings import CropSettings
 from test_ai_project import setup_project, answer
@@ -55,9 +55,7 @@ def test_api_queue_ingests_records_provider_and_skips_completed(ui,monkeypatch):
     assert batch['raw_responses'][-1]['usage']['total_tokens']==10
     dialog._start_api()
     assert len(calls)==1
-    dialog.rating_var.set(RATING_UNSET);dialog.pick_var.set('留用');dialog._confirm_photo()
-    row=project.data['photos'][dialog._selected_photo_id()]
-    assert row['final']['confirmed'] and row['final']['rating'] is None and row['final']['pick_status']==1
+
 
 
 def test_api_failure_stops_without_retry_and_keeps_confirmed(ui,monkeypatch):

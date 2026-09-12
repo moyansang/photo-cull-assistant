@@ -44,16 +44,3 @@ class PhotoAsset:
         if not paths:
             paths.append(self.primary_path)
         return paths
-
-    @property
-    def xmp_base_path(self) -> Path:
-        if self.raw_path:
-            return self.raw_path
-        return self.primary_path
-
-
-@dataclass(slots=True)
-class SelectionRecord:
-    stem: str
-    rating: int
-    source_line: str

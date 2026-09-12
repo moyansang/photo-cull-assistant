@@ -31,38 +31,6 @@ class ContactSheetSet:
     rejected_pages: list[Path]
 
 
-def paginate_by_group(assets: list[PhotoAsset], photos_per_page: int = 24) -> list[list[PhotoAsset]]:
-    """Paginate while keeping normal-sized groups intact whenever possible."""
-    if photos_per_page < 1:
-        raise ValueError("photos_per_page must be >= 1")
-    if not assets:
-        return []
-
-    groups: list[list[PhotoAsset]] = []
-    current_group_id = None
-    for asset in assets:
-        if current_group_id != asset.group_id:
-            groups.append([])
-            current_group_id = asset.group_id
-        groups[-1].append(asset)
-
-    pages: list[list[PhotoAsset]] = []
-    current: list[PhotoAsset] = []
-    for group in groups:
-        if len(group) > photos_per_page:
-            if current:
-                pages.append(current)
-                current = []
-            for start in range(0, len(group), photos_per_page):
-                pages.append(group[start:start + photos_per_page])
-            continue
-        if current and len(current) + len(group) > photos_per_page:
-            pages.append(current)
-            current = []
-        current.extend(group)
-    if current:
-        pages.append(current)
-    return pages
 
 
 def page_filename(assets: list[PhotoAsset], page_index: int) -> str:

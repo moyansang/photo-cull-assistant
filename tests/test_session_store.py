@@ -31,7 +31,7 @@ def test_app_reopens_analysis_and_logs(tmp_path,monkeypatch):
     app.scan_result=ScanResult(assets,project.workspace/'previews',project.workspace/'contact_sheets',project.workspace,project.workspace/'groups.json',input_dir=tmp_path/'photos')
     app._log('上次分析完成')
     app._close()
-    monkeypatch.setattr('ai_cull_assistant.app.run_scan',lambda *a,**kw:pytest.fail('must not rescan'))
+    monkeypatch.setattr('ai_cull_assistant.processing_job.start_job',lambda *a,**kw:pytest.fail('must not rescan'))
     reopened=App(settings_dir=tmp_path);reopened.withdraw();reopened.update()
     try:
         assert len(reopened.scan_result.assets)==2

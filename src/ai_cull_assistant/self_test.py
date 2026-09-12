@@ -111,11 +111,11 @@ def run(report_path: str) -> None:
             assert project.web_images(task, submission)
             report["merged_web_submission"] = True
 
-            review.rating_var.set('5')
-            review.pick_var.set('保持原标记')
-            review._confirm_photo()
-            export = project.export_final()
-            assert project.data['photos'][photo_id(result.assets[0])]['final']['rating'] == 5
+            response = json.dumps(dict(task_id=task['id'], batch_id=batch['id'], photos=[dict(
+                photo_id=photo_id(result.assets[0]), rating=5, suggest_reject=False,
+                reason='合成测试', review_items=[])]))
+            assert project.ingest(task, batch, response) == []
+            export = project.export_final(ai_ratings=True)
             review._close()
             from .ai_api_dialog import ApiConfigDialog
             ui_app._open_api_config()
@@ -131,7 +131,7 @@ def run(report_path: str) -> None:
             report['api_editor_background_recovery'] = True
 
             ui_app._close()
-            report['ai_task_review_and_confirmation'] = True
+            report['ai_task_results_and_export'] = True
             from .ai_api_dialog import ApiConfigDialog
             from .ai_presets import PRESETS, preset_profile
             config_root = App(settings_dir=root)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .contact_sheet import ContactSheetSet, generate_contact_sheet_sets
+from .contact_sheet import generate_contact_sheet_sets
 from .grouping import assign_groups
 from .group_store import load_groups, save_groups
 from .models import PhotoAsset
@@ -11,8 +11,6 @@ from .crop_settings import CropSettings
 from .preview import build_preview
 from .scanner import scan_folder
 from .screening import ScreeningResult, save_screening_results, screen_assets
-from .selection_parser import parse_selection_text
-from .lightroom_results import write_lightroom_results
 
 
 @dataclass(slots=True)
@@ -108,68 +106,7 @@ def apply_auto_rejects(
     return count
 
 
-def apply_selection_text(
-    assets: list[PhotoAsset],
-    selection_text: str,
-    *,
-    results_path: str | Path,
-) -> tuple[int, int, dict[str, int]]:
-    records = parse_selection_text(selection_text)
-    stem_to_rating = {record.stem: record.rating for record in records}
-    applied = 0
-    missing = 0
-    asset_map = {asset.stem: asset for asset in assets}
-    for stem, rating in stem_to_rating.items():
-        asset = asset_map.get(stem)
-        if asset is None:
-            missing += 1
-            continue
-        applied += 1
-
-    write_lightroom_results(assets, results_path, stem_to_rating)
-
-    return applied, missing, stem_to_rating
-
-
 def persist_manual_groups(result: ScanResult) -> Path:
     result.groups_loaded_from_store = True
     key = str(result.input_dir.resolve()) if result.input_dir is not None else None
     return save_groups(result.assets, result.group_store_path, source="manual", collection_key=key)
-
-
-def reset_auto_groups(result: ScanResult, grouping_preset: str = "standard") -> Path:
-    assign_groups(result.assets, grouping_preset)
-    result.groups_loaded_from_store = False
-    key = str(result.input_dir.resolve()) if result.input_dir is not None else None
-    return save_groups(result.assets, result.group_store_path, source="auto", collection_key=key)
-
-
-def regenerate_contact_sheet_sets(
-    result: ScanResult,
-    photos_per_page: int = 20,
-    columns: int = 4,
-    crop_settings: CropSettings = CropSettings(),
-) -> ContactSheetSet:
-    sheets = generate_contact_sheet_sets(
-        result.assets,
-        result.contact_dir,
-        photos_per_page=photos_per_page,
-        columns=columns,
-        crop_settings=crop_settings,
-    )
-    result.main_pages = sheets.main_pages
-    result.rejected_pages = sheets.rejected_pages
-    return sheets
-
-
-def regenerate_contact_sheets(
-    result: ScanResult,
-    photos_per_page: int = 20,
-    columns: int = 4,
-) -> list[Path]:
-    """Backward-compatible wrapper returning the main culling pages."""
-    return regenerate_contact_sheet_sets(
-        result,
-        photos_per_page=photos_per_page,
-        columns=columns,
-    ).main_pages

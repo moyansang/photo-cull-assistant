@@ -426,7 +426,6 @@ class ApiConfigDialog(tk.Toplevel):
         else:
             saved, result = value  # type: ignore[misc]
             self._saved(saved, activate=True)
-            text = str(result.get("text", "")).strip()
             self.status_var.set("连接测试成功。")
             self.destroy()
             return

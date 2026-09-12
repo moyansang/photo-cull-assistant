@@ -29,9 +29,8 @@ def test_lua_catalog_import_validation_and_metadata_scope():
         {'path':'/photos/missing.RW2','rating':4},
         {'path':'/photos/virtual.RW2','rating':5}]}
     rows=core.validate(decoder.decode(json.dumps(data,ensure_ascii=False)))
-    matched,missing,report=core.plan(rows,lua.globals().catalog)
+    matched,missing=core.plan(rows,lua.globals().catalog)
     assert len(matched)==1 and len(missing)==2
-    assert report[1]['before_rating']==3
     core.apply(matched)
     photos=lua.globals().photos
     assert photos['/photos/中文.RW2']['pickStatus']==-1
@@ -83,7 +82,7 @@ def test_lua_ai_metadata_validation_apply_and_lightroom_schema():
     def apply(row):
         payload={'format':'photo-cull-assistant','version':1,'photos':[{'path':'/photos/a.RW2',**row}]}
         rows=core.validate(decoder.decode(json.dumps(payload,ensure_ascii=False)))
-        matched,_,_=core.plan(rows,lua.globals().catalog)
+        matched,_=core.plan(rows,lua.globals().catalog)
         core.apply(matched)
 
     # A metadata-only row is valid, and empty strings intentionally clear fields.
@@ -165,7 +164,7 @@ def test_lua_entrypoint_confirmation_and_catalog_gate(answer,expected):
         catalog={}
         function catalog:findPhotoByPath(path) if path=='/照片/a.RW2' then return photo end end
         function catalog:getPath() return '/catalog.lrcat' end
-        function catalog:setPropertyForPlugin(plugin,k,v) assert(inGate); report=v end
+        function catalog:setPropertyForPlugin() error('obsolete report write') end
         function catalog:withPrivateWriteAccessDo(f,timeout) inGate=true; f(); inGate=false; return 'executed' end
         function catalog:withWriteAccessDo(name,f,timeout) inGate=true; f(); inGate=false; return 'executed' end
         local modules={
@@ -181,10 +180,6 @@ def test_lua_entrypoint_confirmation_and_catalog_gate(answer,expected):
     lua.execute((PLUGIN/'ImportResults.lua').read_text('utf-8'))
     assert lua.globals().photo['rating']==expected, lua.globals().lastDetail
     assert lua.globals().photo['pickStatus']==1
-    report=json.loads(lua.globals().report)
-    assert report['status']==('applied' if answer=='ok' else 'not_applied')
-    assert report['changes'][0]['before_rating']==2
-    assert report['export_id']=='review-export-1'
     info=lua.execute((PLUGIN/'Info.lua').read_text('utf-8'))
     assert len(info['LrLibraryMenuItems'])==1
     assert info['LrLibraryMenuItems'][1]['file']=='ImportResults.lua'
@@ -216,7 +211,7 @@ def test_focus_keyword_add_remove_and_legacy_preserves_other_metadata():
     def apply(row):
         payload={'format':'photo-cull-assistant','version':1,'photos':[{'path':'/photos/a.RW2',**row}]}
         rows=core.validate(decoder.decode(json.dumps(payload)))
-        matched,_,_=core.plan(rows,lua.globals().catalog)
+        matched,_=core.plan(rows,lua.globals().catalog)
         keyword=core.prepareFocus(lua.globals().catalog,matched)
         core.apply(matched,keyword)
     apply({'focus_review':True});apply({'focus_review':True})

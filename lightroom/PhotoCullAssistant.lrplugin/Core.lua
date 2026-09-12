@@ -49,19 +49,17 @@ function M.validate(data)
 end
 
 function M.plan(rows, catalog)
-    local matched, missing, report = {}, {}, {}
+    local matched, missing = {}, {}
     for _, row in ipairs(rows) do
         local photo=catalog:findPhotoByPath(row.path)
         if photo and not photo:getRawMetadata('isVirtualCopy') then
             table.insert(matched, { photo=photo, row=row })
-            table.insert(report, { path=row.path, before_rating=photo:getRawMetadata('rating') or 0,
-                before_pick_status=photo:getRawMetadata('pickStatus') or 0,
-                requested_rating=row.rating, requested_pick_status=row.pick_status })
+
         else
             table.insert(missing, row.path)
         end
     end
-    return matched, missing, report
+    return matched, missing
 end
 
 -- Call inside a separate write gate; newly created keywords become usable
