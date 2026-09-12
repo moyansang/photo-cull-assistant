@@ -110,18 +110,6 @@ def run(report_path: str) -> None:
             review._refresh_web(submission["id"])
             assert project.web_images(task, submission)
             report["merged_web_submission"] = True
-            from .ai_api_dialog import ApiConfigDialog
-            review._configure_api()
-            editor = review._api_config_window
-            review.update()
-            assert review.grab_current() is None
-            editor.withdraw(); review.update()
-            assert review.grab_current() is None
-            review._configure_api(); review.update()
-            assert review._api_config_window is editor
-            editor.destroy(); review.update()
-            assert not editor.winfo_exists()
-            report['api_editor_background_recovery'] = True
 
             review.rating_var.set('5')
             review.pick_var.set('保持原标记')
@@ -129,6 +117,19 @@ def run(report_path: str) -> None:
             export = project.export_final()
             assert project.data['photos'][photo_id(result.assets[0])]['final']['rating'] == 5
             review._close()
+            from .ai_api_dialog import ApiConfigDialog
+            ui_app._open_api_config()
+            editor = ui_app._api_config_window
+            ui_app.update()
+            assert ui_app.grab_current() is None
+            editor.withdraw(); ui_app.update()
+            assert ui_app.grab_current() is None
+            ui_app._open_api_config(); ui_app.update()
+            assert ui_app._api_config_window is editor
+            editor.destroy(); ui_app.update()
+            assert not editor.winfo_exists()
+            report['api_editor_background_recovery'] = True
+
             ui_app._close()
             report['ai_task_review_and_confirmation'] = True
             from .ai_api_dialog import ApiConfigDialog

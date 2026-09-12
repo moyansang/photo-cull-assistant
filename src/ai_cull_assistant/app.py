@@ -5,6 +5,7 @@ import queue
 import copy
 import json
 from pathlib import Path
+from types import MappingProxyType
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -15,6 +16,14 @@ import sys
 from .settings import application_dir, load_paths, save_paths, read_values, save_values
 from .crop_settings import CropSettings
 from .crop_dialog import CropDialog
+from .shared_api import (
+    NO_API_LABEL,
+    NO_API_PROFILE_ID,
+    profile_options,
+    save_selected_profile_id,
+    selected_api_profile,
+    selected_profile_id,
+)
 from .window_layout import fit_window, scrollable_body
 from dataclasses import asdict
 from .workflow import (
@@ -44,6 +53,7 @@ class App(tk.Tk):
         self._loaded_grouping = GROUPING_LABELS.get(self.saved_options.get("grouping"), "standard")
         self._processing_busy = False
         self._processing_job = None
+        self._api_config_window = None
         self._scan_progress = 0
         self._update_progress_active = False
         self._stop_event = threading.Event()
@@ -53,6 +63,7 @@ class App(tk.Tk):
         self._close_after_stop = False
         self._settings_pending = None
         self._build_ui()
+        self._api_selection_changed()
         fit_window(self, (980, 780), minimum_size=(640, 520))
         self._restore_session()
         for variable in (self.input_var, self.workspace_var, self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.no_updates_var):
@@ -169,6 +180,24 @@ class App(tk.Tk):
         ).grid(row=row, column=0, columnspan=6, sticky="w", pady=(2, 8))
         row += 1
 
+        ttk.Label(frame, text="AI 服务").grid(row=row, column=0, sticky="w", pady=6)
+        self.api_profile_var = tk.StringVar(value=NO_API_LABEL)
+        self.api_profile_combo = ttk.Combobox(
+            frame,
+            textvariable=self.api_profile_var,
+            values=(NO_API_LABEL,),
+            state="readonly",
+            width=36,
+        )
+        self.api_profile_combo.grid(row=row, column=1, columnspan=3, sticky="ew", padx=(0, 8))
+        self.api_profile_combo.bind("<<ComboboxSelected>>", self._api_selection_changed)
+        ttk.Button(frame, text="配置 API", command=self._open_api_config).grid(
+            row=row, column=4, columnspan=2, sticky="w"
+        )
+        self._api_profile_ids = {}
+        self._refresh_api_profiles()
+        row += 1
+
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=10)
         self.scan_button = ttk.Button(btn_frame, text="扫描并生成联系表", command=self._run_scan_thread)
@@ -228,6 +257,47 @@ class App(tk.Tk):
 
     def _processing_options(self):
         return dict(grouping_preset=GROUPING_LABELS[self.preset_var.get()], photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), technical_screening=self.screening_var.get())
+
+    def _refresh_api_profiles(self) -> None:
+        current_id = self._api_profile_ids.get(self.api_profile_var.get()) if hasattr(self, "_api_profile_ids") else None
+        chosen_id = current_id or selected_profile_id(self.settings_dir)
+        choices = profile_options(self.settings_dir)
+        self._api_profile_ids = {label: profile_id for label, profile_id in choices}
+        labels = [label for label, _profile_id in choices]
+        selected_label = next((label for label, profile_id in choices if profile_id == chosen_id), NO_API_LABEL)
+        self.api_profile_combo.configure(values=labels)
+        self.api_profile_var.set(selected_label)
+
+    def _api_selection_changed(self, _event=None) -> None:
+        profile_id = self._api_profile_ids.get(self.api_profile_var.get(), NO_API_PROFILE_ID)
+        try:
+            save_selected_profile_id(self.settings_dir, profile_id)
+        except OSError as exc:
+            self._log(f"API 选择保存失败：{exc}")
+
+    def _api_profiles_saved(self) -> None:
+        self._refresh_api_profiles()
+        self._api_selection_changed()
+
+    def _selected_api_profile(self) -> dict | None:
+        profile_id = self._api_profile_ids.get(self.api_profile_var.get(), NO_API_PROFILE_ID)
+        return selected_api_profile(self.settings_dir, profile_id)
+
+    def _open_api_config(self) -> None:
+        if self._processing_busy or self.updates.busy:
+            messagebox.showinfo("提示", "请等待当前处理结束。", parent=self)
+            return
+        try:
+            existing = self._api_config_window
+            if existing is not None and existing.winfo_exists():
+                existing.reveal()
+                return
+            from .ai_api_dialog import ApiConfigDialog
+            self._api_config_window = ApiConfigDialog(
+                self, self.settings_dir, on_saved=self._api_profiles_saved
+            )
+        except Exception as exc:
+            messagebox.showerror("配置 API", str(exc), parent=self)
 
     def _restore_processing_job(self):
         try:
@@ -307,6 +377,8 @@ class App(tk.Tk):
             return
         input_dir, workspace = self.input_var.get(), self.workspace_var.get()
         crops = copy.deepcopy(self.crop_settings)
+        selected_profile = self._selected_api_profile()
+        focus_profile = MappingProxyType(copy.deepcopy(selected_profile)) if selected_profile else None
         previous = copy.deepcopy(self.scan_result) if regenerate else None
         self._save_preferences()
         self._stop_event.clear()
@@ -320,7 +392,14 @@ class App(tk.Tk):
                 job = load_job(workspace, input_dir) if resume else start_job(input_dir, workspace, options, crops, result=previous, regroup=regroup)
                 if job is None:raise ValueError("没有可继续的中断任务")
                 self._process_events.put(("job", job))
-                result = job.run(options, crops, self._stop_event, lambda percent: self._process_events.put(("progress", percent)))
+                result = job.run(
+                    options,
+                    crops,
+                    self._stop_event,
+                    lambda percent: self._process_events.put(("progress", percent)),
+                    focus_profile=focus_profile,
+                    on_log=lambda text: self._process_events.put(("log", text)),
+                )
                 self._process_events.put(("done", (job, result)))
             except Exception as exc:
                 self._process_events.put(("error", str(exc)))
@@ -332,6 +411,7 @@ class App(tk.Tk):
             while True:
                 event, value = self._process_events.get_nowait()
                 if event == "progress":self._set_progress(value)
+                elif event == "log":self._log(value)
                 elif event == "job":self._processing_job = value
                 elif event == "done":
                     job, result = value
@@ -343,10 +423,18 @@ class App(tk.Tk):
                         self.review_project = None
                         self._processing_job = None
                         self._set_progress(100)
-                        rejected = sum(1 for asset in result.assets if asset.auto_rejected)
+                        from .lightroom_results import focus_review_status
+                        ai_rejected = sum(1 for asset in result.assets if asset.screening_reason == "ai_focus_blur")
+                        uncertain = sum(1 for asset in result.assets if focus_review_status(asset) is True)
+                        local_rejected = sum(
+                            1 for asset in result.assets
+                            if asset.auto_rejected and asset.screening_reason != "ai_focus_blur"
+                        )
+                        rejected = local_rejected + ai_rejected
                         eligible = len(result.assets) - rejected
                         self._log(
-                            f"处理完成：{len(result.assets)} 张照片；初筛技术模糊/抖动弃置 {rejected} 张；"
+                            f"处理完成：{len(result.assets)} 张照片；初筛技术模糊/抖动弃置 {local_rejected} 张；"
+                            f"AI 复核弃置 {ai_rejected} 张；清晰度仍不确定 {uncertain} 张；"
                             f"剩余可进入 AI 选片 {eligible} 张；主联系表 {len(result.main_pages or [])} 页。"
                         )
                     self._set_processing_busy(False)

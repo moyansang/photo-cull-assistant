@@ -386,3 +386,98 @@ def test_focus_review_keyword_only_export_and_clearing(tmp_path):
     project.refresh(assets, project._crops)
     data=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
     assert data['photos'][0]['focus_review'] is False
+
+
+def _web_focus_setup(tmp_path,monkeypatch):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[0].screening_reason='face_focus_uncertain'
+    project.refresh(assets,project._crops)
+
+    def prepare(_asset,_crops,out_dir):
+        out_dir=Path(out_dir);out_dir.mkdir(parents=True)
+        overview=out_dir/'overview.png';detail=out_dir/'face_native_01.png'
+        Image.new('RGB',(80,60),'red').save(overview)
+        Image.new('RGB',(40,30),'blue').save(detail)
+        return [overview,detail]
+
+    monkeypatch.setattr('ai_cull_assistant.ai_focus.prepare_focus_images',prepare)
+    submission=project.create_web_submission(task,[batch['id']])
+    return project,assets,task,submission
+
+
+def _web_focus_answer(task,submission,clarity_marker,reason='原尺寸细节可判断'):
+    rows=[]
+    for pid in submission['photo_ids']:
+        row=dict(photo_id=pid,rating=5,suggest_reject=False,reason='选片表现良好',review_items=[])
+        if pid==submission['focus_photo_ids'][0] and clarity_marker is not None:
+            row['clarity']=dict(status=clarity_marker,reason=reason)
+        rows.append(row)
+    return json.dumps(dict(task_id=task['id'],batch_id=submission['id'],photos=rows),ensure_ascii=False)
+
+
+def test_web_submission_adds_labeled_focus_evidence_only_for_pending_photos(tmp_path,monkeypatch):
+    project,assets,task,submission=_web_focus_setup(tmp_path,monkeypatch)
+    pid=photo_id(assets[0])
+    assert submission['focus_photo_ids']==[pid]
+    assert list(submission['focus_image_map'])==[pid]
+    assert submission['focus_image_map'][pid]==[f'{pid}_focus_01.png',f'{pid}_focus_02.png']
+    assert all(name in submission['prompt'] for name in submission['focus_image_map'][pid])
+    assert '"clarity"' in submission['prompt'] and 'uncertain' in submission['prompt']
+    images=project.web_images(task,submission)
+    supplements=[path for path in images if path.name.startswith(pid)]
+    assert len(supplements)==2
+    with Image.open(supplements[0]) as labeled:
+        assert labeled.size[0]==80 and labeled.size[1]>60
+        assert labeled.getpixel((0,0))==(255,255,255)
+
+
+@pytest.mark.parametrize(('status','focus_review'),[('clear',False),('blur',False),('uncertain',True)])
+def test_web_clarity_results_persist_and_drive_focus_state(tmp_path,monkeypatch,status,focus_review):
+    project,assets,task,submission=_web_focus_setup(tmp_path,monkeypatch)
+    pid=photo_id(assets[0])
+    project.confirm(pid,5,1)
+    assert project.ingest_web(task,submission,_web_focus_answer(task,submission,status))==[]
+    photo=project.data['photos'][pid]
+    assert photo['ai_focus_result']['status']==status
+    assert photo['ai_focus_result']['source']=='web'
+    assert photo['focus_fingerprint']==photo['fingerprint']
+    assert photo['focus_review'] is focus_review
+    project.refresh(assets,project._crops)
+    assert project.data['photos'][pid]['ai_focus_result']['status']==status
+    if status=='blur':
+        row=next(row for row in json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos'] if row['filename']=='A.jpg')
+        assert row['rating']==5 and row['pick_status']==-1 and row['focus_review'] is False
+
+
+def test_web_missing_clarity_retains_pending_without_rejecting_answer(tmp_path,monkeypatch):
+    project,assets,task,submission=_web_focus_setup(tmp_path,monkeypatch)
+    pid=photo_id(assets[0])
+    assert project.ingest_web(task,submission,_web_focus_answer(task,submission,None))==[]
+    photo=project.data['photos'][pid]
+    assert photo['focus_review'] is True and 'ai_focus_result' not in photo
+    assert photo['ai']['suggest_reject'] is False
+
+
+def test_web_invalid_clarity_is_atomic_and_changed_fingerprint_drops_result(tmp_path,monkeypatch):
+    project,assets,task,submission=_web_focus_setup(tmp_path,monkeypatch)
+    pid=photo_id(assets[0])
+    issues=project.ingest_web(task,submission,_web_focus_answer(task,submission,'soft'))
+    assert issues and '清晰度结果无效' in issues[0]
+    assert all('ai' not in project.data['photos'][item] for item in submission['photo_ids'])
+    assert project.ingest_web(task,submission,_web_focus_answer(task,submission,'clear'))==[]
+    assets[0].group_id=2
+    project.refresh(assets,project._crops)
+    assert 'ai_focus_result' not in project.data['photos'][pid]
+
+
+def test_web_reuses_existing_api_focus_result_without_new_supplements(tmp_path,monkeypatch):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[0].screening_reason='face_focus_uncertain'
+    assets[0].ai_focus_result=dict(status='uncertain',reason='接口复查仍无法确定',source='api',raw_response='{}')
+    project.refresh(assets,project._crops)
+    monkeypatch.setattr('ai_cull_assistant.ai_focus.prepare_focus_images',lambda *_: pytest.fail('不应重复生成清晰度补图'))
+    submission=project.create_web_submission(task,[batch['id']])
+    pid=photo_id(assets[0])
+    assert submission['focus_photo_ids']==[]
+    assert submission['known_focus_results'][pid]['status']=='uncertain'
+    assert f'{pid} | uncertain | 接口复查仍无法确定' in submission['prompt']

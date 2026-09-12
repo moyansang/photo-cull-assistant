@@ -1,9 +1,11 @@
 import tkinter as tk
+import json
 from types import SimpleNamespace
 from pathlib import Path
 from ai_cull_assistant.app import App
 from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.settings import save_values
+from ai_cull_assistant.shared_api import NO_API_LABEL
 
 
 def make_app(tmp_path):
@@ -122,3 +124,55 @@ def test_continue_from_saved_job_updates_main_window(tmp_path):
         assert '初筛技术模糊/抖动弃置 0 张' in log
         assert '剩余可进入 AI 选片 1 张' in log
     finally:app._close()
+
+
+def test_homepage_api_selection_persists_only_profile_id(tmp_path):
+    profile = {
+        "id": "11111111111111111111111111111111",
+        "name": "视觉模型",
+        "base_url": "https://example.test/v1",
+        "model": "vision-model",
+        "timeout": 30,
+    }
+    (tmp_path / "ai-api-profiles.json").write_text(
+        json.dumps({"version": 1, "profiles": [profile]}, ensure_ascii=False), encoding="utf-8"
+    )
+    save_values(tmp_path, {"selected_api_profile_id": "11111111111111111111111111111111"})
+    app = make_app(tmp_path)
+    try:
+        assert app.api_profile_var.get() == "视觉模型"
+        assert app._selected_api_profile() == profile
+        app.api_profile_var.set(NO_API_LABEL)
+        app._api_selection_changed()
+        assert app._selected_api_profile() is None
+        saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
+        assert saved["selected_api_profile_id"] == "manual-web"
+        assert "base_url" not in saved and "secret" not in saved
+    finally:
+        app._close()
+def test_homepage_reopens_one_api_editor_and_restores_owner_grab(tmp_path):
+    app = make_app(tmp_path)
+    try:
+        assert app.api_profile_var.get() == NO_API_LABEL
+        saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
+        assert saved["selected_api_profile_id"] == "manual-web"
+        app.deiconify()
+        app.update()
+        app.grab_set()
+        app._open_api_config()
+        editor = app._api_config_window
+        assert editor is not None and editor.winfo_exists()
+        assert app.grab_current() is None
+
+        editor.withdraw()
+        app._open_api_config()
+        app.update()
+        assert app._api_config_window is editor
+        assert editor.state() != "withdrawn"
+
+        editor.destroy()
+        app.update()
+        assert app.grab_current() is app
+        app.grab_release()
+    finally:
+        app._close()

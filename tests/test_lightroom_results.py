@@ -51,3 +51,17 @@ def test_scan_produces_result_not_xmp(tmp_path):
     assert not (result.workspace_dir/'lightroom_results.json').exists()
     assert not list(a.primary_path.parent.glob('*.xmp'))
     assert before==a.primary_path.read_bytes()
+
+
+def test_api_focus_status_uses_existing_lightroom_keyword(tmp_path):
+    from ai_cull_assistant.lightroom_results import focus_review_status
+    a = asset(tmp_path/'photos')
+    a.screening_reason = 'ai_focus_uncertain'
+    assert focus_review_status(a) is True
+    a.screening_reason = 'ai_focus_clear'
+    assert focus_review_status(a) is False
+    a.screening_reason = 'ai_focus_blur'; a.auto_rejected = True
+    output=tmp_path/'results.json'
+    write_lightroom_results([a],output)
+    row=json.loads(output.read_text('utf-8'))['photos'][0]
+    assert row['pick_status']==-1 and row['focus_review'] is False

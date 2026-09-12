@@ -31,6 +31,7 @@ class PhotoAsset:
     subject_features: object = None
     subject_checked: bool = False
     subject_confidence: float = .8
+    ai_focus_result: dict | None = None
 
     @property
     def rating_target_paths(self) -> list[Path]:

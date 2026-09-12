@@ -310,11 +310,8 @@ class ReviewDialog(tk.Toplevel):
 
         api = ttk.LabelFrame(tab, text="API 自动提交", padding=8)
         api.pack(fill="x", pady=(10, 0))
-        ttk.Label(api, text="配置").grid(row=0, column=0, sticky="w")
-        self.profile_combo = ttk.Combobox(api, textvariable=self.profile_var, state="readonly", width=24)
-        self.profile_combo.grid(row=0, column=1, sticky="ew", padx=8)
-        self.profile_combo.bind("<<ComboboxSelected>>", lambda _e: self._save_ui_settings())
-        ttk.Button(api, text="配置 API", command=self._configure_api).grid(row=0, column=2, padx=8)
+        ttk.Label(api, text="主页面 API").grid(row=0, column=0, sticky="w")
+        ttk.Label(api, textvariable=self.profile_var).grid(row=0, column=1, sticky="w", padx=8)
         api.columnconfigure(1, weight=1)
         actions = ttk.Frame(api)
         actions.grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
@@ -411,15 +408,22 @@ class ReviewDialog(tk.Toplevel):
         if not task or not self.web_tree.selection():
             messagebox.showinfo("网页提交", "请先创建任务并选择要合并的批次。", parent=self)
             return
-        try:
-            submission = self.project.create_web_submission(task, list(self.web_tree.selection()))
-            task["current_web_submission_id"] = submission["id"]
-            self.project.save()
-            self._refresh_web(submission["id"])
-            self._copy_web_prompt()
-            self._open_web_folder()
-        except Exception as exc:
-            messagebox.showerror("准备失败", str(exc), parent=self)
+        if self._preparing_task:
+            return
+        selected = list(self.web_tree.selection())
+        import gc
+        gc.collect()
+        self._set_preparing(True)
+        self.status_var.set("正在准备网页联系表和清晰度细节图片…")
+        def work():
+            try:
+                submission = self.project.create_web_submission(task, selected)
+                task["current_web_submission_id"] = submission["id"]
+                self.project.save()
+                self._api_queue.put(("web_prepared", submission["id"]))
+            except Exception as exc:
+                self._api_queue.put(("web_prepare_error", str(exc)))
+        threading.Thread(target=work, daemon=True).start()
 
     def _copy_web_prompt(self) -> None:
         task, submission = self._current_web()
@@ -435,7 +439,7 @@ class ReviewDialog(tk.Toplevel):
                 submission["status"] = "awaiting_response"
                 self.project.save()
                 self._refresh_web(submission["id"])
-            self.status_var.set(f"已复制完整提示词，请在网页上传目录中的 {len(images)} 张联系表并粘贴提示词。")
+            self.status_var.set(f"已复制完整提示词，请在网页上传目录中的 {len(images)} 张图片（联系表及清晰度细节）并粘贴提示词。")
         except Exception as exc:
             messagebox.showerror("复制失败", str(exc), parent=self)
 
@@ -465,12 +469,22 @@ class ReviewDialog(tk.Toplevel):
                 return False
             self._refresh_batches()
             self._refresh_review()
+            self._log_web_focus(submission)
             if issues:
-                messagebox.showwarning("回答需要修正", "原始回答已保存，选片结果未应用。\n" + "\n".join(issues), parent=self)
+                messagebox.showwarning("回答需要修正", "原始回答已保存；请检查以下异常，未确认的清晰度保持待确认。\n" + "\n".join(issues), parent=self)
                 return False
             self.status_var.set(f"网页提交 {submission['id']} 的 {len(submission['photo_ids'])} 张照片已导入，可导出到 Lightroom 复核。")
             return True
         PasteResponseDialog(self, store, title="导入合并提交的完整回答", instruction=f"粘贴网页提交 {submission['id']} 的完整 JSON 回答，软件会自动分配到各批次：")
+
+    def _log_web_focus(self, submission):
+        rows = [self._photos().get(pid, {}) for pid in submission.get("photo_ids", [])]
+        results = [row.get("ai_focus_result") or {} for row in rows]
+        blurred = sum(r.get("status") == "blur" and r.get("source") == "web" for r in results)
+        pending = sum(row.get("focus_review") is True for row in rows)
+        logger = getattr(self.master, "_log", None)
+        if logger:
+            logger(f"网页回答已处理：AI 清晰度复查弃置 {blurred} 张；清晰度待确认 {pending} 张。")
 
     def _show_web_raw(self) -> None:
         _, submission = self._current_web()
@@ -481,15 +495,15 @@ class ReviewDialog(tk.Toplevel):
         bar = ttk.Frame(self.review_tab)
         bar.pack(fill="x", pady=(0, 8))
         ttk.Label(bar, text="筛选").pack(side="left")
-        combo = ttk.Combobox(bar, textvariable=self.filter_var, values=("全部", "待复核", "AI 建议弃置", "4～5 星", "回答缺失或异常"), state="readonly", width=18)
+        combo = ttk.Combobox(bar, textvariable=self.filter_var, values=("全部", "清晰度待确认", "待复核", "AI 建议弃置", "4～5 星", "回答缺失或异常"), state="readonly", width=18)
         combo.pack(side="left", padx=8)
         combo.bind("<<ComboboxSelected>>", lambda _e: (self._refresh_review(), self._save_ui_settings()))
         ttk.Label(bar, textvariable=self.export_status_var).pack(side="right")
         table = ttk.Frame(self.review_tab)
         table.pack(fill="both", expand=True)
-        columns = ("name", "group", "ai", "flag", "reason")
+        columns = ("name", "group", "ai", "flag", "reason", "clarity")
         self.review_tree = ttk.Treeview(table, columns=columns, show="headings", selectmode="browse", height=8)
-        for key, label, width in (("name", "照片", 145), ("group", "分组", 55), ("ai", "星级", 60), ("flag", "是否弃置", 120), ("reason", "对应 AI 回复", 480)):
+        for key, label, width in (("name", "照片", 145), ("group", "分组", 55), ("ai", "星级", 60), ("flag", "是否弃置", 120), ("reason", "对应 AI 回复", 400), ("clarity", "清晰度", 150)):
             self.review_tree.heading(key, text=label)
             self.review_tree.column(key, width=width, minwidth=45, stretch=key in {"name", "reason"})
         scroll = ttk.Scrollbar(table, orient="vertical", command=self.review_tree.yview)
@@ -649,10 +663,11 @@ class ReviewDialog(tk.Toplevel):
         threading.Thread(target=work, daemon=True).start()
 
     def _resubmit_api(self):
+        self._refresh_profiles()
         if self._api_active or self._preparing_task:
             return
         if not self._profile_labels.get(self.profile_var.get()):
-            messagebox.showinfo("重新提交", "请先保存并选择 API 配置。", parent=self)
+            messagebox.showinfo("重新提交", "请在主页面配置并选择 API；也可以使用网页选片。", parent=self)
             return
         self._create_task("initial", submit_after=True)
 
@@ -795,52 +810,37 @@ class ReviewDialog(tk.Toplevel):
         RawResponsesDialog(self, batch.get("raw_responses", []))
 
     def _refresh_profiles(self, *_args: Any) -> None:
-        try:
-            from .ai_api import load_profiles
-
-            profiles = load_profiles(self.settings_dir)
-        except Exception as exc:
-            profiles = []
-            self.status_var.set(f"API 配置读取失败：{exc}")
         self._profile_labels.clear()
-        values = []
-        for profile in profiles:
-            label = f"{profile.get('name') or profile.get('id', '未命名')} · {profile.get('model', '')}"
-            self._profile_labels[label] = profile
-            values.append(label)
-        self.profile_combo.configure(values=values)
-        saved_ui = _state(self.project).get("ui_settings", {})
-        saved_id = saved_ui.get("api_profile_id") if isinstance(saved_ui, dict) else None
-        saved_label = next((label for label, profile in self._profile_labels.items() if profile.get("id") == saved_id), None)
-        if saved_label:
-            self.profile_var.set(saved_label)
-        elif values and self.profile_var.get() not in values:
-            self.profile_var.set(values[0])
-        elif not values:
-            self.profile_var.set("")
-
-    def _configure_api(self) -> None:
         try:
-            from .ai_api_dialog import ApiConfigDialog
-
-            existing = self._api_config_window
-            if existing is not None and existing.winfo_exists():
-                existing.reveal()
-                return
-            self._api_config_window = ApiConfigDialog(self, self.settings_dir, on_saved=self._refresh_profiles)
+            getter = getattr(self.master, "_selected_api_profile", None)
+            if getter:
+                profile = getter()
+            else:
+                from .settings import read_values
+                from .ai_api import load_profiles
+                selected = read_values(self.settings_dir).get("selected_api_profile_id")
+                profile = next((p for p in load_profiles(self.settings_dir) if p.get("id") == selected), None)
+            if profile:
+                label = f"{profile.get('name', 'API')} · {profile.get('model', '')}"
+                self._profile_labels[label] = copy.deepcopy(profile)
+                self.profile_var.set(label)
+            else:
+                self.profile_var.set("未启用 API；可使用网页选片")
         except Exception as exc:
-            messagebox.showerror("API 配置", str(exc), parent=self)
+            self.profile_var.set("API 配置读取失败")
+            self.status_var.set(str(exc))
 
     def _start_api(self) -> None:
         if self._api_active or self._preparing_task:
             return
+        self._refresh_profiles()
         task = self._current_task()
         profile = self._profile_labels.get(self.profile_var.get())
         if not task:
             messagebox.showinfo("API 提交", "请先创建或选择任务。", parent=self)
             return
         if not profile:
-            messagebox.showinfo("API 提交", "请先保存并选择 API 配置。", parent=self)
+            messagebox.showinfo("API 提交", "请在主页面配置并选择 API；也可以使用网页选片。", parent=self)
             return
         pending: list[dict[str, Any]] = []
         try:
@@ -945,6 +945,19 @@ class ReviewDialog(tk.Toplevel):
         return task, batch
 
     def _handle_api_event(self, event: tuple[Any, ...]) -> None:
+        if event[0] in ("web_prepared", "web_prepare_error"):
+            self._set_preparing(False)
+            if self._closing_requested:
+                self._save_ui_settings()
+                self._destroy_now()
+            elif event[0] == "web_prepared":
+                self._refresh_web(event[1])
+                self._copy_web_prompt()
+                self._open_web_folder()
+            else:
+                self.status_var.set("准备失败：" + event[1])
+                messagebox.showerror("准备失败", event[1], parent=self)
+            return
         if event[0] in ("prepared", "prepare_error"):
             self._set_preparing(False)
             if event[0] == "prepared":
@@ -1026,6 +1039,8 @@ class ReviewDialog(tk.Toplevel):
         selected = self.filter_var.get()
         ai = photo.get("ai") or {}
         final = photo.get("final") or {}
+        if selected == "清晰度待确认":
+            return photo.get("focus_review") is True
         if selected == "尚未确认":
             return not bool(final.get("confirmed"))
         if selected == "待复核":
@@ -1084,14 +1099,17 @@ class ReviewDialog(tk.Toplevel):
             final = photo.get("final") or {}
             review_items = ai.get("review_items") or []
             thumb = None
+            focus_result = photo.get("ai_focus_result") or {}
+            focus_blur = focus_result.get("status") == "blur"
+            clarity = "清晰度待确认" if photo.get("focus_review") else {"clear": "AI 复查清楚", "blur": "AI 复查模糊"}.get(focus_result.get("status"), "已初筛" if photo.get("focus_review") is False else "未检查")
             technical = bool(photo.get("technical_reason"))
-            flag = "是（初筛）" if technical else ("是" if ai.get("suggest_reject") else "否" if ai else "待选片")
-            reason = "主体虚焦／抖动，未提交 AI" if technical else (ai.get("reason") or "尚无 AI 回复")
+            flag = "是（AI 复查）" if focus_blur else "是（初筛）" if technical else ("是" if ai.get("suggest_reject") else "否" if ai else "待选片")
+            reason = focus_result.get("reason", "AI 复查模糊") if focus_blur else ("主体虚焦／抖动，未提交 AI" if technical else (ai.get("reason") or "尚无 AI 回复"))
             self.review_tree.insert("", "end", iid=str(photo_id), values=(
                 photo.get("stem") or Path(str(photo.get("path", ""))).stem,
                 str(photo.get("group_id", "")),
                 "" if ai.get("rating") is None or technical else ai.get("rating"),
-                flag, reason), tags=("stale",) if photo.get("stale") else ())
+                flag, reason, clarity), tags=("stale",) if photo.get("stale") else ())
             self._photo_ids.append(str(photo_id))
         self.review_tree.tag_configure("stale", foreground="#b05a00")
         if old and old in self._photo_ids:
@@ -1137,6 +1155,12 @@ class ReviewDialog(tk.Toplevel):
             f"技术检查：{photo.get('technical_reason') or '无'}\n"
             f"解析异常：{photo.get('error') or '无'}"
         )
+        focus_result = photo.get("ai_focus_result") or {}
+        if focus_result:
+            focus_label = {"clear": "清楚", "blur": "模糊，已弃置", "uncertain": "清晰度待确认"}.get(focus_result.get("status"), "清晰度待确认")
+            details += f"\n清晰度复查：{focus_label}\n复查理由：{focus_result.get('reason', '')}"
+        elif photo.get("focus_review"):
+            details += "\n清晰度待确认"
         self._set_details(details)
         self.update_idletasks()
         width = max(100, min(420, self.preview_label.winfo_width()))

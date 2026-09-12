@@ -10,6 +10,8 @@ import re
 import shutil
 import uuid
 
+from PIL import Image, ImageDraw
+
 from .contact_sheet import generate_contact_sheets
 from .lightroom_results import focus_review_status
 
@@ -27,6 +29,31 @@ review_items 为字符串数组，suggest_reject 为布尔值，rating 为 1～5
 本批清单（图片上显示相同编号）：
 {manifest}
 '''
+
+FOCUS_STATUSES = {'clear', 'blur', 'uncertain'}
+
+
+def _valid_focus_result(value):
+    return (isinstance(value,dict) and value.get('status') in FOCUS_STATUSES
+            and isinstance(value.get('reason'),str) and bool(value['reason'].strip()))
+
+
+def _focus_review_from_result(result):
+    return result.get('status') == 'uncertain'
+
+
+def _write_labeled_focus_image(source,target,pid,label):
+    """Add a visible identity strip without resizing or covering source pixels."""
+    with Image.open(source) as opened:
+        image=opened.convert('RGB')
+        band=max(34,min(72,round(image.height*.06)))
+        labeled=Image.new('RGB',(image.width,image.height+band),'white')
+        labeled.paste(image,(0,band))
+        draw=ImageDraw.Draw(labeled)
+        text=f'{pid} | {label}'
+        box=draw.textbbox((0,0),text)
+        draw.text(((image.width-(box[2]-box[0]))/2,(band-(box[3]-box[1]))/2-box[1]),text,fill='black')
+        labeled.save(target,quality=95)
 
 
 def atomic_json(path, value):
@@ -52,7 +79,7 @@ def fingerprint(asset, crops):
     return hashlib.sha256(json.dumps(values,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 
 
-def parse_answer(text,task_id,batch_id,expected):
+def parse_answer(text,task_id,batch_id,expected,clarity_expected=()):
     blocks=re.findall(r'```(?:json)?\s*\n?(.*?)```',text,re.S|re.I)
     if len(blocks)>1: raise ValueError('请只粘贴一份 JSON，检测到多个代码块')
     try: data=json.loads(blocks[0] if blocks else text.strip())
@@ -62,7 +89,7 @@ def parse_answer(text,task_id,batch_id,expected):
     rows=data.get('photos')
     if not isinstance(rows,list): raise ValueError('photos 必须为数组')
     counts=Counter(r.get('photo_id') for r in rows if isinstance(r,dict) and isinstance(r.get('photo_id'),str))
-    valid={};issues=[]
+    valid={};issues=[];clarity_expected=set(clarity_expected)
     for index,row in enumerate(rows,1):
         if not isinstance(row,dict): issues.append(f'第 {index} 项不是对象');continue
         pid=row.get('photo_id')
@@ -74,7 +101,14 @@ def parse_answer(text,task_id,batch_id,expected):
         if type(row.get('suggest_reject')) is not bool or not isinstance(row.get('reason'),str) or not isinstance(items,list) or any(not isinstance(i,str) for i in items):
             issues.append(f'{pid} 理由、弃置建议或待复核字段无效');continue
         if rating is None and not items: row=dict(row,review_items=['无法有效判断，需人工检查原图'])
-        valid[pid]={k:row[k] for k in ('rating','suggest_reject','reason','review_items')}
+        proposal={k:row[k] for k in ('rating','suggest_reject','reason','review_items')}
+        if pid in clarity_expected and 'clarity' in row:
+            clarity=row['clarity']
+            if not _valid_focus_result(clarity):
+                issues.append(f'{pid} 清晰度结果无效')
+                continue
+            proposal['clarity']={'status':clarity['status'],'reason':clarity['reason'].strip()}
+        valid[pid]=proposal
     for pid in expected:
         if pid not in valid:issues.append(f'{pid} 缺少有效结果')
     return valid,list(dict.fromkeys(issues))
@@ -112,12 +146,22 @@ class ReviewProject:
                 row['stale']=True
                 self.data['export_dirty']=True
                 self.data['export_status']='照片或分组/裁切已变化，需要重新复核并导出'
+            if row.get('focus_fingerprint') != fp:
+                row.pop('ai_focus_result',None)
+                row.pop('focus_fingerprint',None)
+            asset_focus=getattr(asset,'ai_focus_result',None)
+            if _valid_focus_result(asset_focus) and asset_focus.get('source')=='api':
+                row['ai_focus_result']=copy.deepcopy(asset_focus)
+                row['focus_fingerprint']=fp
             row.update(id=pid,stem=asset.stem,path=str(asset.primary_path.resolve()),
                 target_paths=[str(p.resolve()) for p in asset.rating_target_paths],
                 preview_path=str(asset.preview_path) if asset.preview_path else '',group_id=asset.group_id,
                 fingerprint=fp,technical_rejected=bool(asset.auto_rejected),
                 technical_reason=asset.screening_reason if asset.auto_rejected else '')
-            row['focus_review'] = focus_review_status(asset)
+            focus_result=row.get('ai_focus_result')
+            row['focus_review'] = (_focus_review_from_result(focus_result)
+                                   if _valid_focus_result(focus_result) and row.get('focus_fingerprint')==fp
+                                   else focus_review_status(asset))
             row.setdefault('final',dict(rating=None,pick_status=None,confirmed=False))
             row.setdefault('stale',False);row.setdefault('history',[])
             active[pid]=row
@@ -306,23 +350,64 @@ class ReviewProject:
         )
         kind=('合并多个批次进行跨组精选，减少重复并统一优先级'
               if task.get('kind')=='refine' else '合并多个批次进行组内初选，请按组比较，并统一各组之间的优先级')
-        prompt=PROMPT.format(
-            kind=kind,
-            preferences=json.dumps({k:v for k,v in task.get('preferences',{}).items() if not k.startswith('_')},ensure_ascii=False),
-            task_id=task['id'],batch_id=sid,manifest=manifest,
-        )
 
         folder=web_root/sid
         temporary=web_root/f'.{sid}-{uuid.uuid4().hex}.tmp'
         image_folder=temporary/'images'
         image_folder.mkdir(parents=True,exist_ok=False)
         staged=[]
+        focus_photo_ids=[]
+        focus_image_map={}
+        known_focus_results={}
         try:
             for bid,index,source in sources:
                 target=image_folder/f'{bid}_sheet_{index:03d}{source.suffix.lower()}'
                 shutil.copy2(source,target)
                 staged.append(target)
+            assets_by_id={photo_id(asset):asset for asset in self._assets}
+            for pid in photo_ids:
+                photo=self.data['photos'][pid]
+                result=photo.get('ai_focus_result')
+                if _valid_focus_result(result) and photo.get('focus_fingerprint')==photo['fingerprint']:
+                    known_focus_results[pid]={'status':result['status'],'reason':result['reason']}
+                    continue
+                if photo.get('focus_review') is not True:
+                    continue
+                asset=assets_by_id.get(pid)
+                if asset is None:
+                    raise ValueError(f'无法为清晰度待确认照片生成补图：{pid}')
+                from .ai_focus import prepare_focus_images
+                sources_for_photo=prepare_focus_images(asset,self._crops,temporary/'focus_sources'/pid)
+                if not isinstance(sources_for_photo,(list,tuple)) or not sources_for_photo:
+                    raise ValueError(f'无法为清晰度待确认照片生成补图：{pid}')
+                focus_photo_ids.append(pid)
+                names=[]
+                for index,source in enumerate(sources_for_photo,1):
+                    source=Path(source)
+                    label='OVERVIEW' if index==1 else ('NATIVE FOCUS CROP' if index==2 else f'FOCUS DETAIL {index}')
+                    suffix=source.suffix.lower() if source.suffix.lower() in {'.jpg','.jpeg','.png'} else '.jpg'
+                    target=image_folder/f'{pid}_focus_{index:02d}{suffix}'
+                    _write_labeled_focus_image(source,target,pid,label)
+                    staged.append(target);names.append(target.name)
+                focus_image_map[pid]=names
+            focus_lines=[]
+            if focus_image_map:
+                focus_lines.append('\n清晰度补图映射（补图顶部也写有同一编号）：')
+                focus_lines.extend(f"{pid} | {' | '.join(names)}" for pid,names in focus_image_map.items())
+                focus_lines.append('''
+对上述每张有补图的照片，请在原有评分字段外返回 clarity：
+{"clarity":{"status":"clear|blur|uncertain","reason":"基于原尺寸细节的理由"}}
+clear 表示主体清晰；blur 只用于主体明确失焦或拖影；无可靠人脸、主体太小或仍无法确定时用 uncertain，不要猜测。''')
+            if known_focus_results:
+                focus_lines.append('\n以下照片已有清晰度结论，用于选片参考，无需再返回 clarity：')
+                focus_lines.extend(f"{pid} | {value['status']} | {value['reason']}" for pid,value in known_focus_results.items())
+            prompt=PROMPT.format(
+                kind=kind,
+                preferences=json.dumps({k:v for k,v in task.get('preferences',{}).items() if not k.startswith('_')},ensure_ascii=False),
+                task_id=task['id'],batch_id=sid,manifest=manifest,
+            )+'\n'.join(focus_lines)
             (temporary/'prompt.txt').write_text(prompt,encoding='utf-8')
+            shutil.rmtree(temporary/'focus_sources',ignore_errors=True)
             temporary.replace(folder)
         except Exception:
             shutil.rmtree(temporary,ignore_errors=True)
@@ -331,7 +416,9 @@ class ReviewProject:
         image_hashes=[hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in image_paths]
         submission=dict(id=sid,created_at=datetime.now(timezone.utc).isoformat(),batch_ids=requested,
             photo_ids=photo_ids,photo_batches=photo_batches,prompt=prompt,image_paths=image_paths,
-            image_hashes=image_hashes,fingerprints=fingerprints,status='pending',error='',raw_responses=[])
+            image_hashes=image_hashes,fingerprints=fingerprints,focus_photo_ids=focus_photo_ids,
+            focus_image_map=focus_image_map,known_focus_results=known_focus_results,
+            status='pending',error='',raw_responses=[])
         submissions.append(submission)
         try:self.save()
         except Exception:
@@ -362,7 +449,7 @@ class ReviewProject:
         submission['raw_responses'].append(response)
         try:
             self.web_images(task,submission)
-            valid,issues=parse_answer(text,task['id'],submission['id'],submission['photo_ids'])
+            valid,issues=parse_answer(text,task['id'],submission['id'],submission['photo_ids'],submission.get('focus_photo_ids',[]))
         except (ValueError,OSError) as exc:
             error=str(exc)
             submission.update(status='invalid',error=error)
@@ -376,12 +463,17 @@ class ReviewProject:
             return issues
 
         for pid in submission['photo_ids']:
-            proposal=valid[pid]
+            proposal=dict(valid[pid])
             photo=self.data['photos'][pid]
+            clarity=proposal.pop('clarity',None)
             if photo.get('ai'):photo['history'].append(photo['ai'])
             photo['ai']=dict(proposal,task_id=task['id'],batch_id=submission['photo_batches'][pid],
                 web_submission_id=submission['id'],fingerprint=submission['fingerprints'][pid])
             photo['error']=''
+            if clarity is not None:
+                photo['ai_focus_result']=dict(clarity,source='web',task_id=task['id'],web_submission_id=submission['id'])
+                photo['focus_fingerprint']=submission['fingerprints'][pid]
+                photo['focus_review']=_focus_review_from_result(clarity)
             if not photo['final']['confirmed']:photo['stale']=False
         selected=set(submission['batch_ids'])
         for batch in task['batches']:
@@ -466,6 +558,10 @@ class ReviewProject:
                 if p['stale']:continue
                 if not f['confirmed'] or f.get('fingerprint')!=p['fingerprint']:continue
                 fields={k:f[k] for k in ('rating','pick_status') if f[k] is not None}
+            focus=p.get('ai_focus_result')
+            if (_valid_focus_result(focus) and p.get('focus_fingerprint')==p['fingerprint']
+                    and focus.get('status')=='blur'):
+                fields['pick_status']=-1
             if ai_ratings and type(p.get('focus_review')) is bool:
                 fields['focus_review'] = p['focus_review']
             if not fields:continue

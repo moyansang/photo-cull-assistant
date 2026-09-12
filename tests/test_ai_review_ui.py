@@ -22,6 +22,7 @@ def ui(tmp_path,monkeypatch,tk_root):
     root=tk_root
     profile=dict(id='test',name='test',base_url='https://example.invalid/v1',model='vision',timeout=5)
     monkeypatch.setattr(ai_api,'load_profiles',lambda _: [profile])
+    monkeypatch.setattr(root, '_selected_api_profile', lambda: profile, raising=False)
     monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.askyesno',lambda *a,**kw:True)
     errors=[]
     monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showerror',lambda *a,**kw:errors.append(a))
@@ -83,6 +84,7 @@ def test_web_tabs_prepare_and_restore(ui, monkeypatch):
     dialog.notebook.select(1)
     dialog._web_select_pending()
     dialog._prepare_web()
+    drive(root, dialog)
     assert not errors
     submission = task['web_submissions'][0]
     assert submission['prompt'] == dialog.clipboard_get()
@@ -241,36 +243,22 @@ def test_reopen_preserves_answers_until_home_sheet_changes(ui, monkeypatch, tmp_
         changed._destroy_now()
 
 
-def test_api_editor_background_reopen_and_close_does_not_lock_review(ui):
+def test_review_uses_homepage_profile_and_refreshes_changes(ui, monkeypatch):
     root, dialog, project, task, batch, errors = ui
-    root.deiconify(); dialog.deiconify(); root.update()
-    dialog.grab_set()
-    dialog._configure_api();root.update()
-    editor=dialog._api_config_window
-    assert editor.winfo_exists() and root.grab_current() is None
-    editor.key_var.set('unsaved-test-key')
-    # Simulate an owned window being hidden during a foreground switch.
-    editor.withdraw();root.update()
-    assert root.grab_current() is None
-    dialog.focus_set();dialog._configure_api();root.update()
-    assert dialog._api_config_window is editor
-    assert editor.winfo_viewable() and editor.key_var.get()=='unsaved-test-key'
-    assert root.grab_current() is None
-    editor.destroy();root.update()
-    assert not editor.winfo_exists()
-    assert root.grab_current() is dialog
-    dialog._configure_api();root.update()
-    assert dialog._api_config_window is not editor
-    dialog._api_config_window.destroy()
-    root.withdraw()
+    profile = {'id': 'changed', 'name': '主页配置', 'model': 'vision-test'}
+    monkeypatch.setattr(root, '_selected_api_profile', lambda: profile)
+    dialog._refresh_profiles()
+    assert dialog.profile_var.get() == '主页配置 · vision-test'
+    assert list(dialog._profile_labels.values()) == [profile]
+    profile['model'] = 'changed-after-snapshot'
+    assert list(dialog._profile_labels.values())[0]['model'] == 'vision-test'
 
 
-def test_closing_owner_with_api_editor_leaves_no_grab(ui):
-    root,dialog,project,task,batch,errors=ui
-    root.deiconify();dialog.deiconify();root.update()
-    dialog._configure_api();root.update()
-    editor=dialog._api_config_window
-    dialog._close();root.update()
-    assert not editor.winfo_exists() and editor._closed
-    assert root.grab_current() is None
-    root.withdraw()
+def test_manual_web_mode_does_not_require_api_profile(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    monkeypatch.setattr(root, '_selected_api_profile', lambda: None)
+    dialog._refresh_profiles()
+    assert not dialog._profile_labels
+    assert '网页选片' in dialog.profile_var.get()
+    assert project.current_task()['id'] == task['id']
+    assert not errors

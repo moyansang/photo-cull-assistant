@@ -32,6 +32,7 @@ from .workflow import ScanResult
 
 JOB_VERSION = 1
 ProgressCallback = Callable[[int], None]
+LogCallback = Callable[[str], None]
 
 
 class SourceChangedError(ValueError):
@@ -40,6 +41,10 @@ class SourceChangedError(ValueError):
 
 class ProcessingJobError(RuntimeError):
     pass
+
+
+class FocusReviewError(ProcessingJobError):
+    """An API focus review failed after local analysis was saved."""
 
 
 def _normalise_options(options: Mapping | None) -> dict:
@@ -90,6 +95,43 @@ def _asset_from_dict(value: dict) -> PhotoAsset:
 
 def _asset_key(asset: PhotoAsset) -> str:
     return str(asset.primary_path.resolve()).casefold()
+
+
+def _notify_log(callback: LogCallback | None, message: str) -> None:
+    if callback is None:
+        return
+    try:
+        callback(message)
+    except Exception:
+        # Logging must not interrupt a checkpointable processing job.
+        pass
+
+
+def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: Mapping) -> None:
+    if not isinstance(reviewed, Mapping):
+        raise ValueError("API 清晰度复核返回格式无效")
+    status = reviewed.get("status")
+    if status not in {"clear", "blur", "uncertain"}:
+        raise ValueError("API 清晰度复核返回了未知状态")
+    reason = reviewed.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("API 清晰度复核没有提供原因")
+    result = dict(reviewed)
+    result["status"] = status
+    result["reason"] = reason.strip()
+    # Fail before changing the asset if the result cannot be checkpointed.
+    json.dumps(result, ensure_ascii=False)
+    asset.ai_focus_result = result
+    asset.auto_rejected = status == "blur"
+    asset.screening_reason = f"ai_focus_{status}"
+    screened.rejected = asset.auto_rejected
+    screened.reason = asset.screening_reason
+
+
+def _focus_review_log(asset: PhotoAsset, reviewed: Mapping) -> str:
+    labels = {"clear": "清晰", "blur": "模糊并弃置", "uncertain": "仍不确定"}
+    reason = str(reviewed.get("reason", "")).strip()
+    return f"AI 清晰度复核 {asset.primary_path.name}：{labels[reviewed['status']]}；{reason}"
 
 
 def _active_path(workspace: Path) -> Path:
@@ -238,6 +280,9 @@ class ProcessingJob:
         crops: CropSettings | Mapping | None,
         stop_event: Event,
         progress: ProgressCallback | None,
+        *,
+        focus_profile: Mapping | None = None,
+        on_log: LogCallback | None = None,
     ) -> ScanResult | None:
         """Continue work.  A requested stop takes effect after the current unit."""
         current = _normalise_options(options)
@@ -252,20 +297,49 @@ class ProcessingJob:
         while self._data["completed_photos"] < len(self.assets):
             index = int(self._data["completed_photos"])
             asset = self.assets[index]
-            if self.kind == "scan":
-                build_preview(asset, self.output / "previews")
-            if current["technical_screening"]:
-                screened = screen_assets([asset], crop_settings=crop_settings, cache_dir=self.workspace / ".analysis-cache")[asset.stem]
+            key = _asset_key(asset)
+            locally_saved = self._data.get("local_screening_pending") == index and key in self._data["screening_results"]
+            if locally_saved:
+                screened = ScreeningResult(**self._data["screening_results"][key])
             else:
-                asset.auto_rejected = False
-                asset.screening_reason = "screening_disabled"
-                asset.focus_score = None
-                asset.face_found = False
-                screened = ScreeningResult(False, "screening_disabled", False)
-            self._data["screening_results"][_asset_key(asset)] = asdict(screened)
-            self._data["photo_options"][str(index)] = {
-                "technical_screening": current["technical_screening"]
-            }
+                if self.kind == "scan":
+                    build_preview(asset, self.output / "previews")
+                if current["technical_screening"]:
+                    screened = screen_assets([asset], crop_settings=crop_settings, cache_dir=self.workspace / ".analysis-cache")[asset.stem]
+                else:
+                    asset.auto_rejected = False
+                    asset.screening_reason = "screening_disabled"
+                    asset.focus_score = None
+                    asset.face_found = False
+                    screened = ScreeningResult(False, "screening_disabled", False)
+                asset.ai_focus_result = None
+                self._data["screening_results"][key] = asdict(screened)
+                self._data["photo_options"][str(index)] = {
+                    "technical_screening": current["technical_screening"]
+                }
+            if focus_profile is not None:
+                from .lightroom_results import focus_review_status
+                if focus_review_status(asset) is True:
+                    try:
+                        from .ai_focus import review_focus
+                        reviewed = review_focus(
+                            asset,
+                            crop_settings,
+                            focus_profile,
+                            self.workspace / ".analysis-cache",
+                        )
+                        _apply_focus_review(asset, screened, reviewed)
+                        self._data["screening_results"][key] = asdict(screened)
+                        _notify_log(on_log, _focus_review_log(asset, reviewed))
+                    except Exception as exc:
+                        # Keep the completed local analysis while leaving this photo
+                        # incomplete, so the user can resume with a working profile.
+                        self._data["local_screening_pending"] = index
+                        self._checkpoint(progress)
+                        message = f"AI 清晰度复核 {asset.primary_path.name} 失败：{exc}"
+                        _notify_log(on_log, message)
+                        raise FocusReviewError(message + "。任务进度已保存，可修复 API 配置后继续处理。") from exc
+            self._data.pop("local_screening_pending", None)
             self._data["completed_photos"] = index + 1
             self._checkpoint(progress)
             if stop_event.is_set():

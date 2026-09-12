@@ -7,10 +7,10 @@ from pathlib import Path
 
 # None means no current technical assessment: leave Lightroom's keyword alone.
 def focus_review_status(asset):
-    if asset.auto_rejected or asset.screening_reason == 'subject_not_obviously_blurred':
+    if asset.auto_rejected or asset.screening_reason in {'subject_not_obviously_blurred', 'ai_focus_clear', 'ai_focus_blur'}:
         return False
     if asset.screening_reason in {
-        'face_focus_uncertain', 'face_too_small_for_focus', 'no_reliable_face',
+        'ai_focus_uncertain', 'face_focus_uncertain', 'face_too_small_for_focus', 'no_reliable_face',
         'source_preview_geometry_mismatch', 'source_unreadable_for_focus',
         'preview_unreadable', 'preview_unavailable',
     }:

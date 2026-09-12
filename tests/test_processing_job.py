@@ -226,3 +226,107 @@ def test_regenerate_refreshes_focus_without_rebuilding_previews(tmp_path, monkey
     assert not updated.main_pages and updated.rejected_pages
     report = json.loads((workspace / 'screening_results.json').read_text('utf-8'))
     assert 'obvious_subject_blur' in json.dumps(report)
+
+
+def test_api_focus_review_is_checkpointed_once_and_never_serialises_profile(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from ai_cull_assistant.screening import ScreeningResult
+
+    photos = _photos(tmp_path, 3)
+    workspace = tmp_path / "workspace"
+    calls = []
+
+    def screen(assets, **_kwargs):
+        asset = assets[0]
+        asset.auto_rejected = False
+        asset.screening_reason = "no_reliable_face"
+        asset.face_found = False
+        return {asset.stem: ScreeningResult(False, "no_reliable_face", False)}
+
+    answers = {
+        "P0000": {"status": "clear", "reason": "主体边缘清晰"},
+        "P0001": {"status": "blur", "reason": "主体明显虚焦"},
+        "P0002": {"status": "uncertain", "reason": "主体太小"},
+    }
+
+    def review(asset, crop_settings, profile, cache_dir):
+        calls.append(asset.stem)
+        assert crop_settings == CropSettings()
+        assert profile["id"] == "saved-profile"
+        assert cache_dir == workspace / ".analysis-cache"
+        return answers[asset.stem]
+
+    monkeypatch.setattr("ai_cull_assistant.processing_job.screen_assets", screen)
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
+    job = start_job(photos, workspace, _options(technical_screening=True), CropSettings())
+    stop = Event()
+
+    def stop_after_first(_percent):
+        if len(calls) == 1:
+            stop.set()
+
+    profile = {"id": "saved-profile", "name": "测试", "secret": "must-never-persist"}
+    logs = []
+    assert job.run(
+        _options(technical_screening=True), CropSettings(), stop, stop_after_first,
+        focus_profile=profile, on_log=logs.append,
+    ) is None
+    assert calls == ["P0000"]
+    assert "must-never-persist" not in (job.root / "job.json").read_text("utf-8")
+
+    restored = load_job(workspace, photos)
+    result = restored.run(
+        _options(technical_screening=True), CropSettings(), Event(), None,
+        focus_profile=profile, on_log=logs.append,
+    )
+    assert result is not None
+    assert calls == ["P0000", "P0001", "P0002"]
+    assert [asset.screening_reason for asset in result.assets] == [
+        "ai_focus_clear", "ai_focus_blur", "ai_focus_uncertain"
+    ]
+    assert [asset.auto_rejected for asset in result.assets] == [False, True, False]
+    assert result.assets[2].ai_focus_result == answers["P0002"]
+    assert len(logs) == 3 and all("AI 清晰度复核" in line for line in logs)
+
+
+def test_api_failure_keeps_local_analysis_for_resumable_retry(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from ai_cull_assistant.processing_job import FocusReviewError
+    from ai_cull_assistant.screening import ScreeningResult
+
+    photos = _photos(tmp_path, 1)
+    workspace = tmp_path / "workspace"
+    local_calls = []
+    review_calls = []
+
+    def screen(assets, **_kwargs):
+        asset = assets[0]
+        local_calls.append(asset.stem)
+        asset.auto_rejected = False
+        asset.screening_reason = "no_reliable_face"
+        return {asset.stem: ScreeningResult(False, "no_reliable_face", False)}
+
+    def review(asset, *_args):
+        review_calls.append(asset.stem)
+        if len(review_calls) == 1:
+            raise RuntimeError("offline")
+        return {"status": "clear", "reason": "复核清晰"}
+
+    monkeypatch.setattr("ai_cull_assistant.processing_job.screen_assets", screen)
+    monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
+    job = start_job(photos, workspace, _options(technical_screening=True), CropSettings())
+    with pytest.raises(FocusReviewError, match="任务进度已保存"):
+        job.run(_options(technical_screening=True), CropSettings(), Event(), None, focus_profile={"id": "p"})
+    assert job._data["completed_photos"] == 0
+    assert job._data["local_screening_pending"] == 0
+
+    restored = load_job(workspace, photos)
+    result = restored.run(
+        _options(technical_screening=True), CropSettings(), Event(), None, focus_profile={"id": "p"}
+    )
+    assert result is not None
+    assert local_calls == ["P0000"]
+    assert review_calls == ["P0000", "P0000"]
+    assert result.assets[0].screening_reason == "ai_focus_clear"
