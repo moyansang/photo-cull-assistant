@@ -1,0 +1,14 @@
+OpenCV Zoo MediaPipe person detection and pose estimation models
+
+Repository: https://github.com/opencv/opencv_zoo
+Pinned commit: 47534e27c9851bb1128ccc0102f1145e27f23f98
+Person model: models/person_detection_mediapipe/person_detection_mediapipe_2023mar.onnx
+Pose model: models/pose_estimation_mediapipe/pose_estimation_mediapipe_2023mar.onnx
+
+The model binaries are intentionally not stored in this repository. Run
+download.py to fetch exact files into the ignored build/body_models directory.
+Each file is accepted only when both its byte length and SHA-256 digest match
+manifest.json.
+
+The upstream model directories and their Python reference implementations are
+licensed under Apache License 2.0. A copy is included in LICENSE-APACHE-2.0.txt.

@@ -12,7 +12,7 @@ def focus_review_status(asset):
     if rejected or reason in {'subject_not_obviously_blurred', 'ai_focus_clear', 'ai_focus_blur'}:
         return False
     if reason in {
-        'ai_focus_uncertain', 'face_focus_uncertain', 'face_too_small_for_focus', 'no_reliable_face',
+        'ai_focus_uncertain', 'face_focus_uncertain', 'body_focus_uncertain', 'face_too_small_for_focus', 'no_reliable_face',
         'source_preview_geometry_mismatch', 'source_unreadable_for_focus',
         'preview_unreadable', 'preview_unavailable',
     }:
@@ -41,6 +41,7 @@ def focus_review_reason(photo):
         'insufficient_local_contrast':'人脸局部对比度不足，清晰度证据不充分。',
         'high_frequency_noise_or_artifacts':'噪点或压缩痕迹可能干扰清晰度判断。',
         'possible_directional_smear':'检测到疑似方向性拖影，需要检查原图。',
+        'weaker_than_comparable_burst':'相比同组选片中姿态、位置接近的照片，主体细节明显偏弱。',
         'borderline_focus_evidence':'本地多项清晰度指标处于边界，证据不足。',
     }
     details=[evidence_labels[code] for code in codes if code in evidence_labels]
@@ -49,6 +50,7 @@ def focus_review_reason(photo):
     labels={
         'ai_focus_uncertain':'AI 清晰度复核仍无法确定。',
         'face_focus_uncertain':'本地人脸清晰度证据不足或相互冲突。',
+        'body_focus_uncertain':'身体清晰度实验检查无法确认主体主要部位清晰，请检查原图。',
         'face_too_small_for_focus':'主体人脸像素不足，无法可靠判断清晰度。',
         'no_reliable_face':'未检测到可靠的主体人脸。',
         'source_preview_geometry_mismatch':'原图与预览方向或比例不一致，无法可靠定位主体细节。',

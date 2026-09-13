@@ -39,6 +39,11 @@ def test_completed_workspace_compacts_and_roundtrips_without_invalidating_ai(tmp
     snapshot_hashes = list(batch["image_hashes"])
     export_bytes = export.read_bytes()
     progress = []
+    from ai_cull_assistant.focus_audit import record_inputs, audit_root
+    audit_cache = workspace / 'cache' / 'analysis'
+    record_inputs(audit_cache, 'proof', [project.batch_images(task, batch)[0]], 'test', {}, 'v2')
+    evidence = {p.relative_to(audit_root(audit_cache)): p.read_bytes()
+                for p in audit_root(audit_cache).rglob('*') if p.is_file()}
 
     stats = compact_workspace(workspace, progress.append)
 
@@ -49,6 +54,7 @@ def test_completed_workspace_compacts_and_roundtrips_without_invalidating_ai(tmp
     assert export.read_bytes() == export_bytes
     assert (workspace / "contact_sheets").is_dir()
     assert (workspace / "ai_tasks").is_dir()
+    assert all((audit_root(audit_cache)/name).read_bytes() == payload for name, payload in evidence.items())
 
     restored_stats = restore_workspace(workspace)
     restored = load_session(workspace, photos)

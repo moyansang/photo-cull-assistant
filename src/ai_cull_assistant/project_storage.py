@@ -14,7 +14,7 @@ WORKSPACE_NAMES = (
     'scan-session.json', 'ai_project.json', 'groups.json', 'screening_results.json',
     'processing-settings.json', 'workspace-settings.json', 'lightroom_results.json',
     'session.log', 'previews', 'contact_sheets', 'ai_tasks', '.analysis-cache', '.processing',
-    'exports', 'logs', 'cache',
+    'exports', 'logs', 'cache', 'focus-evidence',
 )
 
 def _atomic(path, value):

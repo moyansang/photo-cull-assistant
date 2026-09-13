@@ -59,16 +59,12 @@ def _regions(face_bgr: np.ndarray, landmarks: np.ndarray | None) -> tuple[dict[s
 
     eyes = landmarks[:2]
     eye_mid = eyes.mean(axis=0)
-    eye_distance = float(np.linalg.norm(eyes[0] - eyes[1]))
-    mouth_mid = landmarks[3:].mean(axis=0)
-    vertical = mouth_mid - eye_mid
-    vertical_norm = float(np.linalg.norm(vertical))
-    down = vertical / vertical_norm if vertical_norm else np.array((0.0, 1.0), dtype=np.float32)
-    across = np.array((down[1], -down[0]), dtype=np.float32)
+    eye_vector = eyes[1] - eyes[0]
+    eye_distance = float(np.linalg.norm(eye_vector))
 
     # Rotate only enough to align the eye line. The ROIs are then cropped from
     # one transformed native image, avoiding any upscaling before measurement.
-    angle = float(np.degrees(np.arctan2(across[1], across[0])))
+    angle = float(np.degrees(np.arctan2(eye_vector[1], eye_vector[0])))
     matrix = cv2.getRotationMatrix2D(tuple(map(float, eye_mid)), angle, 1.0)
     aligned = cv2.warpAffine(
         gray,

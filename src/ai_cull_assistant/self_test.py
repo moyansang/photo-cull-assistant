@@ -28,6 +28,7 @@ def run(report_path: str) -> None:
             report["window_title"] = app.title()
             from .app import GROUPING_LABELS
             assert app.preset_var.get() == "标准"
+            assert not app.body_screening_var.get()
             assert list(GROUPING_LABELS.values()) == ["strict", "standard", "loose"]
             assert app.workspace_var.get() != str(root)
             (root / "测试照片").mkdir()
@@ -92,6 +93,13 @@ def run(report_path: str) -> None:
             ui_app = App(settings_dir=root)
             ui_app.withdraw()
             project = ReviewProject(root / 'workspace')
+            # Blank synthetic input must fail clarity admission. A deliberately
+            # injected clear verdict below isolates the selection UI smoke test.
+            assert not ReviewProject._asset_is_admitted(result.assets[0])
+            result.assets[0].clarity_version = 'clarity-v2'
+            result.assets[0].clarity_evidence = {'state': 'clear'}
+            result.assets[0].screening_reason = 'subject_not_obviously_blurred'
+            result.assets[0].ai_focus_result = None
             task = project.create_task(result.assets, ui_app.crop_settings, {'intensity':'均衡保留'})
             batch = task['batches'][0]
             response = json.dumps(dict(task_id=task['id'], batch_id=batch['id'], photos=[dict(

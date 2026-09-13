@@ -60,3 +60,19 @@ def test_body_prompt_schema_and_conflicting_observations():
     schema['observations'] = dict(defocus='absent', motion_blur='absent', noise='absent',
                                   occlusion='absent', body_motion='present')
     assert ai_focus._parse_response(json.dumps(schema), 'photo')['status'] == 'uncertain'
+
+
+def test_body_payload_uses_native_pixels_after_face_images(tmp_path, monkeypatch):
+    import numpy as np
+    from types import SimpleNamespace
+    from ai_cull_assistant.crop_settings import CropSettings
+    pixels = np.random.default_rng(10).integers(0, 256, (600, 400, 3), dtype=np.uint8)
+    monkeypatch.setattr(ai_focus, 'load_full_image', lambda a: Image.fromarray(pixels))
+    monkeypatch.setattr(ai_focus, 'detail_features', lambda *a: SimpleNamespace(face=(.1,.1,.3,.2), landmarks=None))
+    body = dict(review_kind='motion_suspected', regions=[dict(family='torso', box=[100,200,300,450],
+                                                            evidence={'state':'uncertain'})])
+    asset = SimpleNamespace(preview_path=None, clarity_evidence={'body':body})
+    paths = ai_focus.prepare_focus_images(asset, CropSettings(), tmp_path)
+    assert paths[-1].name == 'body_native_01.png'
+    assert len(paths) <= 19
+    assert np.array_equal(np.asarray(Image.open(paths[-1])), pixels[200:450,100:300])

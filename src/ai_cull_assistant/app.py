@@ -104,7 +104,7 @@ class App(tk.Tk):
             self._restore_session()
         self.input_var.trace_add("write", self._input_path_changed)
         self.workspace_var.trace_add("write", self._workspace_path_changed)
-        for variable in (self.preset_var, self.per_page_var, self.columns_var, self.screening_var):
+        for variable in (self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.body_screening_var):
             variable.trace_add("write", self._workspace_setting_changed)
         self.no_updates_var.trace_add("write", self._schedule_settings_save)
         self.protocol("WM_DELETE_WINDOW", self._close)
@@ -175,6 +175,7 @@ class App(tk.Tk):
         options.pop("no_auto_updates", None)
         options['grouping'] = self.preset_var.get()
         options['screening'] = self.screening_var.get()
+        options['body_screening'] = self.body_screening_var.get()
         for key, variable, low, high in [('per_page', self.per_page_var, 8, 60), ('columns', self.columns_var, 2, 6)]:
             try:
                 value = variable.get()
@@ -220,6 +221,7 @@ class App(tk.Tk):
             self.columns_var.set(self._option_int("columns", 4, 2, 6))
             screening = self.saved_options.get("screening", True)
             self.screening_var.set(screening if isinstance(screening, bool) else True)
+            self.body_screening_var.set(self.saved_options.get('body_screening') is True)
         finally:
             self._suppress_settings_trace = False
         self.scan_result = None
@@ -355,6 +357,7 @@ class App(tk.Tk):
         self.per_page_var = tk.IntVar(value=self._option_int("per_page", 16, 8, 60))
         self.columns_var = tk.IntVar(value=self._option_int("columns", 4, 2, 6))
         self.screening_var = tk.BooleanVar(value=self.saved_options.get("screening", True) if isinstance(self.saved_options.get("screening", True), bool) else True)
+        self.body_screening_var = tk.BooleanVar(value=self.saved_options.get('body_screening') is True)
 
         self.no_updates_var = tk.BooleanVar(value=self.saved_options.get('no_auto_updates') is True)
         row = 0
@@ -376,6 +379,10 @@ class App(tk.Tk):
             text="人物主体明显虚焦/严重抖动 → 建议弃置（导入 LR 后生效）",
             variable=self.screening_var,
         ).grid(row=row, column=0, columnspan=6, sticky="w", pady=(2, 8))
+        row += 1
+
+        ttk.Checkbutton(frame, text="身体清晰度检查（实验）· 随本地检查启用，可能增加待确认照片",
+                        variable=self.body_screening_var).grid(row=row, column=0, columnspan=6, sticky='w', pady=(0, 6))
         row += 1
 
         ttk.Label(frame, text="AI 服务").grid(row=row, column=0, sticky="w", pady=6)
@@ -467,7 +474,7 @@ class App(tk.Tk):
             self.workspace_var.set(path)
 
     def _processing_options(self):
-        return dict(grouping_preset=GROUPING_LABELS[self.preset_var.get()], photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), technical_screening=self.screening_var.get())
+        return dict(grouping_preset=GROUPING_LABELS[self.preset_var.get()], photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), technical_screening=self.screening_var.get(), body_screening=self.body_screening_var.get())
 
     def _refresh_api_profiles(self, preferred_id=None) -> None:
         current_id = self._api_profile_ids.get(self.api_profile_var.get()) if hasattr(self, "_api_profile_ids") else None
@@ -984,6 +991,7 @@ class App(tk.Tk):
                 self.per_page_var.set(16)
                 self.columns_var.set(4)
                 self.screening_var.set(True)
+                self.body_screening_var.set(False)
             finally:
                 self._suppress_settings_trace = False
             self.saved_options = {"no_auto_updates": self.no_updates_var.get()}

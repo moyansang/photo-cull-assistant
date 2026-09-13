@@ -34,7 +34,7 @@ def test_startup_loads_project_preferences_and_keeps_update_global(tmp_path):
     save_workspace_preferences(
         workspace,
         {"scale_factor": 1.4},
-        {"grouping": "严格", "per_page": 24, "columns": 3, "screening": False},
+        {"grouping": "严格", "per_page": 24, "columns": 3, "screening": False, "body_screening": True},
     )
 
     app = make_app(tmp_path, source, workspace, no_updates=True)
@@ -45,6 +45,7 @@ def test_startup_loads_project_preferences_and_keeps_update_global(tmp_path):
         assert app.per_page_var.get() == 24
         assert app.columns_var.get() == 3
         assert app.screening_var.get() is False
+        assert app.body_screening_var.get() is True
         assert app.no_updates_var.get() is True
 
         app._save_preferences()
@@ -52,6 +53,7 @@ def test_startup_loads_project_preferences_and_keeps_update_global(tmp_path):
         assert global_values["options"] == {"no_auto_updates": True}
         project_values = json.loads((workspace / "workspace-settings.json").read_text("utf-8"))
         assert project_values["options"]["grouping"] == "严格"
+        assert project_values["options"]["body_screening"] is True
         assert "no_auto_updates" not in project_values["options"]
     finally:
         app._close()
@@ -100,6 +102,7 @@ def test_typed_input_switch_saves_old_project_and_loads_registered_project(tmp_p
         assert app.per_page_var.get() == 32
         assert app.columns_var.get() == 5
         assert app.screening_var.get() is False
+        assert app.body_screening_var.get() is False
         assert app.scan_result is None
         assert app.review_project is None
         assert "second project log" in app.log_text.get("1.0", "end")

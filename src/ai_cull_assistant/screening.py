@@ -131,6 +131,7 @@ def screen_assets(
     face_provider: Callable[[PhotoAsset], list[FaceBox]] | None = None,
     crop_settings=None,
     cache_dir=None,
+    body_check=False,
 ) -> dict[str, ScreeningResult]:
     results: dict[str, ScreeningResult] = {}
     for asset in assets:
@@ -141,6 +142,10 @@ def screen_assets(
         else:
             from .face_focus import assess_asset_focus
             result = assess_asset_focus(asset, crop_settings=crop_settings, cache_dir=cache_dir)
+        if body_check:
+            from .body_pipeline import apply_body_check
+            from .crop_settings import CropSettings
+            result = apply_body_check(asset, result, crop_settings or CropSettings(), cache_dir)
         asset.auto_rejected = result.rejected
         asset.screening_reason = result.reason
         asset.focus_score = result.laplacian_variance

@@ -35,6 +35,9 @@ pip install "pyinstaller>=6.10"
 if ($LASTEXITCODE -ne 0) { throw "安装 PyInstaller 失败" }
 
 # PyInstaller handles replacement of its own output with --noconfirm.
+# Resolve and verify optional body-model assets at build time, never during scans.
+python body_models/download.py
+if ($LASTEXITCODE -ne 0) { throw "身体实验模型下载或校验失败" }
 
 pyinstaller `
     --noconfirm `
@@ -44,6 +47,8 @@ pyinstaller `
     --name "AI选片助手" `
     --paths src `
     --add-data "src/ai_cull_assistant/data;ai_cull_assistant/data" `
+    --add-data "build/body_models;ai_cull_assistant/data/body_models" `
+    --add-data "body_models;ai_cull_assistant/data/body_model_sources" `
     --collect-data cv2 `
     --collect-binaries cv2 `
     --collect-binaries rawpy `

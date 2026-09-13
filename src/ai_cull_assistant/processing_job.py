@@ -56,6 +56,7 @@ def _normalise_options(options: Mapping | None) -> dict:
         "photos_per_page": max(1, int(source.get("photos_per_page", 20))),
         "columns": max(1, int(source.get("columns", 4))),
         "technical_screening": bool(source.get("technical_screening", True)),
+        "body_screening": source.get("body_screening") is True,
     }
 
 
@@ -91,6 +92,8 @@ def _asset_from_dict(value: dict) -> PhotoAsset:
         for key in ("face", "head"):
             if feature.get(key):
                 feature[key] = tuple(feature[key])
+        if feature.get('landmarks'):
+            feature['landmarks'] = tuple(tuple(point) for point in feature['landmarks'])
         row["subject_features"] = SubjectFeatures(**feature)
     return PhotoAsset(**row)
 
@@ -120,11 +123,18 @@ def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: 
         raise ValueError("API 清晰度复核没有提供原因")
     result = dict(reviewed)
     evidence = screened.focus_evidence or {}
+    body = evidence.get('body') or {}
+    body_unresolved = body.get('state') not in {None, 'clear'} and (
+        body.get('review_kind') not in {'motion_suspected', 'motion_confirmed'}
+        or (reviewed.get('observations') or {}).get('body_motion') != 'absent'
+    )
     if getattr(asset, 'clarity_version', None) == 'clarity-v2' and status == 'clear' and (
-            evidence.get('state') == 'severe_blur' or evidence.get('motion_suspect') is True):
+            evidence.get('state') == 'severe_blur' or evidence.get('motion_suspect') is True
+            or body_unresolved):
         result['api_status'] = status
         status = 'uncertain'
-        reason = '本地模糊证据与 API 清晰结论冲突，需检查原图：' + reason
+        reason = ('身体清晰度仍缺少可靠证据，需检查原图：' if body_unresolved else
+                  '本地模糊证据与 API 清晰结论冲突，需检查原图：') + reason
     result["status"] = status
     result["reason"] = reason.strip()
     # Fail before changing the asset if the result cannot be checkpointed.
@@ -476,6 +486,7 @@ class ProcessingJob:
                         [asset],
                         crop_settings=crop_settings,
                         cache_dir=resolve_workspace_path(self.workspace, ".analysis-cache"),
+                        **({"body_check": True} if current["body_screening"] else {}),
                     )[asset.stem]
                 else:
                     asset.auto_rejected = False
@@ -499,7 +510,8 @@ class ProcessingJob:
                     asset.ai_focus_result = None
                 self._data["screening_results"][key] = asdict(screened)
                 self._data["photo_options"][str(index)] = {
-                    "technical_screening": current["technical_screening"]
+                    "technical_screening": current["technical_screening"],
+                    **({"body_screening": True} if current["body_screening"] else {}),
                 }
             should_review = (
                 self.mode == "focus"
@@ -514,6 +526,16 @@ class ProcessingJob:
                 if self.mode == "focus" or asset.ai_focus_dirty or focus_review_status(asset) is True:
                     try:
                         from .ai_focus import review_focus
+                        evidence = asset.clarity_evidence or {}
+                        body = evidence.get('body') or {}
+                        if body.get('review_kind') == 'unsupported' and evidence.get('face_state') == 'clear':
+                            _notify_log(on_log, f"AI 清晰度复核跳过 {asset.primary_path.name}：身体区域无法可靠判断，保留清晰度待确认，供 Lightroom 检查。")
+                            self._data.pop("local_screening_pending", None)
+                            self._data["completed_photos"] = position + 1
+                            self._checkpoint(progress)
+                            if stop_event.is_set():
+                                return None
+                            continue
                         if self.mode == "focus" and not _has_reliable_face(asset, crop_settings):
                             _notify_log(
                                 on_log,
@@ -535,7 +557,7 @@ class ProcessingJob:
                         _apply_focus_review(asset, screened, reviewed)
                         asset.ai_focus_dirty = False
                         self._data["screening_results"][key] = asdict(screened)
-                        _notify_log(on_log, _focus_review_log(asset, reviewed))
+                        _notify_log(on_log, _focus_review_log(asset, asset.ai_focus_result))
                     except Exception as exc:
                         message = f"AI 清晰度复核 {asset.primary_path.name} 失败：{exc}"
                         _notify_log(on_log, message + "。已记录错误，将继续处理其余照片。")
@@ -607,6 +629,14 @@ class ProcessingJob:
             self._persist()
 
         if self.mode not in {"legacy", "sheets"}:
+            if self.mode in {"scan", "rescan"}:
+                from .relative_focus import flag_relative_focus
+                changed = flag_relative_focus(self.assets, [self.assets[int(i)] for i in work_indices])
+                for asset in changed:
+                    row = self._data['screening_results'][_asset_key(asset)]
+                    row.update(reason=asset.screening_reason, focus_evidence=asset.clarity_evidence)
+                if changed:
+                    _notify_log(on_log, f"同组清晰度比较：{len(changed)} 张细节偏弱，标为清晰度待确认。")
             self._validate_sources()
             return self._publish(progress)
 

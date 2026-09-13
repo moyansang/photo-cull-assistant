@@ -132,7 +132,8 @@ def test_continue_from_saved_job_updates_main_window(tmp_path):
         assert app.next_step_var.get()=='推荐下一步：AI 选片与导出'
         log=app.log_text.get('1.0','end')
         assert '初筛技术模糊/抖动弃置 0 张' in log
-        assert '剩余可进入 AI 选片 1 张' in log
+        assert '剩余可进入 AI 选片 0 张' in log
+        assert '清晰度仍不确定 1 张' in log
     finally:app._close()
 
 
