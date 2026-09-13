@@ -1,6 +1,6 @@
-# AI选片助手 v1.2.1
+# AI选片助手 v1.2.2
 
-源码中的清晰度改进和可选“身体清晰度检查（实验）”开关见 [验证与使用说明](docs/clarity-v2-validation.md)。本轮不发布新 EXE。
+v1.2.2 的清晰度改进和可选“身体清晰度检查（实验）”开关见 [验证与使用说明](docs/clarity-v2-validation.md)。
 
 Windows 便携选片工具：本地扫描照片、分组、生成联系表、修正人脸小窗；通过 Lightroom Classic 插件把评级和弃置状态写入 Catalog。
 

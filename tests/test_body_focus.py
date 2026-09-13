@@ -16,6 +16,17 @@ class Detector:
         return self.detections
 
 
+def test_model_loaders_use_bytes_for_chinese_installation_paths(tmp_path, monkeypatch):
+    model = tmp_path / '中文模型.onnx'
+    model.write_bytes(b'onnx-test-bytes')
+    loaded = []
+    monkeypatch.setattr(body_focus.cv2.dnn, 'readNetFromONNX',
+                        lambda buffer: loaded.append(buffer.tobytes()) or object())
+    body_focus._PersonDetector(model)
+    body_focus._PoseEstimator(model)
+    assert loaded == [b'onnx-test-bytes', b'onnx-test-bytes']
+
+
 class Pose:
     def __init__(self, result=None):
         self.result = result

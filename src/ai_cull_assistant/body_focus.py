@@ -93,7 +93,8 @@ def _ssd_anchors() -> np.ndarray:
 
 class _PersonDetector:
     def __init__(self, model_path: Path, score_threshold: float = 0.5):
-        self.net = cv2.dnn.readNet(str(model_path))
+        # OpenCV's native filename loader cannot reliably open Chinese paths on Windows.
+        self.net = cv2.dnn.readNetFromONNX(np.frombuffer(model_path.read_bytes(), dtype=np.uint8))
         self.score_threshold = score_threshold
         self.anchors = _ssd_anchors()
 
@@ -139,7 +140,7 @@ class _PersonDetector:
 
 class _PoseEstimator:
     def __init__(self, model_path: Path, confidence: float = 0.5):
-        self.net = cv2.dnn.readNet(str(model_path))
+        self.net = cv2.dnn.readNetFromONNX(np.frombuffer(model_path.read_bytes(), dtype=np.uint8))
         self.confidence = confidence
 
     def infer(self, image: np.ndarray, person: np.ndarray) -> dict[str, Any] | None:

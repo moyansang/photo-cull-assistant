@@ -20,6 +20,15 @@ def run(report_path: str) -> None:
 
         assert detect(np.zeros((320, 320, 3), np.uint8)) == []
         report["yunet_model_inference"] = True
+        import sys
+        if getattr(sys, 'frozen', False):
+            from .body_focus import _get_models
+            detector, pose = _get_models()
+            blank = np.zeros((320, 320, 3), np.uint8)
+            assert len(detector.infer(blank)) == 0
+            pose.infer(blank, np.asarray([100, 40, 180, 100, 140, 200, 140, 40,
+                                         140, 100, 140, 40, .99], dtype=np.float32))
+            report['bundled_body_models_inference'] = True
         with tempfile.TemporaryDirectory(prefix="aicull-smoke-") as folder:
             root = Path(folder)
             app = App(settings_dir=root)
