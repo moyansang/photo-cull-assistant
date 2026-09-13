@@ -49,6 +49,8 @@ def load_session(workspace,input_dir):
             feature=row['subject_features']
             for key in ('face','head'):
                 if feature.get(key):feature[key]=tuple(feature[key])
+            if feature.get('landmarks'):
+                feature['landmarks']=tuple(tuple(point) for point in feature['landmarks'])
             row['subject_features']=SubjectFeatures(**feature)
         if row['preview_path'] and not row['preview_path'].is_file():
             from .workspace_archive import previews_were_compacted

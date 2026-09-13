@@ -15,7 +15,7 @@ from .models import RAW_EXTENSIONS
 from .screening import ScreeningResult
 from .subject import detail_features
 
-VERSION = "native-face-v3"
+VERSION = "native-face-v4-kps"
 
 
 def load_full_image(asset):
@@ -48,18 +48,20 @@ def focus_metrics(gray):
 def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
     settings = crop_settings or CropSettings()
     try:
-        subject = detail_features(asset, settings)
+        subject = detail_features(asset, settings, require_landmarks=True)
     except (OSError, ValueError, cv2.error):
         return ScreeningResult(False, "preview_unreadable", False, analysis_version=VERSION)
     if not subject or not subject.face:
         return ScreeningResult(False, "no_reliable_face", False, analysis_version=VERSION)
     face = tuple(subject.face)
+    normalized_landmarks = getattr(subject, "landmarks", None)
     source = asset.raw_path or asset.primary_path
     try:
         stat = source.stat()
         identity = dict(
             version=VERSION, path=str(source.resolve()), size=stat.st_size,
             mtime=stat.st_mtime_ns, face=face,
+            landmarks=normalized_landmarks,
         )
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         cache = Path(cache_dir) / VERSION / (digest + '.json') if cache_dir else None
@@ -87,7 +89,19 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
             )
         gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
         lap, gradient, ratio = focus_metrics(gray)
-        evidence = detail_metrics(cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
+        local_landmarks = None
+        if normalized_landmarks and len(normalized_landmarks) == 5:
+            try:
+                local_landmarks = tuple(
+                    (float(lx) * width - box[0], float(ly) * height - box[1])
+                    for lx, ly in normalized_landmarks
+                )
+            except (TypeError, ValueError):
+                local_landmarks = None
+        evidence = detail_metrics(
+            cv2.cvtColor(crop, cv2.COLOR_RGB2BGR),
+            landmarks=local_landmarks,
+        )
         rejected = evidence["state"] == "severe_blur"
         reason = {
             "severe_blur": "obvious_subject_blur",
