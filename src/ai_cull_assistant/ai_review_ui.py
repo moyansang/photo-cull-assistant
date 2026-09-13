@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import gc
 import os
 import queue
 import threading
@@ -413,6 +414,9 @@ class ReviewDialog(tk.Toplevel):
                 self._api_queue.put(("web_prepared", submission["id"]))
             except Exception as exc:
                 self._api_queue.put(("web_prepare_error", str(exc)))
+        # Tk variable/image finalizers must run on the Tk thread. Flush
+        # unreachable wrappers before a worker can become the collector.
+        gc.collect()
         threading.Thread(target=work, daemon=True).start()
 
     def _copy_web_prompt(self) -> None:
@@ -658,6 +662,8 @@ class ReviewDialog(tk.Toplevel):
                 self._api_queue.put(("prepared", task, submit_after))
             except Exception as exc:
                 self._api_queue.put(("prepare_error", str(exc)))
+        # See _prepare_web: keep delayed Tk finalizers on the UI thread.
+        gc.collect()
         threading.Thread(target=work, daemon=True).start()
 
     def _resubmit_api(self):
@@ -1129,26 +1135,31 @@ class ReviewDialog(tk.Toplevel):
         current = [photo for photo in photos if not photo.get("stale")]
         ai_rated = 0
         technical_rejected = 0
+        clarity_pending = 0
         unscored = 0
         for photo in current:
             ai = photo.get("ai") or {}
             rating = ai.get("rating")
+            pending = photo.get("focus_review") is True
             has_ai_rating = (
                 ai.get("fingerprint") == photo.get("fingerprint")
                 and type(rating) is int
                 and 1 <= rating <= 5
+                and not pending
             )
             ai_rated += int(has_ai_rating)
             technical_rejected += int(bool(photo.get("technical_reason")))
+            clarity_pending += int(pending)
             unscored += int(not has_ai_rating)
         if unscored:
             summary = (
                 f"当前有效照片共 {len(current)} 张：\n"
                 f"• AI 已评分：{ai_rated} 张\n"
                 f"• 技术筛选弃置：{technical_rejected} 张\n"
+                f"• 清晰度待确认：{clarity_pending} 张\n"
                 f"• 尚无 AI 评分：{unscored} 张\n\n"
                 "技术筛选弃置为独立统计，可能同时出现在已评分或未评分数量中。\n"
-                "继续导出时，未评分照片不会写入 AI 星级；其中已有技术筛选弃置结果的照片仍会导出弃置标记。\n\n"
+                "继续导出时，待确认照片只进入 Lightroom 的清晰度待确认收藏夹，不写入 AI 星级；技术筛选弃置仍会导出弃置标记。\n\n"
                 "是否导出当前已有结果？选择“否”可返回继续选片。"
             )
             if not messagebox.askyesno("仍有照片未评分", summary, parent=self):

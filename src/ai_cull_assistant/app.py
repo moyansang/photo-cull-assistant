@@ -750,17 +750,18 @@ class App(tk.Tk):
                             if asset.auto_rejected and asset.screening_reason != "ai_focus_blur"
                         )
                         rejected = local_rejected + ai_rejected
-                        eligible = len(result.assets) - rejected
+                        from .ai_project import ReviewProject
+                        eligible = sum(ReviewProject._asset_is_admitted(asset) for asset in result.assets)
                         if mode == "scan":
                             self._log(
                                 f"扫描完成：{len(result.assets)} 张照片；本地虚焦/抖动弃置 {local_rejected} 张；"
-                                f"清晰度待 AI 复核 {uncertain} 张。"
+                                f"清晰度待确认 {uncertain} 张；可进入 AI 选片 {eligible} 张。"
                             )
                             next_step = "检测/调整人脸框"
                         elif mode == "rescan":
                             self._log(
                                 f"修改照片重新扫描完成；本地虚焦/抖动弃置共 {local_rejected} 张；"
-                                f"清晰度待 AI 复核 {uncertain} 张。"
+                                f"清晰度待确认 {uncertain} 张；可进入 AI 选片 {eligible} 张。"
                             )
                             next_step = "AI 复核"
                         elif mode == "focus":
@@ -1034,7 +1035,8 @@ class App(tk.Tk):
         if not self.scan_result:
             messagebox.showinfo("提示", "请先扫描图片并生成联系表。", parent=self)
             return
-        if not self._sheets_ready():
+        from .ai_project import ReviewProject
+        if not self._sheets_ready() and any(ReviewProject._asset_is_admitted(a) for a in self.scan_result.assets):
             messagebox.showinfo("提示", "当前联系表尚未生成或已经过期，请先生成联系表。", parent=self)
             return
         try:

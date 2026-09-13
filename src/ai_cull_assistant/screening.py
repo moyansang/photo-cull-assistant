@@ -145,6 +145,8 @@ def screen_assets(
         asset.screening_reason = result.reason
         asset.focus_score = result.laplacian_variance
         asset.face_found = result.face_found
+        asset.clarity_version = "clarity-v2"
+        asset.clarity_evidence = result.focus_evidence
         results[asset.stem] = result
     return results
 

@@ -119,6 +119,12 @@ def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: 
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("API 清晰度复核没有提供原因")
     result = dict(reviewed)
+    evidence = screened.focus_evidence or {}
+    if getattr(asset, 'clarity_version', None) == 'clarity-v2' and status == 'clear' and (
+            evidence.get('state') == 'severe_blur' or evidence.get('motion_suspect') is True):
+        result['api_status'] = status
+        status = 'uncertain'
+        reason = '本地模糊证据与 API 清晰结论冲突，需检查原图：' + reason
     result["status"] = status
     result["reason"] = reason.strip()
     # Fail before changing the asset if the result cannot be checkpointed.
@@ -476,6 +482,8 @@ class ProcessingJob:
                     asset.screening_reason = "screening_disabled"
                     asset.focus_score = None
                     asset.face_found = False
+                    asset.clarity_version = "clarity-v2"
+                    asset.clarity_evidence = {"state": "uncertain", "reasons": ["screening_disabled"]}
                     screened = ScreeningResult(False, "screening_disabled", False)
                 if self.mode == "rescan":
                     # A manually changed face selection invalidates only this

@@ -80,3 +80,12 @@ def test_api_focus_status_uses_existing_lightroom_keyword(tmp_path):
         "clarity_reason": "双眼存在运动拖影",
     }
     assert not list(photo.primary_path.parent.glob("*.xmp"))
+
+
+def test_screening_disabled_is_pending_only_under_new_clarity_policy(tmp_path):
+    photo = asset(tmp_path / "photos")
+    photo.screening_reason = "screening_disabled"
+    assert focus_review_status(photo) is None
+    photo.clarity_version = "clarity-v2"
+    photo.clarity_evidence = {"state": "uncertain", "reasons": ["screening_disabled"]}
+    assert focus_review_status(photo) is True

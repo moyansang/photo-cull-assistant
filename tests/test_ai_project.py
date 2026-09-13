@@ -522,3 +522,103 @@ def test_export_ai_metadata_tracks_current_photo_reply_and_focus(tmp_path):
     rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
     first=next(r for r in rows if r['filename']=='A.jpg')
     assert first['ai_metadata']['selection_reason']==''
+
+
+def _mark_v2(asset,state,reason=None):
+    asset.clarity_version='clarity-v2'
+    asset.clarity_evidence={'state':state,'reasons':[reason or state]}
+    asset.auto_rejected=state=='severe_blur'
+    asset.screening_reason={
+        'clear':'subject_not_obviously_blurred',
+        'uncertain':'face_focus_uncertain',
+        'severe_blur':'obvious_subject_blur',
+    }[state]
+
+
+def test_v2_pending_is_excluded_from_api_and_web_but_exported_to_lr(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    _mark_v2(assets[0],'clear')
+    _mark_v2(assets[1],'uncertain','borderline_focus_evidence')
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    clear_id,pending_id=map(photo_id,assets)
+
+    assert [pid for batch in task['batches'] for pid in batch['photo_ids']]==[clear_id]
+    assert pending_id not in task['batches'][0]['prompt']
+    submission=project.create_web_submission(task,[task['batches'][0]['id']])
+    assert submission['photo_ids']==[clear_id]
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    pending=next(row for row in rows if row['filename']=='B.jpg')
+    assert pending['focus_review'] is True
+    assert 'rating' not in pending and 'pick_status' not in pending
+    assert pending['ai_metadata']['clarity_status']=='清晰度待确认'
+    assert '证据不足' in pending['ai_metadata']['clarity_reason']
+
+
+def test_v2_pending_only_workspace_needs_no_selection_task_to_export(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    for asset in assets:_mark_v2(asset,'uncertain')
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    assert task['batches']==[]
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    assert len(rows)==2
+    assert all(row['focus_review'] is True for row in rows)
+    assert all('rating' not in row and 'pick_status' not in row for row in rows)
+
+
+def test_legacy_pending_photo_keeps_old_selection_admission(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    assets[0].screening_reason='face_focus_uncertain'
+    assert assets[0].clarity_version is None
+    task=project.create_task(assets,CropSettings(),{})
+    assert photo_id(assets[0]) in task['batches'][0]['photo_ids']
+
+
+def test_v2_clarity_change_invalidates_old_batch_and_fingerprint(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    for asset in assets:_mark_v2(asset,'clear')
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    batch=task['batches'][0]
+    old=batch['fingerprints'][photo_id(assets[0])]
+    _mark_v2(assets[0],'uncertain')
+
+    assert fingerprint(assets[0],CropSettings())!=old
+    with pytest.raises(ValueError,match='清晰度待确认'):
+        project.batch_images(task,batch)
+
+
+@pytest.mark.parametrize('channel',['api','web'])
+def test_selection_clarity_concern_becomes_pending_and_suppresses_rating_export(tmp_path,channel):
+    project,assets,_,_=setup_project(tmp_path)
+    for asset in assets:_mark_v2(asset,'clear')
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    batch=task['batches'][0]
+    target=photo_id(assets[0])
+    if channel=='api':
+        payload=json.loads(answer(task,batch,5))
+        payload['photos'][0]['clarity']={'status':'blur','reason':'眼部疑似存在方向性拖影'}
+        assert project.ingest(task,batch,json.dumps(payload,ensure_ascii=False))==[]
+    else:
+        submission=project.create_web_submission(task,[batch['id']])
+        payload=json.loads(web_answer(task,submission,5))
+        payload['photos'][0]['clarity']={'status':'uncertain','reason':'联系表中眼部细节不足'}
+        assert project.ingest_web(task,submission,json.dumps(payload,ensure_ascii=False))==[]
+    photo=project.data['photos'][target]
+    assert photo['focus_review'] is True
+    assert photo['selection_focus_concern']['reason']
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    row=next(row for row in rows if row['filename']=='A.jpg')
+    assert row['focus_review'] is True
+    assert row['ai_metadata']['clarity_status']=='清晰度待确认'
+    assert 'rating' not in row and 'pick_status' not in row
+    next_task=project.create_task(assets,CropSettings(),{})
+    assert target not in [pid for batch in next_task['batches'] for pid in batch['photo_ids']]
+
+
+def test_legacy_text_focus_request_becomes_pending_but_clear_text_does_not(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    payload=json.loads(answer(task,batch,5))
+    payload['photos'][0]['review_items']=['眼部疑似虚焦，请检查原图']
+    payload['photos'][1]['reason']='眼睛清晰，对焦准确'
+    assert project.ingest(task,batch,json.dumps(payload,ensure_ascii=False))==[]
+    assert project.data['photos'][photo_id(assets[0])]['focus_review'] is True
+    assert project.data['photos'][photo_id(assets[1])].get('selection_focus_concern') is None

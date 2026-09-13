@@ -33,6 +33,9 @@ class PhotoAsset:
     subject_confidence: float = .8
     ai_focus_result: dict | None = None
     ai_focus_dirty: bool = False
+    # Absent on old sessions: opening them must not silently reclassify photos.
+    clarity_version: str | None = None
+    clarity_evidence: dict | None = None
 
     @property
     def rating_target_paths(self) -> list[Path]:
