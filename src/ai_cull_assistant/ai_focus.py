@@ -13,7 +13,7 @@ from .ai_api import ApiError, call_model
 from .crop_settings import CropSettings
 
 
-PROMPT_VERSION = "focus-review-v1"
+PROMPT_VERSION = "focus-review-v2"
 MAX_IMAGE_EDGE = 1024
 MAX_DETAIL_IMAGES = 18  # One additional slot is reserved for the overview.
 _RESULT_KEYS = {"photo_identity", "status", "reason"}
@@ -74,6 +74,7 @@ def _cache_digest(
     identity = {
         "prompt_version": PROMPT_VERSION,
         "source": _source_identity(asset, face),
+        "body": (getattr(asset, 'clarity_evidence', None) or {}).get('body'),
         # Include only service/generation identity.  Display metadata, timeout, and
         # credentials are deliberately excluded from both digest input and cache.
         "profile": {key: profile[key] for key in _GENERATION_PROFILE_FIELDS if key in profile},
@@ -162,11 +163,39 @@ def _prepare_focus_images(
         reliable_face = proposed_face if proposed_face and _preview_geometry_matches(asset, image.size) else None
         detail_box = _face_box(image.size, reliable_face) if reliable_face else _center_box(image.size)
         detail_paths: list[Path] = []
+        # Dedicated native eye windows make important detail visible without
+        # resampling a large face tile. Never invent landmarks for manual boxes.
+        subject = detail_features(asset, crop_settings) if reliable_face else None
+        landmarks = getattr(subject, "landmarks", None)
+        if landmarks and len(landmarks) >= 2:
+            radius = max(48, min(256, round(reliable_face[2] * width * .20)))
+            for index, (ex, ey) in enumerate(landmarks[:2], 1):
+                if not (0 <= ex <= 1 and 0 <= ey <= 1):
+                    continue
+                box = (max(0, round(ex*width)-radius), max(0, round(ey*height)-radius),
+                       min(width, round(ex*width)+radius), min(height, round(ey*height)+radius))
+                path = directory / f"eye_native_{index:02d}.png"
+                image.crop(box).save(path, format="PNG")
+                detail_paths.append(path)
         label = "face_native" if reliable_face else "center_native"
-        for index, box in enumerate(_tile_boxes(detail_box), start=1):
+        body=(getattr(asset, 'clarity_evidence', None) or {}).get('body') or {}
+        body_boxes = []
+        if body:
+            from .body_focus import body_review_boxes
+            body_boxes = body_review_boxes(body)
+        for index, box in enumerate(_tile_boxes(detail_box)[:MAX_DETAIL_IMAGES-len(detail_paths)-len(body_boxes)], start=1):
             path = directory / f"{label}_{index:02d}.png"
             with image.crop(box) as detail:
                 detail.save(path, format="PNG")
+            detail_paths.append(path)
+        for index, box in enumerate(body_boxes,1):
+            # Native windows; no downsampling that could hide motion blur.
+            left,top,right,bottom=box
+            cx,cy=(left+right)//2,(top+bottom)//2
+            left=max(0,cx-min(512,(right-left)//2));top=max(0,cy-min(512,(bottom-top)//2))
+            right=min(width,left+min(1024,box[2]-box[0]));bottom=min(height,top+min(1024,box[3]-box[1]))
+            path=directory/f'body_native_{index:02d}.png'
+            image.crop((left,top,right,bottom)).save(path,format='PNG')
             detail_paths.append(path)
     return [overview_path, *detail_paths], reliable_face is not None
 
@@ -181,21 +210,26 @@ def prepare_focus_images(asset: Any, crop_settings: CropSettings, out_dir: Path)
     return images
 
 
-def _prompt(photo_identity: str, face_found: bool) -> str:
+def _prompt(photo_identity: str, face_found: bool, body_images: int = 0) -> str:
     target = (
         "已可靠定位主要人脸。请以人脸，尤其是眼睛与睫毛的真实细节作为清晰度判断主体。"
         if face_found
         else "未能可靠定位主要人脸。不要猜测主体位置；无论画面其他区域看起来多清楚，status 必须为 uncertain。"
     )
+    if body_images:
+        target += f" 最后 {body_images} 张是与所选人脸对应的主体身体细节。检查躯干及手臂、腿等主要部位的明显运动拖影；忽略仅指尖、发梢、衣摆轻微运动及背景景深虚化。observations 还须加入 body_motion 字段（present|absent|uncertain）。任何主体部位明确模糊则 blur，身体不确定不能仅因脸清楚而 clear。"
+    body_field = ',"body_motion":"present|absent|uncertain"' if body_images else ''
     return f"""你正在审核单张照片的主体对焦清晰度。第一张图是总览，后续图片是从原始文件直接裁切的原生像素细节，未放大、未锐化。{target}
 
-只判断主体是否存在明显失焦或运动模糊：
+检查真实边缘而不是仅凭眼睛轮廓、深色眼线或假睫毛可见就说清晰。注意沿同一方向延伸的亮点、重影、发丝粘连和睫毛边缘软化。
+噪声、柔和光线、皮肤平滑、遮挡或低纹理不等同于失焦；不能因看不见被遮挡的细节而认定严重模糊。
+先分别观察失焦软化、运动拖影、噪声、遮挡，再判断主体：
 - clear：主体关键细节明确清楚；
 - blur：主体关键细节明确严重模糊；
 - uncertain：证据不足、主体无法可靠定位、细节太少，或介于两者之间。
 
 只输出一个 JSON 对象，不能使用 Markdown、代码围栏或额外文字，也不能增加字段。格式必须是：
-{{"photo_identity":{json.dumps(photo_identity, ensure_ascii=False)},"status":"clear|blur|uncertain","reason":"一句简洁的中文理由"}}
+{{"photo_identity":{json.dumps(photo_identity, ensure_ascii=False)},"status":"clear|blur|uncertain","reason":"指出实际看到的边缘证据，不使用泛泛的睫毛清晰结论","observations":{{"defocus":"present|absent|uncertain","motion_blur":"present|absent|uncertain","noise":"present|absent|uncertain","occlusion":"present|absent|uncertain"{body_field}}}}}
 photo_identity 必须逐字照抄。"""
 
 
@@ -219,7 +253,7 @@ def _parse_response(text: object, photo_identity: str) -> dict[str, str]:
         )
     except (TypeError, ValueError):
         raise ApiError("AI 清晰度审核返回的不是严格 JSON。") from None
-    if not isinstance(value, dict) or set(value) != _RESULT_KEYS:
+    if not isinstance(value, dict) or set(value) not in (_RESULT_KEYS, _RESULT_KEYS | {"observations"}):
         raise ApiError("AI 清晰度审核返回的 JSON 字段无效。")
     if value["photo_identity"] != photo_identity:
         raise ApiError("AI 清晰度审核返回了不匹配的照片标识。")
@@ -228,7 +262,20 @@ def _parse_response(text: object, photo_identity: str) -> dict[str, str]:
     reason = value["reason"]
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:
         raise ApiError("AI 清晰度审核返回了无效理由。")
-    return {"status": value["status"], "reason": reason.strip()}
+    parsed = {"status": value["status"], "reason": reason.strip()}
+    if "observations" in value:
+        observations = value["observations"]
+        if (not isinstance(observations, dict)
+                or set(observations) not in ({"defocus", "motion_blur", "noise", "occlusion"}, {"defocus", "motion_blur", "noise", "occlusion", "body_motion"})
+                or any(not isinstance(v, str) or v not in {"present", "absent", "uncertain"} for v in observations.values())):
+            raise ApiError("AI 清晰度审核观察字段无效。")
+        parsed["observations"] = observations
+        judged = ('defocus','motion_blur','body_motion') if 'body_motion' in observations else ('defocus','motion_blur')
+        if parsed['status'] == 'clear' and any(observations[k] != 'absent' for k in judged):
+            parsed.update(status='uncertain', reason='模型清晰结论与其模糊观察冲突：' + reason.strip())
+        if parsed['status'] == 'blur' and all(observations[k] != 'present' for k in judged):
+            parsed.update(status='uncertain', reason='模型未给出明确失焦或拖影证据：' + reason.strip())
+    return parsed
 
 
 def _cached_result(path: Path) -> dict[str, Any] | None:
@@ -240,7 +287,7 @@ def _cached_result(path: Path) -> dict[str, Any] | None:
         return None
     if value.get("source") != "api" or not isinstance(value.get("reason"), str) or not value["reason"].strip():
         return None
-    allowed = {"status", "reason", "source", "raw_response", "usage"}
+    allowed = {"status", "reason", "source", "raw_response", "usage", "observations", "audit", "prompt_version"}
     if not set(value) <= allowed:
         return None
     return value
@@ -279,14 +326,26 @@ def review_focus(
         asset, settings, root / PROMPT_VERSION / "images" / digest, face
     )
     photo_identity = str(asset.stem)
-    response = call_model(profile, _prompt(photo_identity, face_found), image_paths)
+    body_images = sum(path.name.startswith('body_native_') for path in image_paths)
+    prompt = _prompt(photo_identity, face_found, body_images)
+    from .focus_audit import record_inputs, record_response
+    audit = record_inputs(root, digest, image_paths, prompt, profile, PROMPT_VERSION)
+    try:
+        response = call_model(profile, prompt, image_paths)
+    except ApiError as exc:
+        record_response(root, digest, {"error": str(exc)})
+        raise
     if not isinstance(response, Mapping):
         raise ApiError("AI 清晰度审核返回了无法识别的响应。")
     raw_response = response.get("text")
+    record_response(root, digest, {"raw_response": raw_response, "usage": response.get("usage", {})})
     parsed = _parse_response(raw_response, photo_identity)
+    if body_images and parsed['status']=='clear' and parsed.get('observations',{}).get('body_motion')!='absent':
+        parsed.update(status='uncertain',reason='身体复核未提供明确清晰证据：'+parsed['reason'])
     if not face_found:
         parsed = {"status": "uncertain", "reason": "未检测到可靠人脸，无法可靠判断主体清晰度。"}
-    result: dict[str, Any] = {**parsed, "source": "api", "raw_response": raw_response}
+    result: dict[str, Any] = {**parsed, "source": "api", "raw_response": raw_response,
+                            "audit": audit, "prompt_version": PROMPT_VERSION}
     if isinstance(response.get("usage"), dict):
         result["usage"] = response["usage"]
     _write_cache(cache_path, result)
