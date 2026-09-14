@@ -60,10 +60,62 @@ def workspace_for(settings_dir,input_dir,preferred=None):
         previous=data.get('input_dir')
         if previous and _key(previous)!=source:
             raise ValueError('这个工作区包含另一批照片的分析，请选择独立工作区。')
+        relocate_copied_workspace(chosen, data)
     chosen.mkdir(parents=True,exist_ok=True)
     registry[source]=str(chosen)
     save_values(settings_dir,{'workspaces':registry})
     return chosen
+
+
+def workspace_input(workspace):
+    """Read the source associated with an explicitly selected saved workspace."""
+    from .workspace_archive import restore_workspace
+    workspace=Path(workspace).resolve()
+    restore_workspace(workspace)
+    session=workspace/'scan-session.json'
+    if not session.is_file():return None
+    data=json.loads(session.read_text('utf-8'))
+    source=data.get('input_dir')
+    if not source or not Path(source).is_dir():
+        raise ValueError('工作区记录的照片文件夹不可用，请先连接原照片所在磁盘。')
+    return source
+
+
+def relocate_copied_workspace(workspace, session):
+    """Rebase disposable previews and AI snapshot references in a copied session."""
+    old=Path(session['workspace_dir']).resolve()
+    workspace=Path(workspace).resolve()
+    if old==workspace:return
+    if session.get('version')!=1:raise ValueError('扫描记录版本不支持')
+    for active in (workspace/'.processing/active.json',workspace/'cache/processing/active.json'):
+        if active.exists():raise ValueError('复制的工作区有中断任务，请在原工作区完成任务后再复制。')
+    for name, expected in session['source_stats'].items():
+        st=Path(name).stat()
+        if [st.st_size,st.st_mtime_ns]!=expected:raise ValueError('原照片已修改，未迁移工作区记录。')
+    def rebase(value, field=None):
+        if field in {'input_dir','primary_path','raw_path','jpg_path','display_path','target_paths','source_stats','path'}:
+            return value
+        if isinstance(value,dict):return {k:rebase(v,k) for k,v in value.items()}
+        if isinstance(value,list):return [rebase(v,field) for v in value]
+        if isinstance(value,str) and Path(value).is_absolute():
+            try:return str(workspace/Path(value).relative_to(old))
+            except ValueError:pass
+        return value
+    changes=[]
+    # Publish the session last so interruption can safely retry the same mapping.
+    for name in ('ai_project.json','scan-session.json'):
+        path=workspace/name
+        if path.is_file():
+            if path.is_symlink():raise ValueError('工作区记录包含链接，未迁移。')
+            payload=path.read_bytes()
+            changes.append((path,payload,rebase(json.loads(payload))))
+    backup=workspace/'.workspace-relocation-backup'
+    if backup.is_symlink():raise ValueError('工作区备份目录包含链接，未迁移。')
+    backup.mkdir(exist_ok=True)
+    for path,payload,value in changes:
+        saved=backup/path.name
+        if not saved.exists():saved.write_bytes(payload)
+        _atomic(path,value)
 
 def load_workspace_preferences(settings_dir,workspace,input_dir):
     from .workspace_archive import restore_workspace

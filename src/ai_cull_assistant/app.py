@@ -241,6 +241,20 @@ class App(tk.Tk):
             return False
         input_dir = self.input_var.get().strip()
         requested_workspace = self.workspace_var.get().strip()
+        if self._workspace_user_custom and requested_workspace:
+            try:
+                from .project_storage import workspace_input
+                recorded_input = workspace_input(requested_workspace)
+                if recorded_input:
+                    input_dir = recorded_input
+                    self._suppress_settings_trace = True
+                    try:
+                        self.input_var.set(input_dir)
+                    finally:
+                        self._suppress_settings_trace = False
+            except (OSError, ValueError, zipfile.BadZipFile) as exc:
+                self._log(f"工作区未打开：{exc}")
+                return False
         if not input_dir:
             if self._active_input:
                 self._save_active_workspace_preferences()

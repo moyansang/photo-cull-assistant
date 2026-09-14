@@ -1,10 +1,39 @@
 import json
+import shutil
 
 from ai_cull_assistant import app as app_module
 from ai_cull_assistant.app import App
 from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.project_storage import save_workspace_preferences, workspace_for
 from ai_cull_assistant.settings import read_values, save_values
+
+
+def test_select_copied_workspace_without_selecting_source_first(tmp_path):
+    from PIL import Image
+    from ai_cull_assistant.workflow import run_scan
+    from ai_cull_assistant.session_store import save_session
+    from ai_cull_assistant.workspace_archive import compact_workspace
+    source=make_source(tmp_path,'photos')
+    Image.new('RGB',(120,180),'white').save(source/'A.jpg')
+    old=tmp_path/'old'
+    result=run_scan(source,old,technical_screening=False)
+    save_session(result)
+    assert compact_workspace(old)['compacted']
+    copied=tmp_path/'copied'
+    shutil.copytree(old,copied)
+    app=make_app(tmp_path/'settings','','')
+    try:
+        app.workspace_var.set(str(copied))
+        app._save_preferences()
+        assert app.input_var.get()==str(source)
+        assert app.workspace_var.get()==str(copied)
+        assert app.scan_result and len(app.scan_result.assets)==1
+        assert app.scan_result.workspace_dir==copied
+        assert app.scan_result.assets[0].preview_path.is_relative_to(copied)
+        assert read_values(tmp_path/'settings')['workspaces'][str(source.resolve()).casefold()]==str(copied)
+        assert (old/'.workspace-archive.zip').exists()
+    finally:
+        app._close()
 
 
 def make_source(tmp_path, name):
