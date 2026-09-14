@@ -52,6 +52,9 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
     except (OSError, ValueError, cv2.error):
         return ScreeningResult(False, "preview_unreadable", False, analysis_version=VERSION)
     if not subject or not subject.face:
+        if subject and getattr(subject, 'head', None):
+            return ScreeningResult(False, 'head_only_localized', False, analysis_version=VERSION,
+                                   focus_evidence={'state':'uncertain','reasons':['head_without_visible_face']})
         return ScreeningResult(False, "no_reliable_face", False, analysis_version=VERSION)
     face = tuple(subject.face)
     normalized_landmarks = getattr(subject, "landmarks", None)

@@ -480,7 +480,10 @@ class ProcessingJob:
                 screened = ScreeningResult(**self._data["screening_results"][key])
             else:
                 if self.kind == "scan":
-                    build_preview(asset, self.output / "previews")
+                    override = crop_settings.photos.get(crop_settings.key(asset), {})
+                    legacy_preview = bool(override.get('manual_face') and override.get('preview_version', 'v04') == 'v04')
+                    build_preview(asset, self.output / "previews",
+                                  **({'legacy_orientation': True} if legacy_preview else {}))
                 if current["technical_screening"]:
                     screened = screen_assets(
                         [asset],

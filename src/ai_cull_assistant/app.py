@@ -323,7 +323,7 @@ class App(tk.Tk):
         self.destroy()
 
     def _compact_completed_workspace(self, workspace):
-        """Archive only finished exports; never rerun analysis to save space."""
+        """Archive a completed scan checkpoint without rerunning analysis."""
         from .workspace_archive import compact_workspace
         old_label = self.progress_label.get()
         old_percent = self.progress_var.get()
@@ -331,10 +331,19 @@ class App(tk.Tk):
             self._display_progress("整理工作区进度：", value)
             self.update_idletasks()
         try:
-            compact_workspace(workspace, progress=progress)
+            stats = compact_workspace(workspace, progress=progress)
+            if not stats["compacted"] and stats["reason"] != "工作区已经压缩":
+                # This may run after switching to another workspace, so write
+                # the explanation to the workspace that could not be compacted.
+                logfile = workspace_path(Path(workspace), "session.log")
+                logfile.parent.mkdir(parents=True, exist_ok=True)
+                with logfile.open("a", encoding="utf-8") as stream:
+                    stream.write(f"工作区未整理：{stats['reason']}\n")
+            return stats
         except (OSError, ValueError, RuntimeError) as exc:
             # Do not append to a possibly archived log after partial compaction.
             messagebox.showwarning("工作区整理未完成", f"已保留可恢复数据。\n{exc}", parent=self)
+            return {"compacted": False, "reason": str(exc)}
         finally:
             self._display_progress(old_label, old_percent)
 
@@ -877,9 +886,9 @@ class App(tk.Tk):
             for asset in self.scan_result.assets:
                 key = settings.key(asset)
                 previous_entry = {k: v for k, v in self.crop_settings.photos.get(key, {}).items()
-                                  if k != 'offset_x_factor' or v != 0}
+                                  if (k != 'offset_x_factor' or v != 0) and (k != 'preview_version' or v != 'v04')}
                 current_entry = {k: v for k, v in settings.photos.get(key, {}).items()
-                                 if k != 'offset_x_factor' or v != 0}
+                                 if (k != 'offset_x_factor' or v != 0) and (k != 'preview_version' or v != 'v04')}
                 if (previous_entry != current_entry
                         or self.crop_settings.detection_confidence != settings.detection_confidence):
                     asset.ai_focus_dirty = True

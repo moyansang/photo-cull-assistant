@@ -60,6 +60,18 @@ def test_snapshot_prompt_and_strict_answers(tmp_path):
     assert batch['status']=='invalid' and len(batch['raw_responses'])==3
 
 
+def test_legacy_manual_preview_marker_does_not_invalidate_ai(tmp_path):
+    _project, assets, _task, _batch = setup_project(tmp_path)
+    asset = assets[0]
+    key = CropSettings().key(asset)
+    crops = CropSettings(photos={key: {'manual_face': [.2, .2, .3, .4]}})
+    before = fingerprint(asset, crops)
+    crops.photos[key]['preview_version'] = 'v04'
+    assert fingerprint(asset, crops) == before
+    crops.photos[key]['preview_version'] = 'v05'
+    assert fingerprint(asset, crops) != before
+
+
 def test_human_decisions_preserved_and_export_only_confirmed(tmp_path):
     project,assets,task,batch=setup_project(tmp_path)
     project.ingest(task,batch,answer(task,batch))

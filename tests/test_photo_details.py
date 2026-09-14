@@ -6,7 +6,7 @@ from PIL import Image
 from ai_cull_assistant.models import PhotoAsset
 from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.crop_dialog import CropDialog
-from ai_cull_assistant.subject import detail_features, selection_score
+from ai_cull_assistant.subject import SubjectFeatures, detail_features, selection_score
 from ai_cull_assistant.yunet import FaceDetection
 
 
@@ -51,13 +51,21 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
         root.destroy()
 
 
-def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path):
-    path=tmp_path/'face.jpg'
+def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monkeypatch):
+    import ai_cull_assistant.crop_dialog as module
+    preview_dir=tmp_path/'v05';preview_dir.mkdir()
+    path=preview_dir/'face.jpg'
     Image.new('RGB',(400,600),'gray').save(path)
     asset=PhotoAsset('face',path,path,None,path,datetime.now(),'.jpg',preview_path=path)
     asset.subject_checked=True
     asset.subject_confidence=.8
-    asset.subject_features=SimpleNamespace(face=(.35,.2,.2,.2),head=(.3,.12,.3,.36))
+    asset.subject_features=SubjectFeatures('','','',(.35,.2,.2,.2),(.3,.12,.3,.36))
+    detections=[]
+    opened=[]
+    real_open=module.Image.open
+    monkeypatch.setattr(module, 'ensure_preview', lambda *_: (_ for _ in ()).throw(AssertionError('existing preview must be reused')))
+    monkeypatch.setattr(module, 'detect', lambda *_: detections.append(True) or [])
+    monkeypatch.setattr(module.Image, 'open', lambda *args,**kwargs: opened.append(True) or real_open(*args,**kwargs))
     root=tk.Tk();root.withdraw()
     try:
         dialog=CropDialog(root,[asset],CropSettings(),lambda settings:None)
@@ -65,16 +73,44 @@ def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path):
         left,top,right,bottom=dialog._crop_rect
         start_x=(left+right)/2;start_y=(top+bottom)/2
         dialog.pointer_down(SimpleNamespace(x=start_x,y=start_y))
+        assert dialog._crop_selected
+        assert dialog.canvas.itemcget('crop-outline','outline')=='#ffb000'
         dialog.pointer_move(SimpleNamespace(x=start_x+12,y=start_y+8))
+        assert len(dialog.canvas.find_withtag('crop-outline'))==1
+        assert not dialog.canvas.find_withtag('drag')
         dialog.pointer_up(SimpleNamespace(x=start_x+12,y=start_y+8))
         assert dialog.offset_x.get()>0
         assert dialog.shift.get()>0
+        assert dialog.canvas.itemcget('crop-outline','outline')=='#ffb000'
+        assert dialog.current_entry()['offset_x_factor']==round(dialog.offset_x.get(),3)
+        assert dialog.current_entry()['shift_factor']==round(dialog.shift.get(),3)
         assert 'manual_face' not in dialog.current_entry()
+        assert 'preview_version' not in dialog.current_entry()
         old_scale=dialog.scale.get()
         x,y,w,h,_,_=dialog._image_rect
         dialog.mouse_wheel(SimpleNamespace(x=x+w/2,y=y+h/2,delta=120,num=0))
-        assert dialog.scale.get()<old_scale
+        assert dialog.scale.get()==old_scale-.02
+        dialog.render()
+        assert len(detections)==1
+        assert len(opened)==1
+        dialog.manual_mode.set(True)
+        dialog.toggle_manual_mode()
+        assert not dialog._crop_selected
+        dialog.pointer_down(SimpleNamespace(x=start_x,y=start_y))
+        assert dialog._drag[0]=='manual'
+        dialog.pointer_move(SimpleNamespace(x=start_x+30,y=start_y+30))
+        dialog.pointer_up(SimpleNamespace(x=start_x+30,y=start_y+30))
+        assert dialog.current_entry()['preview_version']=='v05'
+        dialog.auto_face()
+        assert 'preview_version' not in dialog.current_entry()
         dialog.destroy()
+        asset.subject_features=SimpleNamespace(face=None,head=(.3,.12,.3,.36))
+        head_dialog=CropDialog(root,[asset],CropSettings(),lambda settings:None)
+        assert head_dialog._crop_rect is not None
+        labels=[head_dialog.canvas.itemcget(item,'text') for item in head_dialog.canvas.find_all()
+                if head_dialog.canvas.type(item)=='text']
+        assert '头部定位，清晰度待确认' in labels
+        head_dialog.destroy()
     finally:
         root.destroy()
 
@@ -112,24 +148,44 @@ def _check_restart(tmp_path):
 
 def test_next_unmarked_wraps_skips_hidden_and_preserves_edits(monkeypatch, tmp_path):
     import ai_cull_assistant.crop_dialog as module
-    assets=[SimpleNamespace(primary_path=tmp_path/str(i), stem=str(i)) for i in range(4)]
+    assets=[SimpleNamespace(
+        primary_path=tmp_path/str(i), stem=str(i),
+        subject_features=SimpleNamespace(face=(.2,.2,.2,.2), head=(.2,.15,.2,.3)),
+    ) for i in range(4)]
     settings=CropSettings()
     settings.photos[settings.key(assets[2])]={'hidden':True}
-    marked={0,1}
-    monkeypatch.setattr(module, 'detail_features', lambda asset, settings: SimpleNamespace(face=(.2,.2,.2,.2) if int(asset.stem) in marked else None))
+    assets[3].subject_features=None
+    monkeypatch.setattr(module, 'detail_features', lambda *_: (_ for _ in ()).throw(AssertionError('must use cached scan results')))
     calls=[]
     dialog=SimpleNamespace(assets=assets,index=1,store_current=lambda:calls.append('stored'),global_settings=lambda:settings,load_current=lambda:calls.append('loaded'),render=lambda:calls.append('rendered'),caption=SimpleNamespace(configure=lambda **kw:calls.append(kw['text'])))
     CropDialog.next_unmarked(dialog)
     assert dialog.index==3 and calls[:3]==['stored','loaded','rendered']
-    marked.remove(0)
+    assets[0].subject_features=None
     CropDialog.next_unmarked(dialog)
     assert dialog.index==0  # wraps past the last photo
-    marked.update({0,3})
+    assets[0].subject_features=SimpleNamespace(face=(.2,.2,.2,.2),head=None)
+    assets[3].subject_features=SimpleNamespace(face=None,head=(.2,.1,.3,.4))
     CropDialog.next_unmarked(dialog)
     assert '没有待补选' in calls[-1]
     dialog.assets=[]
     CropDialog.next_unmarked(dialog)
     assert '请先扫描' in calls[-1]
+
+
+def test_existing_manual_box_records_legacy_preview_version_on_store(tmp_path):
+    preview_dir=tmp_path/'v04';preview_dir.mkdir()
+    asset=SimpleNamespace(primary_path=tmp_path/'source.raw',preview_path=preview_dir/'source.jpg')
+    settings=CropSettings()
+    key=settings.key(asset)
+    edits={key:{'manual_face':[.2,.2,.3,.3]}}
+    dialog=SimpleNamespace(
+        assets=[asset],index=0,_loading=False,edits=edits,
+        global_settings=lambda:CropSettings(photos=edits),
+        settings=lambda:CropSettings(scale_factor=1.2,shift_factor=.1,offset_x_factor=.2),
+        _preview_version=CropDialog._preview_version,
+    )
+    CropDialog.store_current(dialog)
+    assert edits[key]['preview_version']=='v04'
 
 
 def test_crop_title_and_footer_visible_on_small_screen(tmp_path, monkeypatch):

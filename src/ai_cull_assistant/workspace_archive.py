@@ -15,7 +15,6 @@ import uuid
 import zipfile
 
 from .ai_project import atomic_json
-from .workspace_layout import workspace_path
 
 
 ARCHIVE_NAME = ".workspace-archive.zip"
@@ -76,9 +75,7 @@ def _assert_owned(root: Path, path: Path) -> None:
 
 def _active_processing_job(workspace: Path) -> bool:
     for candidate in (workspace / ".processing" / "active.json", workspace / "cache" / "processing" / "active.json"):
-        if candidate.is_symlink():
-            return True
-        if candidate.is_file():
+        if candidate.is_symlink() or candidate.exists():
             return True
     return False
 
@@ -87,15 +84,10 @@ def _eligible(workspace: Path) -> tuple[bool, str]:
     if _active_processing_job(workspace):
         return False, "工作区仍有未完成任务"
     project_path = workspace / "ai_project.json"
-    export_path = workspace_path(workspace, "lightroom_results.json")
-    if not project_path.is_file() or not export_path.is_file():
-        return False, "尚未完成 AI 选片并导出 Lightroom 结果"
     try:
-        project = _read_json(project_path)
-        exported = _read_json(export_path)
         session = _read_json(workspace / "scan-session.json")
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        return False, f"工作区结果无法验证：{exc}"
+        return False, f"没有可恢复的完整扫描记录：{exc}"
     try:
         input_dir = Path(session["input_dir"]).resolve()
     except (KeyError, TypeError, OSError) as exc:
@@ -104,19 +96,28 @@ def _eligible(workspace: Path) -> tuple[bool, str]:
     # case even a directory named ``previews`` cannot safely be assumed owned.
     if workspace == input_dir or workspace in input_dir.parents or input_dir in workspace.parents:
         return False, "工作区与照片文件夹重叠，未自动整理"
-    stage_path = workspace / "workflow-stage.json"
-    if stage_path.is_file():
-        try:
-            if _read_json(stage_path).get("contact_sheets_ready") is not True:
-                return False, "联系表尚未按当前结果生成"
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            return False, f"流程状态无法验证：{exc}"
-    export_id = project.get("last_export_id")
-    if not export_id or project.get("export_dirty") is True or exported.get("export_id") != export_id:
-        return False, "Lightroom 导出结果不是当前版本"
+    try:
+        from .session_store import load_session
+        result = load_session(workspace, input_dir)
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        return False, f"扫描记录无法验证：{exc}"
+    if result is None or not result.assets:
+        return False, "没有可恢复的完整扫描记录"
+
+    # A completed scan is already a durable checkpoint.  It is safe to archive
+    # it before contact sheets, AI review, or export have been run.  If an AI
+    # project does exist, retain the stricter checks for unfinished paid work.
+    if not project_path.is_file():
+        return True, ""
+    try:
+        project = _read_json(project_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return False, f"AI 选片记录无法验证：{exc}"
     tasks = project.get("tasks")
-    if not isinstance(tasks, list) or not tasks:
-        return False, "尚未建立 AI 选片任务"
+    if not isinstance(tasks, list):
+        return False, "AI 选片记录格式无效"
+    if not tasks:
+        return True, ""
     current_id = project.get("current_task_id")
     current = next((task for task in tasks if isinstance(task, dict) and task.get("id") == current_id), None)
     if current is None:
@@ -128,7 +129,7 @@ def _eligible(workspace: Path) -> tuple[bool, str]:
         return False, "AI 选片结果已经过时"
     try:
         if not _analysis_matches_project(workspace, session, project):
-            return False, "当前分组、人脸设置或照片状态尚未重新评审导出"
+            return False, "当前分组、人脸设置或照片状态尚未重新评审"
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         return False, f"当前分析无法验证：{exc}"
     return True, ""
@@ -208,7 +209,12 @@ def compact_workspace(workspace: str | Path, progress: Callable[[int], None] | N
     for path, _ in candidates:
         _assert_owned(root, path)
     preview_roots = [root / "previews"]
-    cache_roots = [root / ".analysis-cache", root / "cache" / "analysis"]
+    cache_roots = [
+        root / ".analysis-cache",
+        root / "cache" / "analysis",
+        root / ".processing",
+        root / "cache" / "processing",
+    ]
     removable = [path for path in preview_roots + cache_roots if path.exists()]
     for path in removable:
         _assert_owned(root, path)

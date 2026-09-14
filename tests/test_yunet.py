@@ -52,9 +52,29 @@ def test_lower_confidence_keeps_geometry_checks():
 def test_scaled_coordinates_map_back_to_original(monkeypatch):
     class Model:
         def setScoreThreshold(self, score): assert score == .9
-        def setInputSize(self, size): assert size == (1600, 800)
+        def setInputSize(self, size): self.size = size
         def detect(self, image): return 1, np.array([row()])
     monkeypatch.setattr(yunet, 'detector', lambda: Model())
     found = yunet.detect(np.zeros((1600, 3200, 3), np.uint8))[0]
     assert found.box == (60, 40, 80, 100)
     assert found.landmarks[0] == (80, 76)
+
+
+def test_quarter_turn_fallback_maps_box_and_real_landmarks(monkeypatch):
+    candidate = row()
+
+    class Model:
+        calls = 0
+        def setScoreThreshold(self, _score): pass
+        def setInputSize(self, size): self.size = size
+        def detect(self, _image):
+            self.calls += 1
+            # Original orientation finds nothing.  The first CCW pass detects
+            # a face in a 100x200 rotated image.
+            return (1, np.array([candidate])) if self.calls == 2 else (1, None)
+
+    monkeypatch.setattr(yunet, 'detector', lambda: Model())
+    found = yunet.detect(np.zeros((100, 200, 3), np.uint8), .9)
+    assert len(found) == 1
+    assert found[0].box == (130, 30, 50, 40)
+    assert found[0].landmarks[0] == (162, 40)

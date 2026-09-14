@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import shutil
 
 from PIL import Image
 
@@ -72,6 +73,50 @@ def test_completed_workspace_compacts_and_roundtrips_without_invalidating_ai(tmp
     assert ensure_preview(restored.assets[0]).is_file()
 
 
+def test_completed_scan_without_sheets_or_ai_compacts_and_restores(tmp_path):
+    photos = tmp_path / "photos"
+    photos.mkdir()
+    Image.new("RGB", (120, 180), "white").save(photos / "A.jpg")
+    workspace = tmp_path / "workspace"
+    result = run_scan(photos, workspace, technical_screening=False)
+    shutil.rmtree(result.contact_dir)
+    result.main_pages = []
+    result.rejected_pages = []
+    result.assets[0].group_id = 7
+    save_session(result)
+    processing_cache = workspace / "cache" / "processing" / "obsolete-job"
+    processing_cache.mkdir(parents=True)
+    (processing_cache / "temporary.bin").write_bytes(b"temporary")
+
+    stats = compact_workspace(workspace)
+
+    assert stats["compacted"]
+    assert not (workspace / "previews").exists()
+    assert not (workspace / "cache" / "processing").exists()
+    assert not (workspace / "contact_sheets").exists()
+    assert not (workspace / "ai_project.json").exists()
+
+    assert restore_workspace(workspace)["restored"]
+    restored = load_session(workspace, photos)
+    assert restored is not None
+    assert restored.assets[0].group_id == 7
+    assert restored.main_pages == [] and restored.rejected_pages == []
+
+
+def test_completed_ai_review_can_compact_before_export(tmp_path):
+    photos, workspace, _result, project, task, _batch, export, _crops = _completed_workspace(tmp_path)
+    paid_result = json.loads(project.path.read_text("utf-8"))["photos"]
+    export.unlink()
+
+    stats = compact_workspace(workspace)
+
+    assert stats["compacted"]
+    assert restore_workspace(workspace)["restored"]
+    reopened = ReviewProject(workspace)
+    assert reopened.current_task()["id"] == task["id"]
+    assert reopened.data["photos"] == paid_result
+
+
 def test_unfinished_or_stale_workspace_is_never_compacted(tmp_path):
     _photos, workspace, _result, project, task, _batch, _export, _crops = _completed_workspace(tmp_path)
     task["batches"][0]["status"] = "pending"
@@ -82,6 +127,26 @@ def test_unfinished_or_stale_workspace_is_never_compacted(tmp_path):
 
     assert not stats["compacted"] and "未完成" in stats["reason"]
     assert preview.is_file() and (workspace / "ai_project.json").is_file()
+
+
+def test_active_processing_job_and_its_cache_are_preserved(tmp_path):
+    photos = tmp_path / "photos"
+    photos.mkdir()
+    Image.new("RGB", (120, 180), "white").save(photos / "A.jpg")
+    workspace = tmp_path / "workspace"
+    result = run_scan(photos, workspace, technical_screening=False)
+    save_session(result)
+    processing = workspace / "cache" / "processing"
+    processing.mkdir(parents=True, exist_ok=True)
+    (processing / "active.json").write_text('{"job_id":"pending"}', encoding="utf-8")
+    (processing / "pending.bin").write_bytes(b"resume me")
+
+    stats = compact_workspace(workspace)
+
+    assert not stats["compacted"] and "未完成任务" in stats["reason"]
+    assert (processing / "active.json").is_file()
+    assert (processing / "pending.bin").read_bytes() == b"resume me"
+    assert Path(result.assets[0].preview_path).is_file()
 
 
 def test_corrupt_archive_does_not_remove_state_or_overwrite_on_restore(tmp_path):

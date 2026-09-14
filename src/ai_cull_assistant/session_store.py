@@ -52,10 +52,9 @@ def load_session(workspace,input_dir):
             if feature.get('landmarks'):
                 feature['landmarks']=tuple(tuple(point) for point in feature['landmarks'])
             row['subject_features']=SubjectFeatures(**feature)
-        if row['preview_path'] and not row['preview_path'].is_file():
-            from .workspace_archive import previews_were_compacted
-            if not previews_were_compacted(workspace):
-                raise ValueError('预览图丢失，请重新扫描')
+        # Preview JPEGs are disposable cache entries.  The source inventory
+        # above is the durable validity check; callers rebuild a missing
+        # preview lazily with ``ensure_preview`` when it is first displayed.
         assets.append(PhotoAsset(**row))
     data['assets']=assets
     for key in ('preview_dir','contact_dir','workspace_dir','group_store_path','input_dir','screening_results_path'):

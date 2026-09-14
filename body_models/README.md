@@ -1,5 +1,10 @@
 # Experimental body-focus models
 
+The same bundled person detector also supports the independent head-localization
+fallback in `head_detection.py`. That fallback may run when YuNet has no reliable
+subject, even while the experimental body-focus setting is off. It only locates
+a head; it does not approve sharpness or invent face landmarks.
+
 This optional module checks the selected person's visible torso and major arm
 and leg segments after the separate face-focus decision. It is experimental:
 the initial four user-labelled motion-blur examples all produce a conservative

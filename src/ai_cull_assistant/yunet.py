@@ -50,6 +50,57 @@ def valid_detection(row: np.ndarray, width: int, height: int, score_threshold: f
     return bool(-.2 <= nose_projection <= 1.3)
 
 
+def _map_from_quarter_turn(
+    point: tuple[float, float], turns: int, width: int, height: int,
+) -> tuple[float, float]:
+    """Map a point from a ``np.rot90`` image back to the unrotated image."""
+    x, y = point
+    turns %= 4
+    if turns == 1:
+        return width - y, x
+    if turns == 2:
+        return width - x, height - y
+    if turns == 3:
+        return y, height - x
+    return x, y
+
+
+def _map_detection(row: np.ndarray, turns: int, width: int, height: int) -> FaceDetection:
+    x, y, w, h = map(float, row[:4])
+    corners = [
+        _map_from_quarter_turn(point, turns, width, height)
+        for point in ((x, y), (x + w, y), (x, y + h), (x + w, y + h))
+    ]
+    low = np.min(corners, axis=0)
+    high = np.max(corners, axis=0)
+    points = tuple(
+        _map_from_quarter_turn((float(px), float(py)), turns, width, height)
+        for px, py in row[4:14].reshape(5, 2)
+    )
+    return FaceDetection(
+        (float(low[0]), float(low[1]), float(high[0] - low[0]), float(high[1] - low[1])),
+        points,
+        float(row[14]),
+    )
+
+
+def _iou(a: FaceDetection, b: FaceDetection) -> float:
+    ax, ay, aw, ah = a.box
+    bx, by, bw, bh = b.box
+    x0, y0 = max(ax, bx), max(ay, by)
+    x1, y1 = min(ax + aw, bx + bw), min(ay + ah, by + bh)
+    intersection = max(0.0, x1 - x0) * max(0.0, y1 - y0)
+    return intersection / max(aw * ah + bw * bh - intersection, 1e-6)
+
+
+def _deduplicate(candidates: list[FaceDetection]) -> list[FaceDetection]:
+    selected: list[FaceDetection] = []
+    for candidate in sorted(candidates, key=lambda item: item.score, reverse=True):
+        if all(_iou(candidate, current) < .35 for current in selected):
+            selected.append(candidate)
+    return selected
+
+
 def detect(image: np.ndarray, score_threshold: float = .9) -> list[FaceDetection]:
     h, w = image.shape[:2]
     if not h or not w:
@@ -59,17 +110,41 @@ def detect(image: np.ndarray, score_threshold: float = .9) -> list[FaceDetection
     rh, rw = resized.shape[:2]
     model = detector()
     model.setScoreThreshold(score_threshold)
-    model.setInputSize((rw, rh))
-    _, rows = model.detect(resized)
-    results = []
-    if rows is not None:
+    results: list[FaceDetection] = []
+
+    def run(turns: int) -> None:
+        rotated = np.ascontiguousarray(np.rot90(resized, turns)) if turns else resized
+        rotated_h, rotated_w = rotated.shape[:2]
+        model.setInputSize((rotated_w, rotated_h))
+        _, rows = model.detect(rotated)
+        if rows is None:
+            return
         for row in rows:
-            if valid_detection(row, rw, rh, score_threshold):
-                sx, sy = w / rw, h / rh
-                x, y, fw, fh = row[:4]
-                points = tuple((float(px * sx), float(py * sy)) for px, py in row[4:14].reshape(5, 2))
-                results.append(FaceDetection((float(x * sx), float(y * sy), float(fw * sx), float(fh * sy)), points, float(row[14])))
-    return results
+            if valid_detection(row, rotated_w, rotated_h, score_threshold):
+                results.append(_map_detection(row, turns, rw, rh))
+
+    run(0)
+    # RAW embedded previews and images from some cameras can reach this layer
+    # without orientation metadata.  Only pay for the extra passes when the
+    # first pass has no reasonably prominent face; a tiny logo-like candidate
+    # must not prevent the orientation rescue.
+    prominent_area = rw * rh * .002
+    if not any(face.box[2] * face.box[3] >= prominent_area for face in results):
+        run(1)
+        run(3)
+        if not any(face.box[2] * face.box[3] >= prominent_area for face in results):
+            run(2)
+
+    sx, sy = w / rw, h / rh
+    scaled = [
+        FaceDetection(
+            (face.box[0] * sx, face.box[1] * sy, face.box[2] * sx, face.box[3] * sy),
+            tuple((px * sx, py * sy) for px, py in face.landmarks),
+            face.score,
+        )
+        for face in _deduplicate(results)
+    ]
+    return scaled
 
 
 def head_box(face: FaceDetection, width: int, height: int) -> tuple[float, float, float, float]:

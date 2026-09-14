@@ -47,7 +47,9 @@ def run_scan(
     input_path = Path(input_dir).resolve()
     assets = scan_folder(input_path)
     for asset in assets:
-        build_preview(asset, preview_dir)
+        override = crop_settings.photos.get(crop_settings.key(asset), {})
+        legacy_preview = bool(override.get('manual_face') and override.get('preview_version', 'v04') == 'v04')
+        build_preview(asset, preview_dir, **({'legacy_orientation': True} if legacy_preview else {}))
 
     collection_key = str(input_path)
     groups_loaded = load_groups(assets, group_store_path, collection_key=collection_key)

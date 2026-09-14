@@ -1,5 +1,6 @@
 from copy import deepcopy
-from dataclasses import replace
+from collections import OrderedDict
+from pathlib import Path
 import cv2
 import numpy as np
 from .yunet import detect
@@ -9,7 +10,7 @@ from tkinter import ttk, messagebox
 from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 from .crop_settings import CropSettings, crop_bounds
-from .subject import asset_features, face_crop, detail_features
+from .subject import face_crop, detail_features
 from .preview import ensure_preview
 from .window_layout import fit_window, scrollable_body
 
@@ -25,7 +26,10 @@ class CropDialog(tk.Toplevel):
         self._drag = None
         self._image_rect = None
         self._crop_rect = None
+        self._crop_selected = False
         self._current_head = None
+        self._source_cache = OrderedDict()
+        self._candidate_cache = OrderedDict()
         self.candidates = []
         self.index = 0
         self.on_save = on_save
@@ -48,7 +52,7 @@ class CropDialog(tk.Toplevel):
         body = scrollable_body(self, padding=16)
         ttk.Label(
             body,
-            text="拖动绿色裁切框调整位置；在图片上滚动鼠标滚轮调整范围。小窗输出大小保持不变。",
+            text="点击绿色裁切框可将它选为黄色，然后拖动黄框调整位置；在图片上滚动鼠标滚轮可细调范围。小窗输出大小保持不变。",
             wraplength=460,
         ).pack(fill="x", anchor="w")
         row = ttk.Frame(body)
@@ -85,14 +89,14 @@ class CropDialog(tk.Toplevel):
         self.canvas.bind('<MouseWheel>', self.mouse_wheel)
         self.canvas.bind('<Button-4>', self.mouse_wheel)
         self.canvas.bind('<Button-5>', self.mouse_wheel)
-        ttk.Label(body, text="绿框：最终裁切范围。蓝框：检测候选。位置、范围和裁切比例仅影响当前照片。").pack()
+        ttk.Label(body, text="绿框：最终裁切范围。黄框：已选中，可上下左右拖动。蓝框：检测候选。位置、范围和裁切比例仅影响当前照片。").pack()
         manual = ttk.Frame(body)
         manual.pack(pady=4)
         ttk.Checkbutton(
             manual,
             text="手动选人脸",
             variable=self.manual_mode,
-            command=self.render,
+            command=self.toggle_manual_mode,
         ).pack(side="left", padx=6)
         ttk.Button(manual, text="恢复本张自动选脸", command=self.auto_face).pack(side="left", padx=6)
         ttk.Button(manual, text="隐藏本张小窗", command=self.hide_face).pack(side="left", padx=6)
@@ -126,10 +130,56 @@ class CropDialog(tk.Toplevel):
             self.after_cancel(self._pending)
         self._pending = self.after(60, self.render)
 
+    @staticmethod
+    def _remember(cache, key, value, limit):
+        cache[key] = value
+        cache.move_to_end(key)
+        while len(cache) > limit:
+            cache.popitem(last=False)
+
+    def _source_preview(self, asset):
+        preview_path = Path(asset.preview_path) if asset.preview_path else None
+        if preview_path is None or not preview_path.is_file():
+            preview_path = Path(ensure_preview(asset))
+        stat = preview_path.stat()
+        source_key = (str(preview_path.resolve()), stat.st_mtime_ns, stat.st_size)
+        original = self._source_cache.get(source_key)
+        if original is None:
+            with Image.open(preview_path) as source:
+                original = ImageOps.exif_transpose(source).convert("RGB")
+            # Keep the current image and recently visited neighbours warm.  The
+            # small bound avoids retaining a whole shoot in decoded form.
+            self._remember(self._source_cache, source_key, original, 3)
+        else:
+            self._source_cache.move_to_end(source_key)
+        return original, source_key
+
+    def _detected_candidates(self, original, source_key):
+        confidence = round(self.confidence.get(), 2)
+        candidate_key = source_key + (confidence,)
+        candidates = self._candidate_cache.get(candidate_key)
+        if candidates is None:
+            candidates = detect(
+                cv2.cvtColor(np.asarray(original), cv2.COLOR_RGB2BGR),
+                confidence,
+            )
+            self._remember(self._candidate_cache, candidate_key, candidates, 8)
+        else:
+            self._candidate_cache.move_to_end(candidate_key)
+        return candidates
+
+    @staticmethod
+    def _preview_version(asset):
+        if not asset.preview_path:
+            return None
+        version = Path(asset.preview_path).parent.name
+        return version if version in ('v04', 'v05') else None
+
     def navigate(self, step):
         if self.assets:
             self.store_current()
             self.index = (self.index + step) % len(self.assets)
+            self._crop_selected = False
             self.load_current()
             self.render()
 
@@ -142,12 +192,21 @@ class CropDialog(tk.Toplevel):
         for step in range(1, len(self.assets) + 1):
             index = (self.index + step) % len(self.assets)
             asset = self.assets[index]
+            entry = settings.photos.get(settings.key(asset), {})
             # An explicitly hidden inset is already a user decision.
-            if settings.photos.get(settings.key(asset), {}).get('hidden'):
+            if entry.get('hidden'):
                 continue
-            subject = detail_features(asset, settings)
-            if not subject or not subject.face:
+            # The scan already stores subject features on each asset.  Re-running
+            # detail_features here decodes and detects every intervening photo,
+            # causing a long freeze when the search wraps around a large set.
+            subject = getattr(asset, 'subject_features', None)
+            located = bool(
+                entry.get('manual_face')
+                or (subject and (getattr(subject, 'head', None) or getattr(subject, 'face', None)))
+            )
+            if not located:
                 self.index = index
+                self._crop_selected = False
                 self.load_current()
                 self.render()
                 self.caption.configure(text=f"{index+1}/{len(self.assets)}  ·  {asset.stem}  ·  待补选人脸")
@@ -155,6 +214,7 @@ class CropDialog(tk.Toplevel):
         self.caption.configure(text="没有待补选的人脸：已标记和手动隐藏的照片会自动跳过。")
 
     def reset(self):
+        self._crop_selected = False
         self.scale.set(1)
         self.shift.set(0)
         self.offset_x.set(0)
@@ -188,33 +248,33 @@ class CropDialog(tk.Toplevel):
             preview_height = max(80, canvas_height - padding * 2)
             preview_x = padding + preview_width / 2
             final_x = canvas_width - padding - inset_width / 2
-            preview_path = ensure_preview(asset)
-            with Image.open(preview_path) as source:
-                original = ImageOps.exif_transpose(source).convert("RGB")
+            original, source_key = self._source_preview(asset)
             subject = detail_features(asset, self.global_settings())
-            self.candidates = detect(cv2.cvtColor(np.asarray(original), cv2.COLOR_RGB2BGR), self.confidence.get())
+            self.candidates = self._detected_candidates(original, source_key)
             marked = original.copy()
             for candidate in self.candidates:
                 x,y,w,h = candidate.box
                 ImageDraw.Draw(marked).rectangle((x,y,x+w,y+h), outline="#3399ff", width=max(2, original.width//300))
-            if subject and subject.face and subject.head:
-                bounds = crop_bounds(original.size, subject.head, self.settings())
-                self._current_head = subject.head
-                crop = face_crop(original, subject.face, subject.head, self.settings())
+            head = (getattr(subject, 'head', None) or getattr(subject, 'face', None)) if subject else None
+            if head:
+                bounds = crop_bounds(original.size, head, self.settings())
+                self._current_head = head
+                crop = face_crop(original, getattr(subject, 'face', None), head, self.settings())
                 tile_size = (min(124, inset_width), min(150, max(60, canvas_height - 44)))
                 tile = Image.new("RGB", tile_size, "white")
                 crop = ImageOps.contain(crop, tile_size)
                 tile.paste(crop, ((tile.width-crop.width)//2, (tile.height-crop.height)//2))
                 self.photos.append(ImageTk.PhotoImage(tile, master=self))
                 self.canvas.create_image(final_x, canvas_height / 2, image=self.photos[-1])
-                self.canvas.create_text(final_x, max(10, (canvas_height - tile.height) / 2 - 12), text="最终小窗 · 124×150")
+                inset_label = "最终小窗 · 124×150" if getattr(subject, 'face', None) else "头部定位，清晰度待确认"
+                self.canvas.create_text(final_x, max(10, (canvas_height - tile.height) / 2 - 12), text=inset_label)
             else:
                 self.canvas.create_text(final_x, canvas_height / 2, text="未检测到可靠人脸\n本张不显示小窗", justify="center")
             preview = ImageOps.contain(marked, (preview_width, preview_height))
             self._image_rect = (preview_x-preview.width/2, canvas_height/2-preview.height/2, preview.width, preview.height, original.width, original.height)
             self.photos.append(ImageTk.PhotoImage(preview, master=self))
             self.canvas.create_image(preview_x, canvas_height / 2, image=self.photos[-1])
-            if subject and subject.face and subject.head:
+            if head:
                 ix, iy, dw, dh, iw, ih = self._image_rect
                 left, top, right, bottom = bounds
                 self._crop_rect = (
@@ -225,7 +285,7 @@ class CropDialog(tk.Toplevel):
                 )
                 self.canvas.create_rectangle(
                     *self._crop_rect,
-                    outline="#00aa66",
+                    outline="#ffb000" if self._crop_selected else "#00aa66",
                     width=3,
                     tags="crop-outline",
                 )
@@ -247,6 +307,10 @@ class CropDialog(tk.Toplevel):
             offset_x_factor=value.offset_x_factor,
             aspect_ratio=value.aspect_ratio,
         )
+        if entry.get('manual_face'):
+            preview_version = self._preview_version(self.assets[self.index])
+            if preview_version:
+                entry['preview_version'] = preview_version
 
     def load_current(self):
         if not self.assets:
@@ -264,15 +328,23 @@ class CropDialog(tk.Toplevel):
 
     def auto_face(self):
         if self.assets:
+            self._crop_selected = False
             entry = self.current_entry()
             entry.pop('manual_face', None)
+            entry.pop('preview_version', None)
             entry.pop('hidden', None)
             self.render()
 
     def hide_face(self):
         if self.assets:
+            self._crop_selected = False
             self.current_entry()['hidden'] = True
             self.render()
+
+    def toggle_manual_mode(self):
+        self._drag = None
+        self._crop_selected = False
+        self.render()
 
     def pointer_down(self, event):
         if not self._image_rect:
@@ -286,25 +358,28 @@ class CropDialog(tk.Toplevel):
         if self._crop_rect:
             left, top, right, bottom = self._crop_rect
             if left <= event.x <= right and top <= event.y <= bottom:
+                self._crop_selected = True
                 self._drag = (
                     "crop", event.x, event.y,
                     self.offset_x.get(), self.shift.get(), self._crop_rect,
                 )
-                self.canvas.itemconfigure("crop-outline", state="hidden")
+                self.canvas.itemconfigure("crop-outline", outline="#ffb000")
+                return
+        self._crop_selected = False
+        self.canvas.itemconfigure("crop-outline", outline="#00aa66")
 
     def pointer_move(self, event):
         if not self._drag:
             return
-        self.canvas.delete('drag')
         if self._drag[0] == "manual":
+            self.canvas.delete('drag')
             _, ax, ay = self._drag
             self.canvas.create_rectangle(ax, ay, event.x, event.y, outline='#ff9900', width=2, tags='drag')
         else:
             dx, dy = self._clamped_crop_delta(event.x, event.y)
             left, top, right, bottom = self._drag[5]
-            self.canvas.create_rectangle(
-                left + dx, top + dy, right + dx, bottom + dy,
-                outline='#00aa66', width=3, tags='drag',
+            self.canvas.coords(
+                'crop-outline', left + dx, top + dy, right + dx, bottom + dy,
             )
 
     def pointer_up(self, event):
@@ -344,6 +419,9 @@ class CropDialog(tk.Toplevel):
         if box:
             entry = self.current_entry()
             entry['manual_face'] = box
+            preview_version = self._preview_version(self.assets[self.index])
+            if preview_version:
+                entry['preview_version'] = preview_version
             entry.pop('hidden', None)
             self.render()
 
@@ -367,8 +445,8 @@ class CropDialog(tk.Toplevel):
         direction = getattr(event, "delta", 0)
         if not direction:
             direction = 120 if getattr(event, "num", 0) == 4 else -120
-        factor = .92 if direction > 0 else 1.08
-        self.scale.set(max(.6, min(2.0, round(self.scale.get() * factor, 3))))
+        step = -.02 if direction > 0 else .02
+        self.scale.set(max(.6, min(2.0, round(self.scale.get() + step, 3))))
         return "break"
 
     def save(self):

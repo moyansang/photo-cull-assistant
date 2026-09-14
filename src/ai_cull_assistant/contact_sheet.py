@@ -277,18 +277,19 @@ def _draw_cell(
             subject = detail_features(asset, crop_settings)
             local_settings = crop_settings.for_asset(asset)
             face = subject.face if subject else None
-            photo_box = (330, THUMB_BOX[1]) if face else THUMB_BOX
+            detail = face or (subject.head if subject else None)
+            photo_box = (330, THUMB_BOX[1]) if detail else THUMB_BOX
             thumb = ImageOps.contain(img, photo_box)
             paste_x = x0 + 10 + (photo_box[0] - thumb.width) // 2
             paste_y = y0 + 8
             canvas.paste(thumb, (paste_x, paste_y))
-            if face:
+            if detail:
                 crop = ImageOps.contain(face_crop(img, face, subject.head, local_settings), (124, 150))
                 tile = Image.new("RGB", (124, 150), "white")
                 tile.paste(crop, ((124 - crop.width) // 2, (150 - crop.height) // 2))
                 inset_x = x0 + 350
                 inset_y = y0 + 30
-                draw.text((inset_x, y0 + 7), "FACE", fill=TEXT_COLOR, font=small_font)
+                draw.text((inset_x, y0 + 7), "FACE" if face else "HEAD", fill=TEXT_COLOR, font=small_font)
                 canvas.paste(tile, (inset_x, inset_y))
                 draw.rectangle([inset_x - 2, inset_y - 2, inset_x + 126, inset_y + 152], outline=(100, 100, 100), width=2)
             bottom = paste_y + thumb.height

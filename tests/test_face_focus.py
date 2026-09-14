@@ -47,6 +47,17 @@ def test_absent_face_does_not_decode(tmp_path,monkeypatch):
     assert not r.rejected and not r.face_found
 
 
+def test_head_only_detection_is_not_face_clarity_evidence(tmp_path, monkeypatch):
+    a = asset(tmp_path)
+    monkeypatch.setattr(face_focus, 'detail_features', lambda *args, **kw: SimpleNamespace(
+        face=None, head=(.2,.1,.3,.4), landmarks=None, head_source='head_detector'))
+    monkeypatch.setattr(face_focus, 'load_full_image', lambda a: (_ for _ in ()).throw(AssertionError('decode')))
+    result = face_focus.assess_asset_focus(a)
+    assert not result.rejected and not result.face_found
+    assert result.reason == 'head_only_localized'
+    assert result.focus_evidence['state'] == 'uncertain'
+
+
 def test_manual_face_and_hidden_face(tmp_path,monkeypatch):
     a=asset(tmp_path)
     monkeypatch.setattr('ai_cull_assistant.subject.asset_features',lambda *args,**kwargs:None)

@@ -61,3 +61,18 @@ def test_main_contact_sheet_width_is_chat_friendly(tmp_path):
 
     with Image.open(result.main_pages[0]) as image:
         assert 1950 <= image.width <= 2100
+
+
+def test_head_only_inset_can_render_without_claiming_face(tmp_path, monkeypatch):
+    from ai_cull_assistant import contact_sheet
+    from ai_cull_assistant.subject import SubjectFeatures
+    asset = make_asset(tmp_path, 'HEAD_ONLY', 1)
+    head = SubjectFeatures('a','b',None,None,(.3,.2,.2,.3), head_source='head_detector')
+    monkeypatch.setattr(contact_sheet, 'detail_features', lambda *a: head)
+    crops = []
+    def crop(image, face, bounds, settings):
+        crops.append((face, bounds))
+        return Image.new('RGB',(124,150),'red')
+    monkeypatch.setattr(contact_sheet, 'face_crop', crop)
+    result = generate_contact_sheet_sets([asset], tmp_path/'sheets')
+    assert result.main_pages and crops == [(None, head.head)]

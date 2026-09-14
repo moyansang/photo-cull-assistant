@@ -4,6 +4,7 @@ from test_ai_project import setup_project
 from ai_cull_assistant.workflow import ScanResult
 from ai_cull_assistant.subject import SubjectFeatures
 from ai_cull_assistant.session_store import save_session,load_session
+from ai_cull_assistant.preview import ensure_preview
 
 
 def test_roundtrip_analysis_and_changed_original(tmp_path):
@@ -20,6 +21,30 @@ def test_roundtrip_analysis_and_changed_original(tmp_path):
     with pytest.raises(ValueError):load_session(project.workspace,tmp_path/'photos')
     with pytest.raises(ValueError):save_session(restored)
     assert (project.workspace/'scan-session.json').read_bytes()==before
+
+
+def test_missing_preview_cache_restores_and_rebuilds_without_rescan(tmp_path):
+    project, assets, _task, _batch = setup_project(tmp_path)
+    preview = project.workspace / 'previews' / 'v04' / 'A.jpg'
+    preview.parent.mkdir(parents=True)
+    preview.write_bytes(assets[0].primary_path.read_bytes())
+    assets[0].preview_path = preview
+    result = ScanResult(
+        assets,
+        project.workspace / 'previews',
+        project.workspace / 'contact_sheets',
+        project.workspace,
+        project.workspace / 'groups.json',
+        input_dir=tmp_path / 'photos',
+    )
+    save_session(result)
+    preview.unlink()
+
+    restored = load_session(project.workspace, tmp_path / 'photos')
+
+    assert restored is not None
+    assert not restored.assets[0].preview_path.exists()
+    assert ensure_preview(restored.assets[0]).is_file()
 
 
 def test_app_reopens_analysis_and_logs(tmp_path,monkeypatch):

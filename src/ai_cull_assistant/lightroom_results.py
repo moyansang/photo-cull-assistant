@@ -12,7 +12,7 @@ def focus_review_status(asset):
     if rejected or reason in {'subject_not_obviously_blurred', 'ai_focus_clear', 'ai_focus_blur'}:
         return False
     if reason in {
-        'ai_focus_uncertain', 'face_focus_uncertain', 'body_focus_uncertain', 'face_too_small_for_focus', 'no_reliable_face',
+        'ai_focus_uncertain', 'face_focus_uncertain', 'body_focus_uncertain', 'face_too_small_for_focus', 'no_reliable_face', 'head_only_localized',
         'source_preview_geometry_mismatch', 'source_unreadable_for_focus',
         'preview_unreadable', 'preview_unavailable',
     }:
@@ -35,6 +35,7 @@ def focus_review_reason(photo):
     evidence=_value(photo,'clarity_evidence')
     codes=evidence.get('reasons',[]) if isinstance(evidence,dict) else []
     evidence_labels={
+        'head_without_visible_face':'已定位头部，但没有可靠的可见人脸证据，需检查原图清晰度。',
         'missing_reliable_landmarks':'没有可靠的眼部关键点，无法准确检查眼部细节。',
         'insufficient_native_eye_pixels':'原图中的双眼像素不足，无法可靠判断。',
         'insufficient_native_face_pixels':'原图中的人脸像素不足，无法可靠判断。',
