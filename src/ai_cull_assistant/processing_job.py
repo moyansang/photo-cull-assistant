@@ -6,11 +6,14 @@ complete.  The public workspace is replaced only during the final publish.
 from __future__ import annotations
 
 from dataclasses import asdict
+from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import json
 from pathlib import Path
 import shutil
-from threading import Event
+from threading import Event, Thread
+from time import perf_counter
 from typing import Callable, Mapping
 import uuid
 
@@ -29,9 +32,12 @@ from .session_store import save_session
 from .subject import SubjectFeatures, detail_features
 from .workflow import ScanResult
 from .workspace_layout import workspace_path as resolve_workspace_path
+from .scan_resources import ResourceBudget
+from .processing_journal import append_patch, replay_patches
+from .scan_timing import collect_timings, merge_timings, timed, timing_summary
 
 
-JOB_VERSION = 1
+JOB_VERSION = 2
 STAGED_MODES = {"scan", "rescan", "focus", "sheets"}
 ProgressCallback = Callable[[int], None]
 LogCallback = Callable[[str], None]
@@ -323,6 +329,7 @@ def load_job(workspace: str | Path, input_dir: str | Path) -> "ProcessingJob | N
         if root.resolve().parent != processing_root.resolve():
             raise ValueError("invalid job path")
         data = json.loads((root / "job.json").read_text("utf-8"))
+        replay_patches(root, data)
         if Path(data.get("workspace", "")).resolve() != workspace_path:
             raise ValueError("workspace mismatch")
         if data.get("id") != identifier or Path(data.get("input_dir", "")).resolve() != input_path:
@@ -343,8 +350,10 @@ def load_job(workspace: str | Path, input_dir: str | Path) -> "ProcessingJob | N
 
 class ProcessingJob:
     def __init__(self, root: Path, data: dict):
-        if data.get("version") != JOB_VERSION:
+        if data.get("version") not in {1, JOB_VERSION}:
             raise ProcessingJobError("中断任务版本不支持")
+        # Read old snapshots, but prevent old executables from ignoring our journal.
+        data['version'] = JOB_VERSION
         self.root = Path(root)
         self._data = data
         self.assets = [_asset_from_dict(row) for row in data.get("assets", [])]
@@ -433,7 +442,103 @@ class ProcessingJob:
         self._data["awaiting_focus_error_decision"] = False
         self._persist()
 
-    def run(
+    def run(self, options, crops, stop_event, progress, *, focus_profile=None, on_log=None):
+        if self.mode not in {'scan', 'rescan'}:
+            return self._run(options, crops, stop_event, progress,
+                             focus_profile=focus_profile, on_log=on_log)
+        started = perf_counter()
+        with collect_timings() as values:
+            try:
+                return self._run(options, crops, stop_event, progress,
+                                 focus_profile=focus_profile, on_log=on_log)
+            finally:
+                totals = self._data.setdefault('stage_timings', {})
+                merge_timings(totals, values)
+                if self.root.is_dir():
+                    self._persist()
+                _notify_log(on_log, f'扫描耗时统计：本次用时 {perf_counter()-started:.1f} 秒；'
+                            + timing_summary(totals) + '。阶段耗时为累计工作时间，并行时可能大于实际用时。')
+
+    def _scan_one(self, asset, current, crops):
+        # Each worker owns a copy; only the coordinator publishes mutable state.
+        asset = deepcopy(asset)
+        with collect_timings() as values:
+            if self.kind == 'scan':
+                override = crops.photos.get(crops.key(asset), {})
+                legacy = bool(override.get('manual_face') and override.get('preview_version', 'v04') == 'v04')
+                build_preview(asset, self.output / 'previews', **({'legacy_orientation': True} if legacy else {}))
+            if current['technical_screening']:
+                screened = screen_assets([asset], crop_settings=crops,
+                    cache_dir=resolve_workspace_path(self.workspace, '.analysis-cache'),
+                    **({'body_check': True} if current['body_screening'] else {}))[asset.stem]
+            else:
+                asset.auto_rejected = False
+                asset.screening_reason = 'screening_disabled'
+                asset.focus_score = None
+                asset.face_found = False
+                asset.clarity_version = 'clarity-v2'
+                asset.clarity_evidence = {'state': 'uncertain', 'reasons': ['screening_disabled']}
+                screened = ScreeningResult(False, 'screening_disabled', False)
+            asset.ai_focus_result = None
+            if self.mode == 'rescan':
+                asset.ai_focus_dirty = False
+        return asset, screened, values
+
+    def _run_local_photos(self, current, crops, stop_event, progress, on_log):
+        budget = ResourceBudget()
+        indices = self._data['work_indices']
+        warmed = 0
+        last_workers = None
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix='photo-scan') as pool:
+            while self._data['completed_photos'] < len(indices):
+                if stop_event.is_set():
+                    return False
+                first = int(self._data['completed_photos'])
+                workers = 1 if warmed < 2 else budget.choose_workers()
+                if workers != last_workers:
+                    _notify_log(on_log, f'扫描并行：同时处理 {workers} 张' + ('（前两张估算内存）' if warmed < 2 else '（按 CPU 与可用内存自动调整）'))
+                    last_workers = workers
+                batch = indices[first:first+workers]
+                before = budget.snapshot()
+                peak = [before.process_rss_bytes or 0]
+                sampled = Event()
+                def sample():
+                    while not sampled.wait(.05):
+                        peak[0] = max(peak[0], budget.snapshot().process_rss_bytes or 0)
+                sampler = Thread(target=sample, daemon=True)
+                sampler.start()
+                try:
+                    futures = [pool.submit(self._scan_one, self.assets[index], current, crops) for index in batch]
+                    outcomes = []
+                    for future in futures:
+                        try:
+                            outcomes.append(future.result())
+                        except Exception as exc:
+                            outcomes.append(exc)
+                finally:
+                    sampled.set()
+                    sampler.join()
+                if len(batch) == 1:
+                    budget.observe(before, budget.snapshot(), peak_rss_bytes=peak[0])
+                warmed += len(batch)
+                for index, outcome in zip(batch, outcomes):
+                    if isinstance(outcome, Exception):
+                        raise outcome
+                    asset, screened, values = outcome
+                    self.assets[index] = asset
+                    key = _asset_key(asset)
+                    self._data['screening_results'][key] = asdict(screened)
+                    self._data['photo_options'][str(index)] = {
+                        'technical_screening': current['technical_screening'],
+                        **({'body_screening': True} if current['body_screening'] else {})}
+                    merge_timings(self._data.setdefault('stage_timings', {}), values)
+                    self._data['completed_photos'] += 1
+                    self._checkpoint(progress, index=index)
+                if stop_event.is_set():
+                    return False
+        return True
+
+    def _run(
         self,
         options: Mapping,
         crops: CropSettings | Mapping | None,
@@ -467,6 +572,10 @@ class ProcessingJob:
         remaining_focus_work = int(self._data.get("completed_photos", 0)) < len(work_indices)
         if self.mode == "focus" and remaining_focus_work and focus_profile is None:
             raise FocusReviewError("AI 复核需要先配置可用的 API 服务")
+
+        if self.mode in {'scan', 'rescan'}:
+            if not self._run_local_photos(current, crop_settings, stop_event, progress, on_log):
+                return None
 
         while self._data["completed_photos"] < len(work_indices):
             position = int(self._data["completed_photos"])
@@ -535,7 +644,7 @@ class ProcessingJob:
                             _notify_log(on_log, f"AI 清晰度复核跳过 {asset.primary_path.name}：身体区域无法可靠判断，保留清晰度待确认，供 Lightroom 检查。")
                             self._data.pop("local_screening_pending", None)
                             self._data["completed_photos"] = position + 1
-                            self._checkpoint(progress)
+                            self._checkpoint(progress, index=index)
                             if stop_event.is_set():
                                 return None
                             continue
@@ -547,7 +656,7 @@ class ProcessingJob:
                             )
                             self._data.pop("local_screening_pending", None)
                             self._data["completed_photos"] = position + 1
-                            self._checkpoint(progress)
+                            self._checkpoint(progress, index=index)
                             if stop_event.is_set():
                                 return None
                             continue
@@ -567,7 +676,7 @@ class ProcessingJob:
                         if self.mode != "focus":
                             # Preserve the historical all-in-one behaviour.
                             self._data["local_screening_pending"] = index
-                            self._checkpoint(progress)
+                            self._checkpoint(progress, index=index)
                             raise FocusReviewError(
                                 message + "。任务进度已保存，可修复 API 配置后继续处理。"
                             ) from exc
@@ -601,7 +710,7 @@ class ProcessingJob:
                         self._data["focus_review_errors"] = errors
             self._data.pop("local_screening_pending", None)
             self._data["completed_photos"] = position + 1
-            self._checkpoint(progress)
+            self._checkpoint(progress, index=index)
             if stop_event.is_set():
                 return None
 
@@ -619,7 +728,8 @@ class ProcessingJob:
                     collection_key=str(self.input_dir),
                 )
             if not loaded:
-                assign_groups(self.assets, current["grouping_preset"])
+                with timed('grouping'):
+                    assign_groups(self.assets, current["grouping_preset"])
             self._data["group_source"] = self._stored_group_source() if loaded else "auto"
             self._data["groups_loaded_from_store"] = loaded
             self._data["actual_grouping_preset"] = self._prior_grouping_preset(current) if loaded else current["grouping_preset"]
@@ -726,10 +836,22 @@ class ProcessingJob:
         page_part = min(24, 24 * len(self._data["pages"]) // estimate)
         return min(99, photo_part + group_part + page_part)
 
-    def _checkpoint(self, progress: ProgressCallback | None) -> None:
-        self._data["assets"] = [_asset_to_dict(asset) for asset in self.assets]
+    def _checkpoint(self, progress: ProgressCallback | None, *, index=None) -> None:
         self._data["percent"] = max(self.percent, self._progress_value())
-        self._persist()
+        with timed('save'):
+            if index is None:
+                self._persist()
+            else:
+                asset = self.assets[index]
+                key = _asset_key(asset)
+                seq = self._data.get('journal_seq', 0) + 1
+                state = {name: self._data.get(name) for name in (
+                    'completed_photos', 'percent', 'local_screening_pending',
+                    'stage_timings', 'focus_review_errors')}
+                append_patch(self.root, seq, dict(index=index, asset=_asset_to_dict(asset),
+                    screening_key=key, screening_result=self._data['screening_results'][key],
+                    photo_options=self._data['photo_options'].get(str(index), {}), state=state))
+                self._data['journal_seq'] = seq
         self._notify(progress)
 
     def _notify(self, progress: ProgressCallback | None) -> None:
@@ -742,6 +864,7 @@ class ProcessingJob:
             pass
 
     def _persist(self) -> None:
+        self._data['assets'] = [_asset_to_dict(asset) for asset in self.assets]
         atomic_json(self.root / "job.json", self._data)
 
     def _validate_sources(self) -> None:

@@ -14,10 +14,12 @@ from .focus_metrics import focus_metrics as detail_metrics
 from .models import RAW_EXTENSIONS
 from .screening import ScreeningResult
 from .subject import detail_features
+from .scan_timing import measure, timed
 
 VERSION = "native-face-v4-kps"
 
 
+@measure('decode')
 def load_full_image(asset):
     path = asset.raw_path or asset.primary_path
     if path.suffix.lower() in RAW_EXTENSIONS:
@@ -101,10 +103,11 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
                 )
             except (TypeError, ValueError):
                 local_landmarks = None
-        evidence = detail_metrics(
-            cv2.cvtColor(crop, cv2.COLOR_RGB2BGR),
-            landmarks=local_landmarks,
-        )
+        with timed('clarity'):
+            evidence = detail_metrics(
+                cv2.cvtColor(crop, cv2.COLOR_RGB2BGR),
+                landmarks=local_landmarks,
+            )
         rejected = evidence["state"] == "severe_blur"
         reason = {
             "severe_blur": "obvious_subject_blur",

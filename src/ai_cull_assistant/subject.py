@@ -10,6 +10,7 @@ from PIL import Image, ImageOps
 
 from .yunet import detect, head_box
 from .crop_settings import CropSettings, crop_bounds
+from .scan_timing import timed
 
 
 _manual_details = OrderedDict()
@@ -115,8 +116,9 @@ def _cached_features(path: str, modified: int, size: int, score_threshold: float
         image = ImageOps.exif_transpose(source).convert("RGB")
     w, h = image.size
     pixels = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
-    candidates = detect(pixels, score_threshold)
-    chosen, located_head = _choose_subject(pixels, candidates, score_threshold)
+    with timed('detection'):
+        candidates = detect(pixels, score_threshold)
+        chosen, located_head = _choose_subject(pixels, candidates, score_threshold)
     face = None
     body = None
     head = None

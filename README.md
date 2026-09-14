@@ -4,6 +4,8 @@ v1.2.2 的清晰度改进和可选“身体清晰度检查（实验）”开关�
 
 v1.2.3 修复人脸框操作、RAW 方向与工作区恢复，见 [修复说明](docs/crop-and-workspace-fixes.md)。
 
+后续源码加入扫描耗时统计、逐张增量保存与自动 1/2/4 张并行，见 [扫描性能说明](docs/scan-performance.md)；尚未包含在 v1.2.3 发布包中。
+
 Windows 便携选片工具：本地扫描照片、分组、生成联系表、修正人脸小窗；通过 Lightroom Classic 插件把评级和弃置状态写入 Catalog。
 
 ## 使用流程

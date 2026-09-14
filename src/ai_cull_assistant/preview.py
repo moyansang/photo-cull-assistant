@@ -6,6 +6,7 @@ from typing import Optional
 from PIL import Image, ImageOps
 
 from .models import PhotoAsset, RAW_EXTENSIONS
+from .scan_timing import measure
 
 try:
     import rawpy  # type: ignore
@@ -17,6 +18,7 @@ THUMB_SIZE = (1600, 1600)
 PREVIEW_VERSION = 'v05'
 
 
+@measure('preview')
 def build_preview(asset: PhotoAsset, cache_dir: Path, *, legacy_orientation: bool = False) -> Path:
     cache_dir.mkdir(parents=True, exist_ok=True)
     # Keep old manual selections in their original coordinate system. New
