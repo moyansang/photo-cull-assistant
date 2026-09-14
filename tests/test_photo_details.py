@@ -24,7 +24,6 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
         d.scale.set(1.4); d.shift.set(.1); d.offset_x.set(.2); d.ratio.set('1:1')
         d.render()
         x,y,w,h,_,_=d._image_rect
-        d.manual_mode.set(True)
         d.pointer_down(SimpleNamespace(x=x+w*.3,y=y+h*.2))
         d.pointer_up(SimpleNamespace(x=x+w*.6,y=y+h*.4))
         assert detail_features(assets[0],d.global_settings()).face is not None
@@ -93,14 +92,19 @@ def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monke
         dialog.render()
         assert len(detections)==1
         assert len(opened)==1
-        dialog.manual_mode.set(True)
-        dialog.toggle_manual_mode()
-        assert not dialog._crop_selected
+        start_x=x+w*.05;start_y=y+h*.65
         dialog.pointer_down(SimpleNamespace(x=start_x,y=start_y))
+        assert not dialog._crop_selected
         assert dialog._drag[0]=='manual'
         dialog.pointer_move(SimpleNamespace(x=start_x+30,y=start_y+30))
         dialog.pointer_up(SimpleNamespace(x=start_x+30,y=start_y+30))
         assert dialog.current_entry()['preview_version']=='v05'
+        assert dialog.canvas.itemcget('crop-outline','outline')=='#00aa66'
+        left,top,right,bottom=dialog._crop_rect
+        center=SimpleNamespace(x=(left+right)/2,y=(top+bottom)/2)
+        dialog.pointer_down(center)
+        dialog.pointer_up(center)
+        assert dialog.canvas.itemcget('crop-outline','outline')=='#ffb000'
         dialog.auto_face()
         assert 'preview_version' not in dialog.current_entry()
         dialog.destroy()

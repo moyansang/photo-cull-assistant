@@ -38,7 +38,6 @@ class CropDialog(tk.Toplevel):
         self.offset_x = tk.DoubleVar(value=settings.offset_x_factor)
         self.confidence = tk.DoubleVar(value=settings.detection_confidence)
         self.ratio = tk.StringVar(value=settings.aspect_ratio)
-        self.manual_mode = tk.BooleanVar(value=False)
         self._pending = None
         # Reserve the action footer before allocating the scrollable content.
         actions = ttk.Frame(self, padding=(16, 8))
@@ -52,7 +51,7 @@ class CropDialog(tk.Toplevel):
         body = scrollable_body(self, padding=16)
         ttk.Label(
             body,
-            text="点击绿色裁切框可将它选为黄色，然后拖动黄框调整位置；在图片上滚动鼠标滚轮可细调范围。小窗输出大小保持不变。",
+            text="在照片上直接拖拽框选人脸；点击绿框内部变为黄框后，可上下左右拖动。在框外拖拽可重新框选，滚轮可细调范围。",
             wraplength=460,
         ).pack(fill="x", anchor="w")
         row = ttk.Frame(body)
@@ -92,12 +91,6 @@ class CropDialog(tk.Toplevel):
         ttk.Label(body, text="绿框：最终裁切范围。黄框：已选中，可上下左右拖动。蓝框：检测候选。位置、范围和裁切比例仅影响当前照片。").pack()
         manual = ttk.Frame(body)
         manual.pack(pady=4)
-        ttk.Checkbutton(
-            manual,
-            text="手动选人脸",
-            variable=self.manual_mode,
-            command=self.toggle_manual_mode,
-        ).pack(side="left", padx=6)
         ttk.Button(manual, text="恢复本张自动选脸", command=self.auto_face).pack(side="left", padx=6)
         ttk.Button(manual, text="隐藏本张小窗", command=self.hide_face).pack(side="left", padx=6)
         navigation = ttk.Frame(body)
@@ -234,7 +227,7 @@ class CropDialog(tk.Toplevel):
             self.caption.configure(text="扫描照片后可预览；现在可先保存全局置信度。")
             return
         asset = self.assets[self.index]
-        mode = "手动选人脸" if self.manual_mode.get() else "拖动绿框调整裁切"
+        mode = "拖动黄框调整位置" if self._crop_selected else "直接框选；点击绿框可移动"
         self.caption.configure(text=(
             f"{self.index+1}/{len(self.assets)}  ·  {asset.stem}  ·  G{asset.group_id:03d}"
             f"  ·  范围 {self.scale.get():.2f}  ·  {mode}"
@@ -341,19 +334,11 @@ class CropDialog(tk.Toplevel):
             self.current_entry()['hidden'] = True
             self.render()
 
-    def toggle_manual_mode(self):
-        self._drag = None
-        self._crop_selected = False
-        self.render()
-
     def pointer_down(self, event):
         if not self._image_rect:
             return
         x,y,w,h,_,_ = self._image_rect
         if not (x <= event.x <= x+w and y <= event.y <= y+h):
-            return
-        if self.manual_mode.get():
-            self._drag = ("manual", event.x, event.y)
             return
         if self._crop_rect:
             left, top, right, bottom = self._crop_rect
@@ -367,6 +352,7 @@ class CropDialog(tk.Toplevel):
                 return
         self._crop_selected = False
         self.canvas.itemconfigure("crop-outline", outline="#00aa66")
+        self._drag = ("manual", event.x, event.y)
 
     def pointer_move(self, event):
         if not self._drag:
