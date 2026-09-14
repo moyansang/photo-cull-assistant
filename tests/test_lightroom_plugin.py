@@ -31,6 +31,10 @@ def test_lua_catalog_import_validation_and_metadata_scope():
     rows=core.validate(decoder.decode(json.dumps(data,ensure_ascii=False)))
     matched,missing=core.plan(rows,lua.globals().catalog)
     assert len(matched)==1 and len(missing)==2
+    assert core.matchSummary(matched, missing) == '总计：匹配 1 张；未匹配 2 张。\nRAW：匹配 1 张；未匹配 2 张。'
+    mixed = lua.table_from(['/photos/a.JPG', '/photos/b.jpeg', '/photos/c.PNG'])
+    assert core.matchSummary(matched, mixed) == ('总计：匹配 1 张；未匹配 3 张。\n'
+        'RAW：匹配 1 张；未匹配 0 张。\nJPG：匹配 0 张；未匹配 2 张。\nPNG：匹配 0 张；未匹配 1 张。')
     core.apply(matched)
     photos=lua.globals().photos
     assert photos['/photos/中文.RW2']['pickStatus']==-1

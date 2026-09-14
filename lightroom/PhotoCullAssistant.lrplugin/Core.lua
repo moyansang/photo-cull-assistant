@@ -62,6 +62,33 @@ function M.plan(rows, catalog)
     return matched, missing
 end
 
+-- Summarize actual catalog matches by file format.
+function M.matchSummary(matched, missing)
+    local raw={rw2=true,arw=true,cr2=true,cr3=true,nef=true,orf=true,raf=true,dng=true}
+    local counts={}
+    local function add(path, index)
+        local extension=path:match('%.([^%.\\/]+)$')
+        extension=extension and extension:lower() or ''
+        local label=raw[extension] and 'RAW' or ((extension=='jpg' or extension=='jpeg') and 'JPG' or (extension~='' and extension:upper() or '其他'))
+        counts[label]=counts[label] or {0,0}
+        counts[label][index]=counts[label][index]+1
+    end
+    for _, item in ipairs(matched) do add(item.row.path,1) end
+    for _, path in ipairs(missing) do add(path,2) end
+    local labels={}
+    for label in pairs(counts) do table.insert(labels,label) end
+    local order={RAW=1,JPG=2}
+    table.sort(labels,function(a,b)
+        if (order[a] or 3)~=(order[b] or 3) then return (order[a] or 3)<(order[b] or 3) end
+        return a<b
+    end)
+    local lines={'总计：匹配 '..#matched..' 张；未匹配 '..#missing..' 张。'}
+    for _, label in ipairs(labels) do
+        table.insert(lines,label..'：匹配 '..counts[label][1]..' 张；未匹配 '..counts[label][2]..' 张。')
+    end
+    return table.concat(lines,'\n')
+end
+
 -- Call inside a separate write gate; newly created keywords become usable
 -- once that gate completes. Never export this workflow keyword with images.
 function M.prepareFocus(catalog, matched)
