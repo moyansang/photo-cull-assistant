@@ -15,6 +15,7 @@ from .models import RAW_EXTENSIONS
 from .screening import ScreeningResult
 from .subject import detail_features
 from .scan_timing import measure, timed
+from .scan_diagnostics import operation
 
 VERSION = "native-face-v4-kps"
 
@@ -25,7 +26,7 @@ def load_full_image(asset):
     if path.suffix.lower() in RAW_EXTENSIONS:
         import rawpy
         try:
-            with rawpy.imread(str(path)) as raw:
+            with operation('raw_full_decode'), rawpy.imread(str(path)) as raw:
                 rgb = raw.postprocess(
                     use_camera_wb=True, half_size=False,
                     no_auto_bright=True, output_bps=8,

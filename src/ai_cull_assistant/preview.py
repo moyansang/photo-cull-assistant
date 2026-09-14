@@ -7,6 +7,7 @@ from PIL import Image, ImageOps
 
 from .models import PhotoAsset, RAW_EXTENSIONS
 from .scan_timing import measure
+from .scan_diagnostics import note, operation
 
 try:
     import rawpy  # type: ignore
@@ -27,15 +28,18 @@ def build_preview(asset: PhotoAsset, cache_dir: Path, *, legacy_orientation: boo
     cache_dir.mkdir(parents=True, exist_ok=True)
     out_path = cache_dir / f"{asset.stem}.jpg"
     if out_path.exists():
+        note('preview_source', 'cached_preview')
         asset.preview_path = out_path
         return out_path
 
     img = None
     if asset.jpg_path is not None:
+        note('preview_source', 'paired_jpeg')
         img = _load_standard_image(asset.jpg_path)
     elif asset.primary_path.suffix.lower() in RAW_EXTENSIONS:
         img = _load_raw_preview(asset.primary_path, apply_orientation=not legacy_orientation)
     else:
+        note('preview_source', 'standard_image')
         img = _load_standard_image(asset.primary_path)
 
     if img is None:
@@ -95,16 +99,20 @@ def _load_raw_preview(path: Path, *, apply_orientation: bool = True) -> Optional
             try:
                 thumb = raw.extract_thumb()
                 if thumb.format == rawpy.ThumbFormat.JPEG:
+                    note('preview_source', 'raw_embedded_jpeg')
                     from io import BytesIO
 
                     with Image.open(BytesIO(thumb.data)) as decoded:
                         image = decoded.copy()
                     return _orient_raw_thumbnail(image, raw.sizes.flip) if apply_orientation else image
                 if thumb.format == rawpy.ThumbFormat.BITMAP:
+                    note('preview_source', 'raw_embedded_bitmap')
                     image = Image.fromarray(thumb.data)
                     return _orient_raw_thumbnail(image, raw.sizes.flip) if apply_orientation else image
             except Exception:
-                rgb = raw.postprocess(use_camera_wb=True, half_size=True)
+                note('preview_source', 'raw_half_decode')
+                with operation('raw_preview_half_decode'):
+                    rgb = raw.postprocess(use_camera_wb=True, half_size=True)
                 return Image.fromarray(rgb)
     except Exception:
         return None

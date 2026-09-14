@@ -26,6 +26,7 @@ from .group_store import load_groups, save_groups
 from .grouping import assign_groups
 from .models import PhotoAsset
 from .preview import build_preview
+from .scan_diagnostics import collect_diagnostics, DiagnosticReport
 from .scanner import iter_image_files, scan_folder
 from .screening import ScreeningResult, save_screening_results, screen_assets
 from .session_store import save_session
@@ -462,7 +463,7 @@ class ProcessingJob:
     def _scan_one(self, asset, current, crops):
         # Each worker owns a copy; only the coordinator publishes mutable state.
         asset = deepcopy(asset)
-        with collect_timings() as values:
+        with collect_diagnostics() as diagnostics, collect_timings() as values:
             if self.kind == 'scan':
                 override = crops.photos.get(crops.key(asset), {})
                 legacy = bool(override.get('manual_face') and override.get('preview_version', 'v04') == 'v04')
@@ -482,14 +483,14 @@ class ProcessingJob:
             asset.ai_focus_result = None
             if self.mode == 'rescan':
                 asset.ai_focus_dirty = False
-        return asset, screened, values
+        return asset, screened, values, diagnostics
 
     def _run_local_photos(self, current, crops, stop_event, progress, on_log):
         budget = ResourceBudget()
         indices = self._data['work_indices']
         warmed = 0
         last_workers = None
-        with ThreadPoolExecutor(max_workers=4, thread_name_prefix='photo-scan') as pool:
+        with DiagnosticReport(self.workspace) as report, ThreadPoolExecutor(max_workers=4, thread_name_prefix='photo-scan') as pool:
             while self._data['completed_photos'] < len(indices):
                 if stop_event.is_set():
                     return False
@@ -524,7 +525,7 @@ class ProcessingJob:
                 for index, outcome in zip(batch, outcomes):
                     if isinstance(outcome, Exception):
                         raise outcome
-                    asset, screened, values = outcome
+                    asset, screened, values = outcome[:3]
                     self.assets[index] = asset
                     key = _asset_key(asset)
                     self._data['screening_results'][key] = asdict(screened)
@@ -534,6 +535,8 @@ class ProcessingJob:
                     merge_timings(self._data.setdefault('stage_timings', {}), values)
                     self._data['completed_photos'] += 1
                     self._checkpoint(progress, index=index)
+                    if len(outcome) > 3:
+                        report.add(asset.primary_path.name, outcome[3], values)
                 if stop_event.is_set():
                     return False
         return True

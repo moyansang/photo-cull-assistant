@@ -72,7 +72,9 @@ def features(path: Path, score_threshold: float = .9) -> SubjectFeatures | None:
 
 def _head_candidates(image):
     from .head_detection import detect_heads
-    return detect_heads(image)
+    from .scan_diagnostics import operation
+    with operation('head_detection'):
+        return detect_heads(image)
 
 
 def _inside_head(candidate, head):
@@ -84,7 +86,9 @@ def _inside_head(candidate, head):
 def _refine_head_face(image, head, score_threshold):
     """Try real YuNet landmarks inside a located head; never fabricate eyes."""
     from .head_detection import refine_face_in_head
-    return refine_face_in_head(image, head, score_threshold)
+    from .scan_diagnostics import operation
+    with operation('head_face_retry'):
+        return refine_face_in_head(image, head, score_threshold)
 
 
 def _choose_subject(image, candidates, score_threshold):

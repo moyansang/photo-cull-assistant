@@ -33,6 +33,7 @@ from .shared_api import (
 )
 from .window_layout import fit_window, scrollable_body
 from .workspace_layout import workspace_path
+from .workspace_log import append_log, visible_log
 from dataclasses import asdict
 from .workflow import (
     ScanResult,
@@ -132,7 +133,7 @@ class App(tk.Tk):
         if logfile.exists():
             try:
                 self.log_text.configure(state="normal")
-                self.log_text.insert("end", logfile.read_text('utf-8'))
+                self.log_text.insert("end", visible_log(logfile.read_text('utf-8')))
                 self.log_text.configure(state="disabled")
             except OSError:
                 pass
@@ -1093,10 +1094,7 @@ class App(tk.Tk):
             try:
                 workspace_value = self.workspace_var.get().strip()
                 if workspace_value and not self._workspace_blocked:
-                    logfile = workspace_path(Path(workspace_value), "session.log")
-                    logfile.parent.mkdir(parents=True, exist_ok=True)
-                    with logfile.open("a", encoding="utf-8") as stream:
-                        stream.write(text + "\n")
+                    append_log(Path(workspace_value), text)
             except OSError:
                 pass
         def append():

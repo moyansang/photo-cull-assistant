@@ -102,6 +102,7 @@ def _deduplicate(candidates: list[FaceDetection]) -> list[FaceDetection]:
 
 
 def detect(image: np.ndarray, score_threshold: float = .9) -> list[FaceDetection]:
+    from .scan_diagnostics import operation
     h, w = image.shape[:2]
     if not h or not w:
         return []
@@ -116,7 +117,8 @@ def detect(image: np.ndarray, score_threshold: float = .9) -> list[FaceDetection
         rotated = np.ascontiguousarray(np.rot90(resized, turns)) if turns else resized
         rotated_h, rotated_w = rotated.shape[:2]
         model.setInputSize((rotated_w, rotated_h))
-        _, rows = model.detect(rotated)
+        with operation('yunet_rotation' if turns else 'yunet_normal'):
+            _, rows = model.detect(rotated)
         if rows is None:
             return
         for row in rows:
