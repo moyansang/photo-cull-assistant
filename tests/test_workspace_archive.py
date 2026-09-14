@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import pytest
 
 from PIL import Image
 
@@ -117,16 +118,40 @@ def test_completed_ai_review_can_compact_before_export(tmp_path):
     assert reopened.data["photos"] == paid_result
 
 
-def test_unfinished_or_stale_workspace_is_never_compacted(tmp_path):
-    _photos, workspace, _result, project, task, _batch, _export, _crops = _completed_workspace(tmp_path)
-    task["batches"][0]["status"] = "pending"
+@pytest.mark.parametrize('state', ['pending', 'stale', 'changed_group', 'focus_dirty'])
+def test_saved_ai_work_compacts_without_losing_pending_or_stale_results(tmp_path, state):
+    photos, workspace, result, project, task, batch, export, _crops = _completed_workspace(tmp_path)
+    if state == 'pending':
+        task['batches'][0]['status'] = 'pending'
+    elif state == 'stale':
+        next(iter(project.data['photos'].values()))['stale'] = True
+    elif state == 'changed_group':
+        result.assets[0].group_id += 1
+    else:
+        result.assets[0].ai_focus_dirty = True
+    save_session(result)
     project.save()
-    preview = next((workspace / "previews").rglob("*.jpg"))
+    original_project = project.path.read_bytes()
+    original_session = (workspace / 'scan-session.json').read_bytes()
+    original_export = export.read_bytes()
+    images = {Path(path): Path(path).read_bytes() for path in batch['image_paths']}
+    cache = workspace / 'cache' / 'analysis'
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / 'temporary.bin').write_bytes(b'cache')
 
     stats = compact_workspace(workspace)
 
-    assert not stats["compacted"] and "未完成" in stats["reason"]
-    assert preview.is_file() and (workspace / "ai_project.json").is_file()
+    assert stats['compacted']
+    assert not (workspace / 'previews').exists()
+    assert not cache.exists()
+    assert export.read_bytes() == original_export
+    assert all(path.read_bytes() == payload for path, payload in images.items())
+    assert restore_workspace(workspace)['restored']
+    assert project.path.read_bytes() == original_project
+    assert (workspace / 'scan-session.json').read_bytes() == original_session
+    restored = load_session(workspace, photos)
+    assert restored.assets[0].group_id == result.assets[0].group_id
+    assert restored.assets[0].ai_focus_dirty == result.assets[0].ai_focus_dirty
 
 
 def test_active_processing_job_and_its_cache_are_preserved(tmp_path):

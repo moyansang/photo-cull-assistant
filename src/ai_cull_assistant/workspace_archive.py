@@ -20,7 +20,6 @@ from .ai_project import atomic_json
 ARCHIVE_NAME = ".workspace-archive.zip"
 STATE_NAME = ".workspace-storage.json"
 _ARCHIVE_MANIFEST = ".archive-manifest.json"
-_DONE = {"complete", "completed", "done", "已完成"}
 _STATE_FILES = (
     "scan-session.json",
     "ai_project.json",
@@ -104,74 +103,16 @@ def _eligible(workspace: Path) -> tuple[bool, str]:
     if result is None or not result.assets:
         return False, "没有可恢复的完整扫描记录"
 
-    # A completed scan is already a durable checkpoint.  It is safe to archive
-    # it before contact sheets, AI review, or export have been run.  If an AI
-    # project does exist, retain the stricter checks for unfinished paid work.
-    if not project_path.is_file():
-        return True, ""
-    try:
-        project = _read_json(project_path)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        return False, f"AI 选片记录无法验证：{exc}"
-    tasks = project.get("tasks")
-    if not isinstance(tasks, list):
-        return False, "AI 选片记录格式无效"
-    if not tasks:
-        return True, ""
-    current_id = project.get("current_task_id")
-    current = next((task for task in tasks if isinstance(task, dict) and task.get("id") == current_id), None)
-    if current is None:
-        return False, "找不到当前 AI 选片任务"
-    batches = current.get("batches")
-    if not isinstance(batches, list) or any(not isinstance(batch, dict) or batch.get("status") not in _DONE for batch in batches):
-        return False, "AI 选片仍有未完成批次"
-    if any(isinstance(photo, dict) and photo.get("stale") for photo in project.get("photos", {}).values()):
-        return False, "AI 选片结果已经过时"
-    try:
-        if not _analysis_matches_project(workspace, session, project):
-            return False, "当前分组、人脸设置或照片状态尚未重新评审"
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        return False, f"当前分析无法验证：{exc}"
+    # Archiving preserves AI state verbatim and leaves submission images in place.
+    # Pending/stale reviews are valid saved work, not an active scan requiring cache.
+    if project_path.is_file():
+        try:
+            project = _read_json(project_path)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            return False, f"AI 选片记录无法验证：{exc}"
+        if not isinstance(project.get("tasks"), list) or not isinstance(project.get("photos"), dict):
+            return False, "AI 选片记录格式无效"
     return True, ""
-
-
-def _analysis_matches_project(workspace: Path, session: dict, project: dict) -> bool:
-    """Verify persisted scan/crop state against the fingerprints AI reviewed."""
-    from .ai_project import fingerprint, photo_id
-    from .crop_settings import CropSettings
-    from .session_store import load_session
-
-    input_dir = Path(session["input_dir"])
-    result = load_session(workspace, input_dir)
-    if result is None or any(asset.ai_focus_dirty for asset in result.assets):
-        return False
-    settings_path = workspace / "workspace-settings.json"
-    settings = _read_json(settings_path) if settings_path.is_file() else {}
-    crops = CropSettings.from_dict(settings.get("face_crop", {}))
-    groups: dict[int, list[tuple[str, str]]] = {}
-    for asset in result.assets:
-        groups.setdefault(asset.group_id, []).append((photo_id(asset), fingerprint(asset, crops)))
-    expected = {}
-    for asset in result.assets:
-        pid = photo_id(asset)
-        expected[pid] = hashlib.sha256(json.dumps(sorted(groups[asset.group_id])).encode()).hexdigest()
-    photos = project.get("photos")
-    if not isinstance(photos, dict) or set(photos) != set(expected):
-        return False
-    for pid, current in expected.items():
-        photo = photos.get(pid)
-        if not isinstance(photo, dict) or photo.get("fingerprint") != current:
-            return False
-        if photo.get("technical_rejected") or photo.get("technical_reason"):
-            continue
-        final = photo.get("final", {})
-        human_current = (isinstance(final, dict) and final.get("confirmed") is True
-                         and final.get("fingerprint") == current)
-        ai = photo.get("ai", {})
-        ai_current = isinstance(ai, dict) and ai.get("fingerprint") == current
-        if not (human_current or ai_current):
-            return False
-    return True
 
 
 def _archive_candidates(workspace: Path) -> list[tuple[Path, str]]:
