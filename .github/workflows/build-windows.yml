@@ -21,6 +21,10 @@ jobs:
       - name: Verify portable executable
         shell: pwsh
         run: |
+          # Hosted runners may use an 8.3 user-profile TEMP alias. Use the
+          # runner's canonical temporary directory for path-persistence checks.
+          $env:TEMP = $env:RUNNER_TEMP
+          $env:TMP = $env:RUNNER_TEMP
           $reportPath = Join-Path $env:GITHUB_WORKSPACE 'smoke-test.json'
           $app = Start-Process -FilePath '.\dist\AI选片助手\AI选片助手.exe' -ArgumentList '--self-test', $reportPath -WindowStyle Hidden -Wait -PassThru
           if (Test-Path -LiteralPath $reportPath) { Get-Content -LiteralPath $reportPath -Raw }
