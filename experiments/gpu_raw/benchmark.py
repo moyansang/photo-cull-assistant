@@ -12,6 +12,8 @@ import numpy as np
 from PIL import Image
 import rawpy
 from backend import Developer, parameters
+from hybrid import choose_result, review_reasons
+from ai_cull_assistant.screening import ScreeningResult
 from ai_cull_assistant.face_focus import assess_asset_focus
 from ai_cull_assistant.models import PhotoAsset
 from ai_cull_assistant.preview import build_preview
@@ -99,6 +101,10 @@ def main():
                         np.abs(a[y:y+128].astype(np.int16)-b[y:y+128]).sum(dtype=np.float64)
                         for y in range(0,len(a),128))/a.size)
                 row['same_decision']=row['cpu_focus']['reason']==row['gpu_focus']['reason']
+                gpu_result=ScreeningResult(**row['gpu_focus'])
+                row['hybrid_focus']=asdict(choose_result(gpu_result,review_reasons(gpu_result),
+                    lambda:ScreeningResult(**row['cpu_focus'])))
+                # Replay reuses measured CPU evidence: not a hybrid latency benchmark.
                 cpu_image.close();gpu_image.close()
             except Exception as exc:
                 row['error']=type(exc).__name__+': '+str(exc)

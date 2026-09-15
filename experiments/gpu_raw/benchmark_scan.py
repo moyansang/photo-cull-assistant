@@ -10,6 +10,8 @@ from unittest.mock import patch
 from PIL import Image
 import rawpy
 from backend import Developer, parameters
+from hybrid import assess_hybrid
+from ai_cull_assistant.face_focus import assess_asset_focus
 from ai_cull_assistant.face_focus import load_full_image
 from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.models import IMAGE_EXTENSIONS
@@ -24,7 +26,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--backend',choices=['cpu','gpu'],required=True)
+    parser.add_argument('--backend',choices=['cpu','gpu','hybrid'],required=True)
     args=parser.parse_args()
     source=args.input.resolve(strict=True); root=args.output.resolve()
     if source==root or source in root.parents or root in source.parents:
@@ -39,7 +41,7 @@ def main():
     backend=None
     start=perf_counter()
     try:
-        if args.backend=='gpu':
+        if args.backend in {'gpu','hybrid'}:
             backend=Developer(root/'cl-cache')
             report['gpu']=backend.device.name
         report['initialization_seconds']=perf_counter()-start
@@ -68,7 +70,8 @@ def main():
         options={'technical_screening':True,'body_screening':False}
         with patch('ai_cull_assistant.processing_job.ScanHistory',side_effect=history), \
              patch('ai_cull_assistant.scan_resources.ResourceBudget.choose_workers',return_value=1), \
-             patch('ai_cull_assistant.face_focus.load_full_image',gpu_image if backend else load_full_image):
+             patch('ai_cull_assistant.face_focus.load_full_image',gpu_image if backend else load_full_image), \
+             patch('ai_cull_assistant.face_focus.assess_asset_focus',assess_hybrid if args.backend=='hybrid' else assess_asset_focus):
             job=start_job(source,root/'workspace',options,CropSettings(),mode='scan')
             result=job.run(options,CropSettings(),threading.Event(),None,on_log=log)
         report['wall_seconds']=perf_counter()-start
