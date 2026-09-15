@@ -26,14 +26,20 @@ def test_embedded_exif_orientation_is_not_applied_twice():
 
 
 def test_postprocessed_fallback_is_already_oriented(tmp_path, monkeypatch):
+    from ai_cull_assistant.scan_diagnostics import collect_diagnostics
     class Raw:
         sizes = SimpleNamespace(flip=5)
+        raw_image = np.zeros((2,3), dtype=np.uint16)
         def __enter__(self): return self
         def __exit__(self, *a): pass
         def extract_thumb(self): raise ValueError('no embedded preview')
         def postprocess(self, **kw): return np.zeros((3,2,3), dtype=np.uint8)
     monkeypatch.setattr(preview, 'rawpy', SimpleNamespace(imread=lambda p: Raw()))
-    assert preview._load_raw_preview(tmp_path/'a.RW2').size == (2,3)
+    with collect_diagnostics() as row:
+        assert preview._load_raw_preview(tmp_path/'a.RW2').size == (2,3)
+    for key in ('raw_preview_open', 'raw_preview_extract_thumb',
+                'raw_preview_unpack', 'raw_preview_postprocess', 'raw_preview_half_decode'):
+        assert row['operations'][key]['count'] == 1
 
 
 def test_missing_legacy_preview_retains_old_coordinate_system(tmp_path, monkeypatch):

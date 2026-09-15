@@ -27,11 +27,20 @@ def load_full_image(asset):
     if path.suffix.lower() in RAW_EXTENSIONS:
         import rawpy
         try:
-            with operation('raw_full_decode'), rawpy.imread(str(path)) as raw:
-                rgb = raw.postprocess(
-                    use_camera_wb=True, half_size=False,
-                    no_auto_bright=True, output_bps=8,
-                )
+            with operation('raw_full_decode'):
+                with operation('raw_full_open'):
+                    raw = rawpy.imread(str(path))
+                with raw:
+                    # rawpy defers unpacking until pixels are accessed. This
+                    # view forces ensure_unpack without copying the sensor data,
+                    # and is idempotent if the installed version unpacked early.
+                    with operation('raw_full_unpack'):
+                        raw.raw_image
+                    with operation('raw_full_postprocess'):
+                        rgb = raw.postprocess(
+                            use_camera_wb=True, half_size=False,
+                            no_auto_bright=True, output_bps=8,
+                        )
         except rawpy.LibRawError as exc:
             raise ValueError("RAW decode failed") from exc
         return Image.fromarray(rgb)
