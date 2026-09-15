@@ -16,11 +16,12 @@ def snapshot(cpu, total_gib, available_gib, rss_mib=256):
     )
 
 
-def test_resource_rich_machine_uses_four_workers():
+def test_resource_rich_machine_allows_six_or_eight_workers():
     current = snapshot(12, 32, 20)
     budget = ResourceBudget(lambda: current)
 
-    assert budget.choose_workers() == 4
+    assert budget.choose_workers() == 6
+    assert ResourceBudget(lambda: snapshot(24, 32, 20)).choose_workers() == 8
 
 
 def test_cpu_limits_default_and_small_machines():

@@ -16,6 +16,7 @@ from .screening import ScreeningResult
 from .subject import detail_features
 from .scan_timing import measure, timed
 from .scan_diagnostics import operation
+from .shared_decode import full_image
 
 VERSION = "native-face-v4-kps"
 
@@ -76,7 +77,7 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
                 return ScreeningResult(**json.loads(cache.read_text('utf-8')))
             except (OSError, ValueError, TypeError):
                 pass
-        with load_full_image(asset) as image:
+        with full_image(asset) as image:
             width, height = image.size
             with Image.open(asset.preview_path) as preview:
                 pw, ph = ImageOps.exif_transpose(preview).size

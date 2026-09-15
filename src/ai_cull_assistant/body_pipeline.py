@@ -8,7 +8,7 @@ def apply_body_check(asset, screened, settings, cache_dir):
     if screened.rejected or not screened.face_found or not screened.focus_evidence:
         return screened
     from .subject import detail_features
-    from .face_focus import load_full_image
+    from .shared_decode import full_image
     from .body_focus import assess_body_focus, VERSION
     from .ai_project import atomic_json
     subject=detail_features(asset,settings)
@@ -24,7 +24,7 @@ def apply_body_check(asset, screened, settings, cache_dir):
         try:body=json.loads(target.read_text('utf-8'))
         except (OSError,ValueError):pass
     if not isinstance(body,dict) or body.get('version')!=VERSION or body.get('state') not in {'clear','uncertain','severe_blur'}:
-        with load_full_image(asset) as image:body=assess_body_focus(image,tuple(subject.face))
+        with full_image(asset) as image:body=assess_body_focus(image,tuple(subject.face))
         if target and 'body_models_unavailable' not in body.get('reasons',[]):atomic_json(target,body)
     face=dict(screened.focus_evidence or {'state':'uncertain','reasons':['missing_face_evidence']})
     evidence={**face,'face_state':face['state'],'body':body}

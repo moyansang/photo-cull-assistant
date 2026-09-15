@@ -27,6 +27,8 @@ from .grouping import assign_groups
 from .models import PhotoAsset
 from .preview import build_preview
 from .scan_diagnostics import collect_diagnostics, DiagnosticReport
+from .scan_adaptive import AdaptiveConcurrencyPolicy
+from .scan_tuning import ScanHistory
 from .scanner import iter_image_files, scan_folder
 from .screening import ScreeningResult, save_screening_results, screen_assets
 from .session_store import save_session
@@ -487,15 +489,18 @@ class ProcessingJob:
 
     def _run_local_photos(self, current, crops, stop_event, progress, on_log):
         budget = ResourceBudget()
+        history = ScanHistory(budget.snapshot(), current['body_screening'])
+        policy = AdaptiveConcurrencyPolicy(preferred=history.preferred())
         indices = self._data['work_indices']
         warmed = 0
         last_workers = None
-        with DiagnosticReport(self.workspace) as report, ThreadPoolExecutor(max_workers=4, thread_name_prefix='photo-scan') as pool:
+        with DiagnosticReport(self.workspace) as report, ThreadPoolExecutor(max_workers=8, thread_name_prefix='photo-scan') as pool:
             while self._data['completed_photos'] < len(indices):
                 if stop_event.is_set():
                     return False
                 first = int(self._data['completed_photos'])
-                workers = 1 if warmed < 2 else budget.choose_workers()
+                warming = warmed < 2
+                workers = 1 if warming else policy.choose(budget.choose_workers())
                 if workers != last_workers:
                     _notify_log(on_log, f'扫描并行：同时处理 {workers} 张' + ('（前两张估算内存）' if warmed < 2 else '（按 CPU 与可用内存自动调整）'))
                     last_workers = workers
@@ -508,6 +513,7 @@ class ProcessingJob:
                         peak[0] = max(peak[0], budget.snapshot().process_rss_bytes or 0)
                 sampler = Thread(target=sample, daemon=True)
                 sampler.start()
+                batch_started = perf_counter()
                 try:
                     futures = [pool.submit(self._scan_one, self.assets[index], current, crops) for index in batch]
                     outcomes = []
@@ -537,6 +543,8 @@ class ProcessingJob:
                     self._checkpoint(progress, index=index)
                     if len(outcome) > 3:
                         report.add(asset.primary_path.name, outcome[3], values)
+                if not warming and policy.observe(workers, len(batch), perf_counter()-batch_started):
+                    history.save(policy.best_workers)
                 if stop_event.is_set():
                     return False
         return True

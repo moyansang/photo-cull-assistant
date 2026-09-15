@@ -24,6 +24,12 @@ class FixedBudget:
 
 
 def setup_job(tmp_path, monkeypatch, count=9):
+    # These tests isolate dispatch/checkpoint mechanics from the measured policy.
+    class FixedPolicy:
+        def __init__(self, **kwargs): pass
+        def choose(self, cap): return cap
+        def observe(self, *args): return False
+    monkeypatch.setattr(module, 'AdaptiveConcurrencyPolicy', FixedPolicy)
     folder = tmp_path / 'photos'
     folder.mkdir()
     for i in range(count):

@@ -135,17 +135,20 @@ def screen_assets(
 ) -> dict[str, ScreeningResult]:
     results: dict[str, ScreeningResult] = {}
     for asset in assets:
-        if asset.preview_path is None:
-            result = ScreeningResult(False, "preview_unavailable", False)
-        elif face_provider is not None:
-            result = assess_subject_blur(asset.preview_path, face_boxes=face_provider(asset), config=config)
-        else:
-            from .face_focus import assess_asset_focus
-            result = assess_asset_focus(asset, crop_settings=crop_settings, cache_dir=cache_dir)
-        if body_check:
-            from .body_pipeline import apply_body_check
-            from .crop_settings import CropSettings
-            result = apply_body_check(asset, result, crop_settings or CropSettings(), cache_dir)
+        from .shared_decode import shared_decode
+        from contextlib import nullcontext
+        with shared_decode(asset) if body_check else nullcontext():
+            if asset.preview_path is None:
+                result = ScreeningResult(False, "preview_unavailable", False)
+            elif face_provider is not None:
+                result = assess_subject_blur(asset.preview_path, face_boxes=face_provider(asset), config=config)
+            else:
+                from .face_focus import assess_asset_focus
+                result = assess_asset_focus(asset, crop_settings=crop_settings, cache_dir=cache_dir)
+            if body_check:
+                from .body_pipeline import apply_body_check
+                from .crop_settings import CropSettings
+                result = apply_body_check(asset, result, crop_settings or CropSettings(), cache_dir)
         asset.auto_rejected = result.rejected
         asset.screening_reason = result.reason
         asset.focus_score = result.laplacian_variance

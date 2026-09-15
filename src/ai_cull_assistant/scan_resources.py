@@ -226,7 +226,7 @@ class ResourceBudget:
         return self.observed_per_photo_bytes
 
     def choose_workers(self, snapshot: ResourceSnapshot | None = None) -> int:
-        """Return a CPU- and memory-bounded worker count from 1 through 4."""
+        """Return the resource ceiling; throughput policy chooses within it."""
 
         current = snapshot or self.snapshot()
         cpu_count = _positive(current.cpu_count)
@@ -234,8 +234,12 @@ class ResourceBudget:
             cpu_limit = 1
         elif cpu_count < 8:
             cpu_limit = 2
-        else:
+        elif cpu_count < 12:
             cpu_limit = 4
+        elif cpu_count < 16:
+            cpu_limit = 6
+        else:
+            cpu_limit = 8
 
         total = _positive(current.total_memory_bytes)
         available = _positive(current.available_memory_bytes)
@@ -247,9 +251,9 @@ class ResourceBudget:
             reserve = max(MIN_OS_RESERVE_BYTES, total // 4)
         usable = max(0, available - reserve)
         per_photo = self.observed_per_photo_bytes or self.per_photo_floor_bytes
-        memory_limit = max(1, min(4, usable // max(1, per_photo)))
-        limit = min(cpu_limit, memory_limit, 4)
-        return 4 if limit >= 4 else 2 if limit >= 2 else 1
+        memory_limit = max(1, min(8, usable // max(1, per_photo)))
+        limit = min(cpu_limit, memory_limit, 8)
+        return next(level for level in (8, 6, 4, 2, 1) if level <= limit)
 
 
 # The scan integration uses this more task-specific name; ResourceBudget stays
