@@ -195,6 +195,24 @@ def run(report_path: str) -> None:
             assert rendered.main_pages and all(page.is_file() for page in rendered.main_pages)
             report['separate_scan_rescan_sheets'] = True
 
+            from .session_store import load_session, source_changes
+            from dataclasses import asdict
+            before = {a.stem: asdict(a) for a in rendered.assets}
+            Image.new('RGB', (100, 150), 'gray').save(photos / 'ADDED.jpg')
+            assert len(source_changes(staged_workspace, photos)[0]) == 1
+            incremental = start_job(photos, staged_workspace, options, CropSettings(),
+                                    result=rendered, mode='scan')
+            assert len(incremental._data['work_indices']) == 1
+            extended = incremental.run(options, CropSettings(), Event(), lambda percent: None)
+            for asset in extended.assets:
+                if asset.stem in before:
+                    assert asdict(asset) == before[asset.stem]
+            (photos / 'ADDED.jpg').unlink()
+            restored = load_session(staged_workspace, photos)
+            assert len(restored.assets) == len(before)
+            assert {a.stem for a in restored.assets} == set(before)
+            report['added_only_scan_and_deleted_photo_restore'] = True
+
         report.update(ok=True, opencv=cv2.__version__, rawpy=rawpy.__version__)
     except Exception:
         report.update(ok=False, error=traceback.format_exc())

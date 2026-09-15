@@ -242,12 +242,26 @@ def start_job(
 
     if mode is not None and mode not in STAGED_MODES:
         raise ValueError(f"未知处理阶段：{mode}")
-    if mode == "scan" and result is not None:
-        raise ValueError("扫描图片阶段不能复用旧扫描结果")
     if mode in {"rescan", "focus", "sheets"} and result is None:
         raise ValueError(f"{mode} 阶段需要已有扫描结果")
 
+    incremental = mode == 'scan' and result is not None
     assets = list(result.assets) if result is not None else scan_folder(input_path)
+    new_indices = []
+    if incremental:
+        # Pair changes (RAW+JPEG) also need a new preview/local assessment.
+        old = {tuple(str(p.resolve()) for p in a.rating_target_paths): a for a in result.assets}
+        assets = []
+        next_group = max((a.group_id for a in result.assets), default=0)
+        for candidate in scan_folder(input_path):
+            key = tuple(str(p.resolve()) for p in candidate.rating_target_paths)
+            if key in old:
+                assets.append(deepcopy(old[key]))
+            else:
+                next_group += 1
+                candidate.group_id = next_group
+                new_indices.append(len(assets))
+                assets.append(candidate)
     if not assets:
         raise ValueError("照片文件夹中没有支持的照片")
     identifier = uuid.uuid4().hex
@@ -256,7 +270,9 @@ def start_job(
     normalised = _normalise_options(options)
     kind = "regenerate" if result is not None else "scan"
     stage = mode or "legacy"
-    if stage == "rescan":
+    if incremental:
+        work_indices = new_indices
+    elif stage == "rescan":
         work_indices = [index for index, asset in enumerate(assets) if asset.ai_focus_dirty]
     elif stage == "focus":
         from .lightroom_results import focus_review_status
@@ -278,6 +294,7 @@ def start_job(
         "id": identifier,
         "kind": kind,
         "mode": stage,
+        "incremental": incremental,
         "input_dir": str(input_path),
         "workspace": str(workspace_path),
         "created_options": normalised,
@@ -466,7 +483,7 @@ class ProcessingJob:
         # Each worker owns a copy; only the coordinator publishes mutable state.
         asset = deepcopy(asset)
         with collect_diagnostics() as diagnostics, collect_timings() as values:
-            if self.kind == 'scan':
+            if self.kind == 'scan' or self._data.get('incremental'):
                 override = crops.photos.get(crops.key(asset), {})
                 legacy = bool(override.get('manual_face') and override.get('preview_version', 'v04') == 'v04')
                 build_preview(asset, self.output / 'previews', **({'legacy_orientation': True} if legacy else {}))
@@ -599,7 +616,7 @@ class ProcessingJob:
             elif self.mode == "focus":
                 screened = ScreeningResult(**self._data["screening_results"][key])
             else:
-                if self.kind == "scan":
+                if self.kind == "scan" or self._data.get('incremental'):
                     override = crop_settings.photos.get(crop_settings.key(asset), {})
                     legacy_preview = bool(override.get('manual_face') and override.get('preview_version', 'v04') == 'v04')
                     build_preview(asset, self.output / "previews",
@@ -730,6 +747,16 @@ class ProcessingJob:
             self._persist()
             return None
 
+        if self._data.get('incremental') and not self._data.get('incremental_grouped'):
+            indices = set(self._data['work_indices'])
+            additions = [self.assets[i] for i in self._data['work_indices']]
+            offset = max((a.group_id for i, a in enumerate(self.assets) if i not in indices), default=0)
+            if additions:
+                assign_groups(additions, current['grouping_preset'])
+                for asset in additions:
+                    asset.group_id += offset
+            self._data['incremental_grouped'] = True
+            self._checkpoint(progress)
         if not self._data["grouping_complete"]:
             loaded = False
             if not self._data.get("regroup") and self.kind == "scan":
@@ -946,6 +973,8 @@ class ProcessingJob:
             destinations.extend([
                 (output / "previews", self.workspace / "previews"),
             ])
+        elif self._data.get('incremental'):
+            destinations.append((output / 'previews', self.workspace / 'previews' / self._data['id']))
         if self.mode == "scan" or (self.mode == "legacy" and (self.kind == "scan" or self._data.get("regroup"))):
             destinations.append((output / "groups.json", self.workspace / "groups.json"))
 
@@ -974,6 +1003,12 @@ class ProcessingJob:
                     if asset.preview_path:
                         relative = Path(asset.preview_path).relative_to(stage_preview)
                         asset.preview_path = self.workspace / "previews" / relative
+            elif self._data.get('incremental'):
+                for index in self._data['work_indices']:
+                    asset = self.assets[index]
+                    if asset.preview_path:
+                        relative = Path(asset.preview_path).relative_to(output / 'previews')
+                        asset.preview_path = self.workspace / 'previews' / self._data['id'] / relative
             main_pages = [self.workspace / page["path"] for page in self._data["pages"] if page["mode"] == "main"]
             rejected_pages = [self.workspace / page["path"] for page in self._data["pages"] if page["mode"] == "rejected"]
             rejected_count = sum(1 for asset in self.assets if asset.auto_rejected)
@@ -1011,8 +1046,10 @@ class ProcessingJob:
             for saved, destination in reversed(moved_old):
                 if saved.exists():
                     saved.replace(destination)
-            if self.kind == "scan":
+            if self.kind == "scan" or self._data.get('incremental'):
                 formal_preview = self.workspace / "previews"
+                if self._data.get('incremental'):
+                    formal_preview = formal_preview / self._data['id']
                 staged_preview = self.output / "previews"
                 for asset in self.assets:
                     if asset.preview_path:

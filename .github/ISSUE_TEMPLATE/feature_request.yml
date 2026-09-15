@@ -1,0 +1,15 @@
+name: 功能建议
+description: 描述实际选片中遇到的问题与期望改进
+title: "[建议] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 当前有什么不方便
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 希望如何处理
+      description: 可以给出使用流程或具体例子。

@@ -138,10 +138,18 @@ class App(tk.Tk):
             except OSError:
                 pass
         try:
-            from .session_store import load_session
+            from .session_store import load_session, source_changes
+            added, removed = source_changes(workspace, self.input_var.get())
             self.scan_result = load_session(workspace, self.input_var.get())
             if self.scan_result:
-                self._log(f"已恢复上次分析：{len(self.scan_result.assets)} 张照片，请按推荐下一步继续。新增照片请重新扫描。")
+                self._log(f"已恢复上次分析：{len(self.scan_result.assets)} 张照片，请按推荐下一步继续。")
+                if removed:
+                    self._log(f"照片文件夹减少 {len(removed)} 个文件，已更新工作区，保留其余分析；请重新生成联系表。")
+                # Recompute after removing a RAW whose JPEG still exists.
+                added, _ = source_changes(workspace, self.input_var.get())
+                if added:
+                    self._set_sheets_ready(False)
+                    self._log(f"发现新增 {len(added)} 个照片文件，点击“扫描图片”只扫描新增或配对变化的照片，保留原有分析和分组。")
         except Exception as exc:
             self._log(f"上次分析未恢复：{exc}。请检查照片路径或重新扫描；已有 AI 任务仍保留。")
 
@@ -712,6 +720,20 @@ class App(tk.Tk):
             return
         focus_profile = MappingProxyType(copy.deepcopy(selected_profile)) if selected_profile else None
         previous = copy.deepcopy(self.scan_result) if mode != "scan" else None
+        if mode == "scan" and self.scan_result is not None and not resume:
+            from .session_store import load_session, source_changes
+            try:
+                restored = load_session(workspace, input_dir)
+                added, _ = source_changes(workspace, input_dir)
+                if restored is not None:
+                    self.scan_result = restored
+                    if added:
+                        previous = copy.deepcopy(restored)
+            except ValueError as exc:
+                self._log(f"已有原片发生变化，本次执行完整扫描：{exc}")
+            except OSError as exc:
+                messagebox.showerror("扫描图片", f"无法访问照片或工作区：{exc}", parent=self)
+                return
         if not resume and mode != "scan" and previous is None:
             messagebox.showinfo(self._mode_label(mode), "请先扫描图片。", parent=self)
             return

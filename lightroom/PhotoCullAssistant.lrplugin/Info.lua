@@ -3,7 +3,7 @@ return {
     LrSdkMinimumVersion = 6.0,
     LrToolkitIdentifier = 'com.photocullassistant.catalogimport',
     LrPluginName = 'AI选片助手',
-    VERSION = { major=0, minor=5, revision=7, build=3 },
+    VERSION = { major=1, minor=5, revision=0, build=0 },
     LrMetadataProvider = 'MetadataProvider.lua',
     LrMetadataTagsetFactory = { 'MetadataTagset.lua' },
     LrLibraryMenuItems = {

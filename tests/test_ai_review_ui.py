@@ -275,3 +275,40 @@ def test_manual_web_mode_does_not_require_api_profile(ui, monkeypatch):
     assert '网页选片' in dialog.profile_var.get()
     assert project.current_task()['id'] == task['id']
     assert not errors
+
+@pytest.mark.parametrize('tab,submit', [(0, True), (1, False)])
+def test_refine_routes_selected_photos_to_current_submission_page(ui, monkeypatch, tab, submit):
+    root, dialog, project, task, batch, errors = ui
+    pid = batch['photo_ids'][0]
+    for photo in project.data['photos'].values():
+        photo['ai'] = {'rating': 5, 'suggest_reject': True}
+    project.data['photos'][pid]['ai']['suggest_reject'] = False
+    dialog.notebook.select(tab)
+    calls = []
+    monkeypatch.setattr(dialog, '_create_task', lambda *args, **kw: calls.append((args, kw)))
+    dialog.refine_button.invoke()
+    assert calls == [(('refine', [pid]), {'submit_after': submit})]
+
+
+def test_refine_explains_when_no_eligible_photos(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    notices = []
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showinfo', lambda *a, **kw: notices.append(a))
+    dialog.refine_button.invoke()
+    assert notices and '4～5 星' in notices[0][1]
+    assert project.current_task()['id'] == task['id']
+
+
+def test_refine_creates_new_task_and_requests_api_submission(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    pid = batch['photo_ids'][0]
+    project.data['photos'][pid]['ai'] = {'rating': 5, 'suggest_reject': False}
+    dialog.notebook.select(0)
+    submitted = []
+    monkeypatch.setattr(dialog, '_start_api', lambda: submitted.append(project.current_task()['id']))
+    dialog.refine_button.invoke()
+    drive(root, dialog)
+    current = project.current_task()
+    assert not errors and current['kind'] == 'refine' and current['id'] != task['id']
+    assert submitted == [current['id']]
+    assert [p for b in current['batches'] for p in b['photo_ids']] == [pid]

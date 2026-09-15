@@ -677,19 +677,25 @@ class ReviewDialog(tk.Toplevel):
 
 
     def _create_refine(self) -> None:
+        if self._api_active or self._preparing_task:
+            return
         ids: list[str] = []
         for photo_id, photo in self._photos().items():
-            if photo.get("stale"):
+            if photo.get("stale") or photo.get("technical_reason") or (photo.get("ai_focus_result") or {}).get("status") == "blur":
                 continue
             final = photo.get("final") or {}
             ai = photo.get("ai") or {}
             if final.get("confirmed"):
                 selected = (final.get("rating") or 0) >= 4 and final.get("pick_status") != -1
             else:
-                selected = (ai.get("rating") or 0) >= 4
+                selected = (ai.get("rating") or 0) >= 4 and not ai.get("suggest_reject")
             if selected:
                 ids.append(photo_id)
-        self._create_task("refine", ids)
+        if not ids:
+            messagebox.showinfo("精选照片再选一轮", "没有符合条件的精选照片。请先完成初选；本轮仅提交当前有效、未弃置的 4～5 星照片。", parent=self)
+            return
+        submit_after = self.notebook.index(self.notebook.select()) == 0
+        self._create_task("refine", ids, submit_after=submit_after)
 
     def _split_selected_batch(self) -> None:
         if self._api_active:
@@ -890,6 +896,9 @@ class ReviewDialog(tk.Toplevel):
                 self.status_var.set("准备失败：" + event[1])
                 if not self._closing_requested:
                     messagebox.showerror("准备 AI 选片失败", event[1], parent=self)
+            if event[0] == "prepared" and not (len(event) > 3 and event[3]) and event[1].get("kind") == "refine":
+                count = sum(len(batch.get("photo_ids", [])) for batch in event[1]["batches"])
+                self.status_var.set(f"精选再选已准备好：{count} 张照片，{len(event[1]['batches'])} 批。" + ("接下来确认 API 提交。" if event[2] else "请在网页选片中选择批次并准备上传。"))
             if self._closing_requested:
                 self._save_ui_settings()
                 self._destroy_now()

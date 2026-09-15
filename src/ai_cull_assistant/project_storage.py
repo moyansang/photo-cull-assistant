@@ -90,7 +90,10 @@ def relocate_copied_workspace(workspace, session):
     for active in (workspace/'.processing/active.json',workspace/'cache/processing/active.json'):
         if active.exists():raise ValueError('复制的工作区有中断任务，请在原工作区完成任务后再复制。')
     for name, expected in session['source_stats'].items():
-        st=Path(name).stat()
+        try:
+            st=Path(name).stat()
+        except FileNotFoundError:
+            continue  # load_session reconciles deletions after rebasing paths.
         if [st.st_size,st.st_mtime_ns]!=expected:raise ValueError('原照片已修改，未迁移工作区记录。')
     def rebase(value, field=None):
         if field in {'input_dir','primary_path','raw_path','jpg_path','display_path','target_paths','source_stats','path'}:

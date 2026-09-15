@@ -17,7 +17,6 @@ jobs:
       - name: Build portable app
         shell: pwsh
         run: |
-          .\build_exe.ps1
           .\make_portable_zip.ps1
       - name: Verify portable executable
         shell: pwsh
@@ -28,7 +27,7 @@ jobs:
           if (-not $report.ok) { throw 'Portable smoke test failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: AI选片助手-v1.3.1-Windows-portable
+          name: AI-Photo-Cull-Windows-portable
           path: |
-            dist/AI选片助手-v1.3.1-portable.zip
+            dist/AI-Photo-Cull-v*-Windows-x64-portable.zip
             dist/update.json

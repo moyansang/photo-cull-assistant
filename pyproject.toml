@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "photo-cull-mvp"
-version = "1.3.1"
+dynamic = ["version"]
 description = "Local contact-sheet based photo culling assistant"
 readme = "README.md"
 authors = [{name = "OpenAI"}]
@@ -29,6 +29,9 @@ aicull = "ai_cull_assistant.app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+version = {attr = "ai_cull_assistant.version.VERSION"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
