@@ -50,7 +50,7 @@ def orient(rgb, flip):
 
 
 class Developer:
-    def __init__(self, cache_dir):
+    def __init__(self, cache_dir, *, shared=None, slots=1):
         import pyopencl as cl
         self.cl = cl
         devices = []
@@ -61,13 +61,14 @@ class Developer:
         if not devices:
             raise RuntimeError('No native NVIDIA OpenCL GPU; no silent CPU fallback in benchmark')
         self.device = max(devices, key=lambda d:d.global_mem_size)
-        self.context = cl.Context([self.device])
+        self.context = shared.context if shared else cl.Context([self.device])
+        self.memory_budget = self.device.global_mem_size // 3 // slots
         self.queue = cl.CommandQueue(self.context, properties=cl.command_queue_properties.PROFILING_ENABLE)
         Path(cache_dir).mkdir(parents=True, exist_ok=True)
-        self.program = cl.Program(self.context, Path(__file__).with_name('develop.cl').read_text('utf-8')).build(
-            cache_dir=str(cache_dir))
-        self.normalize = self.program.normalize_raw
-        self.develop = self.program.develop
+        self.program = shared.program if shared else cl.Program(
+            self.context, Path(__file__).with_name('develop.cl').read_text('utf-8')).build(cache_dir=str(cache_dir))
+        self.normalize = cl.Kernel(self.program, 'normalize_raw')
+        self.develop = cl.Kernel(self.program, 'develop')
         self.shape = None
         self.buffers = []
         self.allocations = 0
@@ -77,7 +78,7 @@ class Developer:
             return
         pixels = int(np.prod(shape))
         sizes = [pixels*2, pixels*4, pixels*3, 16, 68]
-        if pixels < 16 or max(sizes) > self.device.max_mem_alloc_size or sum(sizes) > self.device.global_mem_size//3:
+        if pixels < 16 or max(sizes) > self.device.max_mem_alloc_size or sum(sizes) > self.memory_budget:
             raise MemoryError('Prototype GPU memory budget exceeded')
         self.queue.finish()
         for buffer in self.buffers:
@@ -122,7 +123,8 @@ class Developer:
         return result, dict(wall_seconds=elapsed, upload_seconds=sum(map(seconds,uploads)),
                             normalize_seconds=seconds(first), develop_seconds=seconds(second),
                             download_seconds=seconds(download), allocations=self.allocations,
-                            allocated_bytes=sum(b.size for b in self.buffers))
+                            allocated_bytes=sum(b.size for b in self.buffers),
+                            kernel_intervals_ns=[(e.profile.start,e.profile.end) for e in (first,second)])
 
     def close(self):
         self.queue.finish()

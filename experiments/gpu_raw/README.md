@@ -197,6 +197,76 @@ GPU 诊断仍确认实际显影路径；触发复查的照片另有 CPU `raw_ful
 本轮只证明这批照片与 CPU 行为一致，不能证明 CPU 判定都正确；没有新的人工真值，
 也没有真实严重模糊自动弃置样本覆盖（该分支只有逻辑测试）。暂不接入主程序。
 
+## 多照片流水线与双队列实验
+
+新增 `pipeline.py`，沿用现有扫描器的有界照片线程池：CPU 准备、GPU 显影、
+CPU 清晰度/复查可在不同照片之间重叠执行。最多在途照片数由原扫描器限制，
+显存缓冲区使用一个或两个独立槽位。双槽共享同一 OpenCL context/program，
+但各自持有独立的 command queue、kernel 对象和显存缓冲区，避免数据覆盖。
+所有槽位显式缓冲区预算之和最多为设备总显存的三分之一。
+
+当前仍沿用原扫描器按批提交、等本批完成后再提交下一批的方式；
+并非跨批连续补充任务的完整流水线，也没有实现异步拷贝专用双缓冲。
+它可以公平比较同一批次调度下 GPU 单/双队列的收益，仍可能存在批次尾部等待。
+CPU 复查通过线程局部状态选择后端，不在工作线程中修改全局函数。
+复查策略不变，缓存仍绕过，原始照片只读。
+
+复现（新建且互不重叠的输出目录，按顺序运行，避免基准互相争抢资源）：
+
+```powershell
+.venv/Scripts/python.exe experiments/gpu_raw/benchmark_scan.py `
+  --input D:/test-raw --output build/gpu-memory-prototype/cpu4-new --backend cpu --workers 4
+.venv/Scripts/python.exe experiments/gpu_raw/benchmark_scan.py `
+  --input D:/test-raw --output build/gpu-memory-prototype/gpu1-new --backend pipeline --workers 4 --gpu-slots 1
+.venv/Scripts/python.exe experiments/gpu_raw/benchmark_scan.py `
+  --input D:/test-raw --output build/gpu-memory-prototype/gpu2-new --backend pipeline --workers 4 --gpu-slots 2
+```
+
+`--workers 4` 是预热后固定上限，仍服从原有实时内存预算；前两张照常串行预热。
+`--workers 0` 保留原有自适应策略，用全新的隔离历史文件，不读取用户并发偏好。
+旧 `gpu`/`hybrid` 模式仍只允许串行，禁止用旧全局 patch 复查逻辑运行多线程。
+`pipeline` 模式不会写入正式应用设置或启用 GPU UI。
+
+报告新增进程 RSS 采样峰值、设备 0 的总显存采样值（含其他软件，非进程专属、
+非瞬时精确峰值），以及独立的显式 GPU 缓冲区字节数。
+双队列同时有任务不代表 kernel 真正同时运行，因此另外使用 OpenCL 设备事件时间戳
+计算跨槽位 kernel 重叠时间。该值只反映计算阶段，不涵盖传输与计算重叠。
+在多显卡机器上须核对设备 0 与所选最大显存 NVIDIA 卡是否一致后才能引用遥测。
+
+### 2026-09-15 本机对照结果
+
+Ryzen 7 5800H + GTX 1650 4 GiB；同一批 80 张 RAW、同样最多 4 张在途，
+相同判定和 CPU 保护带，未调整 RAW 内部线程。两轮分别按 CPU→GPU1→GPU2、
+GPU2→GPU1→CPU 顺序执行，均为独立新进程、新工作区、无 API。
+没有清 OS 缓存，没有与其他基准同时运行；两轮不足以作统计显著性或跨机器结论。
+
+| 方案 | 第一轮 | 第二轮 | 平均 | 进程 RSS 采样峰值（两轮最大） |
+|---|---:|---:|---:|---:|
+| 现有 CPU 扫描器，最多 4 张 | 76.277 s | 75.368 s | 75.822 s | 1667 MiB |
+| 流水线，GPU 单队列 | 75.265 s | 73.989 s | 74.627 s | 1784 MiB |
+| 流水线，GPU 双队列 | 74.854 s | 73.316 s | 74.085 s | 1781 MiB |
+
+GPU 单/双队列平均分别缩短约 1.6% / 2.3%；双队列比单队列平均只少 0.54 秒。
+显式 GPU 缓冲区分别为 216,720,660 / 433,441,320 字节（约 207 / 413 MiB）；
+设备总显存采样峰值分别为 257 / 465 MiB，不能把它当作应用专属显存。
+双队列峰值确实有两个 `run()` 在途，但两轮设备事件中的跨队列 **kernel 重叠均为 0**。
+这不证明 GTX 1650 永远不能并发，只说明当前实现、工作负载和驱动没有观测到计算重叠；
+也不排除传输与其他阶段有重叠。
+
+六次均完成 80 张，最终清晰度结论、弃置、有脸标记与分组全部一致。
+四次 GPU 测试各实际显影 76 张、CPU 复查 33 张，复查错误为 0；
+先前四张边界照片仍待确认。原片大小和修改时间全部未变。
+新增并发测试连同原有测试共 24 项通过：缓冲区隔离、槽位上限、异常归还、
+单共享上下文、线程局部 CPU 路由等。未覆盖正式软件中止/恢复的端到端 UI 测试。
+
+**结论：并发原型正确性通过这批回归，但当前吞吐收益很小，暂不替换正式 CPU 流程。**
+不能用旧串行对比的 45.6% 或 12.8% 代替这里的结果。
+后续优先检查批次尾部等待、连续补位和 CPU 复查成本，再测 RTX 4070；
+不因显卡更强就预设“双队列一定更快”，本轮也不自动保存 GPU 推荐配置。
+
+证据位于忽略目录 `build/gpu-memory-prototype/parallel-{cpu4,gpu1,gpu2}[-r2]/report.json`
+及各自工作区日志，汇总为 `parallel-comparison.json`。
+
 ## 资料与许可
 
 - [PyOpenCL 常驻 program/kernel 与事件接口](https://documen.tician.de/pyopencl/runtime_program.html)
