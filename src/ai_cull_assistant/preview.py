@@ -95,12 +95,9 @@ def _load_raw_preview(path: Path, *, apply_orientation: bool = True) -> Optional
     if rawpy is None:
         return None
     try:
-        with operation('raw_preview_open'):
-            raw = rawpy.imread(str(path))
-        with raw:
+        with rawpy.imread(str(path)) as raw:
             try:
-                with operation('raw_preview_extract_thumb'):
-                    thumb = raw.extract_thumb()
+                thumb = raw.extract_thumb()
                 if thumb.format == rawpy.ThumbFormat.JPEG:
                     note('preview_source', 'raw_embedded_jpeg')
                     from io import BytesIO
@@ -115,10 +112,7 @@ def _load_raw_preview(path: Path, *, apply_orientation: bool = True) -> Optional
             except Exception:
                 note('preview_source', 'raw_half_decode')
                 with operation('raw_preview_half_decode'):
-                    with operation('raw_preview_unpack'):
-                        raw.raw_image
-                    with operation('raw_preview_postprocess'):
-                        rgb = raw.postprocess(use_camera_wb=True, half_size=True)
+                    rgb = raw.postprocess(use_camera_wb=True, half_size=True)
                 return Image.fromarray(rgb)
     except Exception:
         return None
