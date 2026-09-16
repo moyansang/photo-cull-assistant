@@ -22,10 +22,10 @@ EXE = 'AI选片助手.exe'
 
 
 def version_tuple(value):
-    match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)', value)
+    match = re.fullmatch(r'v?(\d+)\.(\d+)(?:\.(\d+))?', value) if isinstance(value, str) else None
     if not match:
         raise ValueError('不支持的版本号')
-    return tuple(map(int, match.groups()))
+    return tuple(int(part or 0) for part in match.groups())
 
 
 def request(url):

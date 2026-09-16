@@ -123,3 +123,28 @@ def test_update_cache_expires(monkeypatch,tmp_path):
     monkeypatch.setattr(u,'api_release',lambda:calls.append(True))
     assert u.latest_release(cache) is None and calls==[True]
     assert u.latest_release(cache) is None and calls==[True]
+
+@pytest.mark.parametrize('tag', ['v1.5', '1.5', 'v1.5.0', '1.5.0'])
+def test_short_release_version_matches_full_version(tag):
+    assert u.version_tuple(tag) == (1, 5, 0)
+
+
+@pytest.mark.parametrize('tag', ['v1', 'v1.5-beta', 'v1.5/../x', '', None])
+def test_invalid_release_versions_still_rejected(tag):
+    with pytest.raises(ValueError):
+        u.version_tuple(tag)
+
+
+def test_short_tag_preserves_download_url_and_version_comparison(monkeypatch):
+    import io
+    tag = 'v1.5'
+    url = f'https://github.com/{u.REPO}/releases/download/{tag}/AI-Photo-Cull-{tag}-Windows-x64-portable.zip'
+    info = dict(version=tag, url=url, sha256='a'*64, size=20)
+    data = dict(tag_name=tag, assets=[dict(name=url.rsplit('/',1)[-1], state='uploaded', digest='sha256:'+'a'*64, size=20, browser_download_url=url)])
+    monkeypatch.setattr(u, 'request', lambda _: io.BytesIO(json.dumps(data).encode()))
+    monkeypatch.setattr(u, 'VERSION', '1.4.0')
+    assert u.api_release() == info
+    assert u.checked_release(info) == info
+    monkeypatch.setattr(u, 'VERSION', '1.5.0')
+    assert u.api_release() is None
+    assert u.checked_release(info) is None
