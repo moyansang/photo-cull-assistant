@@ -157,3 +157,47 @@ def test_api_error_does_not_poison_cache(tmp_path, monkeypatch):
     result = ai_focus.review_focus(photo, CropSettings(), PROFILE, tmp_path / "cache")
 
     assert result["status"] == "clear" and len(calls) == 2
+
+
+def test_multiple_selected_people_are_reviewed_and_aggregated(tmp_path, monkeypatch):
+    photo = asset(tmp_path, (1000, 1000))
+    Image.new("RGB", (100, 100), "gray").save(photo.preview_path)
+    key = str(photo.primary_path.resolve()).casefold()
+    settings = CropSettings(photos={key: {'selected_faces': [[.1,.1,.3,.3], [.6,.1,.3,.3]]}})
+    subjects = [
+        SimpleNamespace(face=(.1,.1,.3,.3), landmarks=None),
+        SimpleNamespace(face=(.6,.1,.3,.3), landmarks=None),
+    ]
+    monkeypatch.setattr('ai_cull_assistant.subject.detail_features_list', lambda *a, **k: subjects)
+    prompts = []
+
+    def review(_profile, prompt, _images):
+        prompts.append(prompt)
+        status = 'clear' if 'P1' in prompt else 'blur'
+        return {'text': '{"photo_identity":"source · P%d","status":"%s","reason":"face evidence"}' % (len(prompts), status)}
+
+    monkeypatch.setattr(ai_focus, 'call_model', review)
+    result = ai_focus.review_focus(photo, settings, PROFILE, tmp_path / 'cache')
+
+    assert result['status'] == 'blur'
+    assert [item['status'] for item in result['participants']] == ['clear', 'blur']
+    assert len(prompts) == 2
+
+
+def test_multiple_clear_faces_stay_pending_when_body_evidence_is_not_clear(tmp_path, monkeypatch):
+    photo = asset(tmp_path, (1000, 1000))
+    Image.new("RGB", (100, 100), "gray").save(photo.preview_path)
+    photo.clarity_evidence = {'body': {'state': 'uncertain'}}
+    key = str(photo.primary_path.resolve()).casefold()
+    settings = CropSettings(photos={key: {'selected_faces': [[.1,.1,.3,.3], [.6,.1,.3,.3]]}})
+    subjects = [SimpleNamespace(face=tuple(box), landmarks=None) for box in settings.photos[key]['selected_faces']]
+    monkeypatch.setattr('ai_cull_assistant.subject.detail_features_list', lambda *a, **k: subjects)
+    calls = []
+    def review(_profile, prompt, _images):
+        calls.append(1)
+        return {'text': '{"photo_identity":"source · P%d","status":"clear","reason":"clear face"}' % len(calls)}
+    monkeypatch.setattr(ai_focus, 'call_model', review)
+
+    result = ai_focus.review_focus(photo, settings, PROFILE, tmp_path / 'cache')
+    assert result['status'] == 'uncertain'
+    assert '身体清晰度证据不足' in result['reason']

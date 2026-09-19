@@ -101,3 +101,36 @@ def test_missing_or_invalid_landmarks_never_auto_decide():
     cv2.rectangle(image,(120,120),(380,380),(255,255,255),3)
     assert focus_metrics(image)['state']=='uncertain'
     assert focus_metrics(image,landmarks=((1,2),))['reasons']==['missing_reliable_landmarks']
+
+
+def test_selected_participants_use_any_blur_all_clear_and_uncertain_rules(tmp_path, monkeypatch):
+    a = asset(tmp_path)
+    key = str(a.primary_path.resolve()).casefold()
+    settings = CropSettings(photos={key: {'selected_faces': [[.1,.1,.3,.3], [.6,.1,.3,.3]]}})
+    subjects = [
+        SimpleNamespace(face=(.1,.1,.3,.3), landmarks=((.15,.15),)*5),
+        SimpleNamespace(face=(.6,.1,.3,.3), landmarks=((.65,.15),)*5),
+    ]
+    monkeypatch.setattr(face_focus, 'detail_features_list', lambda *a, **k: subjects)
+    states = iter(({'state':'clear'}, {'state':'severe_blur'}))
+    monkeypatch.setattr(face_focus, 'detail_metrics', lambda *a, **k: next(states))
+
+    rejected = face_focus.assess_asset_focus(a, crop_settings=settings)
+
+    assert rejected.rejected and rejected.reason == 'obvious_subject_blur'
+    assert [item['state'] for item in rejected.focus_evidence['participants']] == ['clear', 'severe_blur']
+
+    states = iter(({'state':'clear'}, {'state':'uncertain'}))
+    monkeypatch.setattr(face_focus, 'detail_metrics', lambda *a, **k: next(states))
+    pending = face_focus.assess_asset_focus(a, crop_settings=settings)
+    assert not pending.rejected and pending.reason == 'face_focus_uncertain'
+
+
+def test_explicit_empty_participant_selection_does_not_reject(tmp_path):
+    a = asset(tmp_path)
+    key = str(a.primary_path.resolve()).casefold()
+    result = face_focus.assess_asset_focus(
+        a,
+        crop_settings=CropSettings(photos={key: {'selected_faces': []}}),
+    )
+    assert not result.rejected and not result.face_found

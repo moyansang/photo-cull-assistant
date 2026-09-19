@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .group_editor import GroupEditor
-from .version import VERSION
+from .version import BUILD, VERSION
 from .update_ui import UpdateController
 import sys
 from .settings import application_dir, load_paths, read_values, save_values
@@ -47,7 +47,7 @@ GROUPING_LABELS = {"严格": "strict", "标准": "standard", "宽松": "loose"}
 class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
-        self.title(f"AI 选片助手 v{VERSION}")
+        self.title(f"AI 选片助手 v{VERSION} · 构建 {BUILD}")
         self.review_project = None
         self.scan_result: ScanResult | None = None
         self.settings_dir = Path(settings_dir) if settings_dir is not None else prepare_runtime_settings()
@@ -1089,14 +1089,14 @@ class App(tk.Tk):
         if not self.scan_result:
             messagebox.showinfo("提示", "请先扫描图片并生成联系表。", parent=self)
             return
-        from .ai_project import ReviewProject
-        if not self._sheets_ready() and any(ReviewProject._asset_is_admitted(a) for a in self.scan_result.assets):
-            messagebox.showinfo("提示", "当前联系表尚未生成或已经过期，请先生成联系表。", parent=self)
-            return
         try:
             from .ai_project import ReviewProject
             from .ai_review_ui import ReviewDialog
             self.review_project = ReviewProject(self.scan_result.workspace_dir)
+            if (not self.review_project.current_task() and not self._sheets_ready()
+                    and any(ReviewProject._asset_is_admitted(a) for a in self.scan_result.assets)):
+                messagebox.showinfo("提示", "当前联系表尚未生成或已经过期，请先生成联系表。", parent=self)
+                return
             ReviewDialog(self,self.review_project,self.scan_result.assets,self.crop_settings,self.settings_dir,
                 home_pages=list(self.scan_result.main_pages or []) + list(self.scan_result.rejected_pages or []))
         except Exception as exc:

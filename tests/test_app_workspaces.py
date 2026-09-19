@@ -280,3 +280,17 @@ def test_corrupt_archived_workspace_is_blocked_without_overwrite(tmp_path, monke
         app._close()
     assert archive.read_bytes() == b"not a zip file"
     assert not (workspace / "workspace-settings.json").exists()
+
+
+def test_existing_ai_task_opens_even_when_homepage_sheets_missing(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    from test_workspace_archive import _completed_workspace
+    photos, workspace, result, project, task, batch, export, crops = _completed_workspace(tmp_path)
+    opened=[]; notices=[]
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.ReviewDialog', lambda *args,**kwargs: opened.append(args[1].current_task()['id']))
+    monkeypatch.setattr(app_module.messagebox,'showinfo',lambda *a,**kw:notices.append(a))
+    owner=SimpleNamespace(updates=SimpleNamespace(busy=False),_ensure_selected_session=lambda:None,
+                          scan_result=result,crop_settings=crops,settings_dir=tmp_path/'settings',
+                          _sheets_ready=lambda:False)
+    App._open_ai_review(owner)
+    assert opened==[task['id']] and not notices

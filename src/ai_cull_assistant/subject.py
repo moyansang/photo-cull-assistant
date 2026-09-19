@@ -174,70 +174,125 @@ def detail_features(asset, settings, *, require_landmarks=False):
     override = settings.photos.get(settings.key(asset), {})
     if override.get('hidden'):
         return replace(subject, face=None, head=None) if subject else None
+    if 'selected_faces' in override:
+        selected = detail_features_list(
+            asset,
+            settings,
+            require_landmarks=require_landmarks,
+            _subject=subject,
+        )
+        if selected:
+            return selected[0]
+        return replace(subject, face=None, head=None) if subject else None
     box = override.get('manual_face')
-    if box and len(box) == 4 and all(np.isfinite(v) for v in box):
-        x, y, w, h = box
-        if 0 <= x < 1 and 0 <= y < 1 and w > 0 and h > 0 and x+w <= 1.000001 and y+h <= 1.000001:
-            from .preview import ensure_preview
-            ensure_preview(asset)
-            preview = Path(asset.preview_path)
-            stat = preview.stat()
-            cache_key = (str(preview.resolve()), stat.st_mtime_ns, stat.st_size,
-                         tuple(box), settings.detection_confidence)
-            base = subject or SubjectFeatures('', '', None, None)
-            cached = _manual_details.get(cache_key)
-            if cached is not None:
-                return replace(base, face=tuple(box), head=cached[0], landmarks=cached[1], head_source='manual')
-            with Image.open(asset.preview_path) as source:
-                image = ImageOps.exif_transpose(source).convert("RGB")
-            iw, ih = image.size
-            base = subject or SubjectFeatures('', '', None, None)
-            # A manual rectangle identifies the intended face, but it is not
-            # landmark evidence. Run YuNet inside it and persist only points
-            # that were actually detected.
-            face_left, face_top = round(x * iw), round(y * ih)
-            face_right, face_bottom = round((x + w) * iw), round((y + h) * ih)
-            margin_x, margin_y = round((face_right-face_left) * .3), round((face_bottom-face_top) * .3)
-            px0, py0 = max(0, face_left-margin_x), max(0, face_top-margin_y)
-            px1, py1 = min(iw, face_right+margin_x), min(ih, face_bottom+margin_y)
-            region = np.asarray(image)[py0:py1, px0:px1]
-            detections = detect(
-                cv2.cvtColor(region, cv2.COLOR_RGB2BGR),
-                settings.detection_confidence,
-            ) if region.size else []
-            contained = []
-            for candidate in detections:
-                dx, dy, dw, dh = candidate.box
-                center_x, center_y = px0 + dx + dw/2, py0 + dy + dh/2
-                if face_left <= center_x <= face_right and face_top <= center_y <= face_bottom:
-                    contained.append(candidate)
-            if contained:
-                target_x = (face_left + face_right) / 2
-                target_y = (face_top + face_bottom) / 2
-                chosen = min(
-                    contained,
-                    key=lambda item: (
-                        ((px0 + item.box[0] + item.box[2]/2 - target_x) / max(1, face_right-face_left)) ** 2
-                        + ((py0 + item.box[1] + item.box[3]/2 - target_y) / max(1, face_bottom-face_top)) ** 2
-                        - .05 * item.score
-                    ),
-                )
-                from .yunet import FaceDetection
-                absolute = FaceDetection(
-                    (chosen.box[0] + px0, chosen.box[1] + py0, chosen.box[2], chosen.box[3]),
-                    tuple((lx + px0, ly + py0) for lx, ly in chosen.landmarks),
-                    chosen.score,
-                )
-                landmarks = tuple((lx / iw, ly / ih) for lx, ly in absolute.landmarks)
-                head = head_box(absolute, iw, ih)
-                _remember_manual(cache_key, head, landmarks)
-                return replace(
-                    base,
-                    face=tuple(box),
-                    head=head,
-                    landmarks=landmarks,
-                    head_source='manual',
-                )
-            _remember_manual(cache_key, tuple(box), None)
-            return replace(base, face=tuple(box), head=tuple(box), landmarks=None, head_source='manual')
+    if _valid_normalized_box(box):
+        return _manual_detail(asset, settings, subject, box)
     return subject
+
+
+def _valid_normalized_box(box):
+    try:
+        if not isinstance(box, (list, tuple)) or len(box) != 4:
+            return False
+        x, y, w, h = (float(value) for value in box)
+    except (TypeError, ValueError):
+        return False
+    return (
+        all(np.isfinite(value) for value in (x, y, w, h))
+        and 0 <= x < 1 and 0 <= y < 1 and w > 0 and h > 0
+        and x + w <= 1.000001 and y + h <= 1.000001
+    )
+
+
+def _manual_detail(asset, settings, subject, box):
+    """Resolve a user-selected box without treating it as landmark evidence."""
+    x, y, w, h = (float(value) for value in box)
+    box = (x, y, w, h)
+    from .preview import ensure_preview
+    ensure_preview(asset)
+    preview = Path(asset.preview_path)
+    stat = preview.stat()
+    cache_key = (
+        str(preview.resolve()), stat.st_mtime_ns, stat.st_size,
+        box, settings.detection_confidence,
+    )
+    base = subject or SubjectFeatures('', '', None, None)
+    cached = _manual_details.get(cache_key)
+    if cached is not None:
+        return replace(base, face=box, head=cached[0], landmarks=cached[1], head_source='manual')
+    with Image.open(asset.preview_path) as source:
+        image = ImageOps.exif_transpose(source).convert("RGB")
+    iw, ih = image.size
+    # A manual rectangle identifies the intended face, but it is not landmark
+    # evidence. Run YuNet inside it and keep only points actually detected.
+    face_left, face_top = round(x * iw), round(y * ih)
+    face_right, face_bottom = round((x + w) * iw), round((y + h) * ih)
+    margin_x = round((face_right - face_left) * .3)
+    margin_y = round((face_bottom - face_top) * .3)
+    px0, py0 = max(0, face_left - margin_x), max(0, face_top - margin_y)
+    px1, py1 = min(iw, face_right + margin_x), min(ih, face_bottom + margin_y)
+    region = np.asarray(image)[py0:py1, px0:px1]
+    detections = detect(
+        cv2.cvtColor(region, cv2.COLOR_RGB2BGR),
+        settings.detection_confidence,
+    ) if region.size else []
+    contained = []
+    for candidate in detections:
+        dx, dy, dw, dh = candidate.box
+        center_x, center_y = px0 + dx + dw / 2, py0 + dy + dh / 2
+        if face_left <= center_x <= face_right and face_top <= center_y <= face_bottom:
+            contained.append(candidate)
+    if contained:
+        target_x = (face_left + face_right) / 2
+        target_y = (face_top + face_bottom) / 2
+        chosen = min(
+            contained,
+            key=lambda item: (
+                ((px0 + item.box[0] + item.box[2] / 2 - target_x) / max(1, face_right - face_left)) ** 2
+                + ((py0 + item.box[1] + item.box[3] / 2 - target_y) / max(1, face_bottom - face_top)) ** 2
+                - .05 * item.score
+            ),
+        )
+        from .yunet import FaceDetection
+        absolute = FaceDetection(
+            (chosen.box[0] + px0, chosen.box[1] + py0, chosen.box[2], chosen.box[3]),
+            tuple((lx + px0, ly + py0) for lx, ly in chosen.landmarks),
+            chosen.score,
+        )
+        landmarks = tuple((lx / iw, ly / ih) for lx, ly in absolute.landmarks)
+        head = head_box(absolute, iw, ih)
+        _remember_manual(cache_key, head, landmarks)
+        return replace(base, face=box, head=head, landmarks=landmarks, head_source='manual')
+    _remember_manual(cache_key, box, None)
+    return replace(base, face=box, head=box, landmarks=None, head_source='manual')
+
+
+def detail_features_list(asset, settings, *, require_landmarks=False, _subject=None):
+    """Return the selected participants, preserving legacy single-subject defaults.
+
+    ``selected_faces`` is written only after a user explicitly edits participant
+    selection. Its absence therefore keeps old sessions and automatic selection
+    on the original one-primary-face path. An explicit empty list means the user
+    selected nobody and must not be collapsed to that default.
+    """
+    subject = _subject if _subject is not None else asset_features(
+        asset,
+        settings.detection_confidence,
+        require_landmarks=require_landmarks,
+    )
+    override = settings.photos.get(settings.key(asset), {})
+    if override.get('hidden'):
+        return []
+    if 'selected_faces' not in override:
+        box = override.get('manual_face')
+        if _valid_normalized_box(box):
+            return [_manual_detail(asset, settings, subject, box)]
+        return [subject] if subject else []
+    boxes = override.get('selected_faces')
+    if not isinstance(boxes, list):
+        return []
+    return [
+        _manual_detail(asset, settings, subject, box)
+        for box in boxes
+        if _valid_normalized_box(box)
+    ]

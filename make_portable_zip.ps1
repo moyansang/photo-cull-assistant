@@ -13,5 +13,5 @@ if (Test-Path $Output) { Remove-Item $Output -Force }
 Compress-Archive -Path $Source -DestinationPath $Output -CompressionLevel Optimal
 Write-Host "便携包已生成：$Output"
 
-$UpdateInfo = @{version=$ReleaseVersion; url="https://github.com/moyansang/photo-cull-assistant/releases/download/$ReleaseVersion/$ReleaseName"; sha256=(Get-FileHash -LiteralPath $Output -Algorithm SHA256).Hash.ToLower(); size=(Get-Item -LiteralPath $Output).Length}
+$UpdateInfo = @{version=$ReleaseVersion; build=$ReleaseBuild; url="https://github.com/moyansang/photo-cull-assistant/releases/download/$ReleaseVersion/$ReleaseName"; sha256=(Get-FileHash -LiteralPath $Output -Algorithm SHA256).Hash.ToLower(); size=(Get-Item -LiteralPath $Output).Length}
 [System.IO.File]::WriteAllText((Join-Path $PSScriptRoot 'dist/update.json'), ($UpdateInfo | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))

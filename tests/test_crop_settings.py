@@ -3,11 +3,11 @@ from datetime import datetime
 
 from PIL import Image
 
-from ai_cull_assistant.crop_settings import CropSettings, crop_bounds
+from ai_cull_assistant.crop_settings import CropSettings, crop_bounds, face_box_key
 from ai_cull_assistant.settings import save_paths, save_values, read_values, load_paths
 from ai_cull_assistant import contact_sheet
 from ai_cull_assistant.models import PhotoAsset
-from ai_cull_assistant.subject import SubjectFeatures
+from ai_cull_assistant.subject import SubjectFeatures, detail_features_list
 
 
 def test_scale_shift_ratio_and_bounds():
@@ -67,3 +67,55 @@ def test_confidence_change_refreshes_but_cropping_reuses_detection(tmp_path, mon
         contact_sheet.generate_contact_sheet_sets([asset], tmp_path/'sheets', crop_settings=settings)
     assert thresholds == [.8, .75]
     assert asset.group_id == 9
+
+
+def test_selected_faces_are_explicit_ordered_per_photo_and_empty_is_meaningful(tmp_path, monkeypatch):
+    path = tmp_path / 'photo.jpg'
+    Image.new('RGB', (200, 300), 'blue').save(path)
+    asset = PhotoAsset('TEST', path, path, None, path, datetime.now(), '.jpg', preview_path=path)
+    key = str(path.resolve()).casefold()
+    boxes = [[.1, .1, .2, .2], [.6, .2, .2, .2]]
+    settings = CropSettings(photos={key: {'selected_faces': boxes, 'scale_factor': 1.3}})
+    monkeypatch.setattr('ai_cull_assistant.subject.asset_features', lambda *a, **k: SubjectFeatures('0','0',None,None))
+    monkeypatch.setattr(
+        'ai_cull_assistant.subject._manual_detail',
+        lambda _asset, _settings, base, box: SubjectFeatures(base.whole, base.center, None, tuple(box)),
+    )
+
+    assert [item.face for item in detail_features_list(asset, settings)] == [tuple(box) for box in boxes]
+    assert settings.for_asset(asset).scale_factor == 1.3
+    assert detail_features_list(asset, CropSettings(photos={key: {'selected_faces': []}})) == []
+    restored = CropSettings.from_dict(asdict(settings))
+    assert restored.photos[key]['selected_faces'] == boxes
+
+
+def test_each_selected_face_has_a_stable_independent_crop_with_photo_fallback(tmp_path):
+    path = tmp_path / 'photo.jpg'
+    asset = PhotoAsset('TEST', path, path, None, path, datetime.now(), '.jpg')
+    first = [.1, .2, .25, .3]
+    second = [.6, .2, .2, .25]
+    first_key = face_box_key(first)
+    settings = CropSettings(photos={
+        str(path.resolve()).casefold(): {
+            'selected_faces': [first, second],
+            'scale_factor': 1.2,
+            'shift_factor': -.1,
+            'aspect_ratio': '3:4',
+            'face_crops': {
+                first_key: {
+                    'scale_factor': 1.65,
+                    'shift_factor': .3,
+                    'offset_x_factor': -.4,
+                    'aspect_ratio': '1:1',
+                },
+            },
+        },
+    })
+
+    assert face_box_key(tuple(first)) == first_key
+    assert settings.for_face(asset, first).scale_factor == 1.65
+    assert settings.for_face(asset, first).offset_x_factor == -.4
+    assert settings.for_face(asset, first).aspect_ratio == '1:1'
+    assert settings.for_face(asset, second).scale_factor == 1.2
+    assert settings.for_face(asset, second).shift_factor == -.1
+    assert settings.for_face(asset, second).aspect_ratio == '3:4'

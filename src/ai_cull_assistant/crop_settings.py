@@ -22,6 +22,31 @@ class CropSettings:
         values = self.photos.get(self.key(asset), {})
         return replace(CropSettings.from_dict(values), detection_confidence=self.detection_confidence)
 
+    def for_face(self, asset, face):
+        """Resolve one participant's crop, falling back to the photo crop.
+
+        Participant overrides are keyed from the persisted normalized face box,
+        so reordering selected people does not move their crop settings to a
+        different person.  Older single-person records have no ``face_crops``
+        mapping and keep the original per-photo behavior.
+        """
+        photo_settings = self.for_asset(asset)
+        values = self.photos.get(self.key(asset), {})
+        face_crops = values.get("face_crops", {})
+        if not isinstance(face_crops, dict):
+            return photo_settings
+        override = face_crops.get(face_box_key(face))
+        if not isinstance(override, dict):
+            return photo_settings
+        resolved = CropSettings.from_dict({
+            "scale_factor": override.get("scale_factor", photo_settings.scale_factor),
+            "shift_factor": override.get("shift_factor", photo_settings.shift_factor),
+            "offset_x_factor": override.get("offset_x_factor", photo_settings.offset_x_factor),
+            "aspect_ratio": override.get("aspect_ratio", photo_settings.aspect_ratio),
+            "detection_confidence": self.detection_confidence,
+        })
+        return replace(resolved, detection_confidence=self.detection_confidence)
+
     @classmethod
     def from_dict(cls, values):
         try:
@@ -44,6 +69,17 @@ class CropSettings:
             )
         except (AttributeError, ValueError, TypeError):
             return cls()
+
+
+def face_box_key(box):
+    """Return a stable JSON-object key for a normalized participant box."""
+    try:
+        values = tuple(float(value) for value in box)
+    except (TypeError, ValueError):
+        return ""
+    if len(values) != 4 or not all(math.isfinite(value) for value in values):
+        return ""
+    return ",".join(f"{value:.6f}" for value in values)
 
 
 def crop_bounds(image_size, head, settings):

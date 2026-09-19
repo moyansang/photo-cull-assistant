@@ -119,6 +119,60 @@ def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monke
         root.destroy()
 
 
+def test_multi_person_selector_saves_independent_crops_only_after_edit(tmp_path, monkeypatch):
+    import ai_cull_assistant.crop_dialog as module
+    path = tmp_path / 'people.jpg'
+    Image.new('RGB', (600, 800), 'gray').save(path)
+    asset = PhotoAsset('people', path, path, None, path, datetime.now(), '.jpg', preview_path=path)
+    boxes = [(.1, .15, .2, .25), (.62, .2, .18, .22)]
+    subjects = [SubjectFeatures('', '', None, box, box) for box in boxes]
+    key = CropSettings().key(asset)
+    settings = CropSettings(photos={key: {'selected_faces': [list(box) for box in boxes]}})
+    monkeypatch.setattr(module, 'detail_features_list', lambda *_: subjects)
+    monkeypatch.setattr(module, 'detect', lambda *_: [])
+    root = tk.Tk(); root.withdraw()
+    try:
+        dialog = CropDialog(root, [asset], settings, lambda _settings: None)
+        entry = dialog.current_entry()
+        assert 'face_crops' not in entry
+        assert tuple(dialog.person_picker.cget('values')) == ('人物 1', '人物 2')
+        assert dialog.person.get() == '人物 1'
+
+        dialog.scale.set(1.4)
+        dialog.offset_x.set(.2)
+        dialog.store_current()
+        first_key = module.face_box_key(boxes[0])
+        assert entry['face_crops'][first_key]['scale_factor'] == 1.4
+
+        dialog.person_picker.current(1)
+        dialog.select_person()
+        assert dialog.person.get() == '人物 2'
+        assert dialog.scale.get() == 1
+        left, top, right, bottom = dialog._crop_rect
+        center = SimpleNamespace(x=(left + right) / 2, y=(top + bottom) / 2)
+        dialog.pointer_down(center)
+        dialog.pointer_up(SimpleNamespace(x=center.x + 10, y=center.y + 6))
+        second_offset = dialog.offset_x.get()
+        assert second_offset > 0 and second_offset != .2
+        dialog.ratio.set('1:1')
+        dialog.shift.set(-.3)
+        dialog.store_current()
+        second_key = module.face_box_key(boxes[1])
+        assert entry['face_crops'][second_key]['aspect_ratio'] == '1:1'
+        assert entry['face_crops'][second_key]['shift_factor'] == -.3
+
+        dialog.person_picker.current(0)
+        dialog.select_person()
+        assert dialog.scale.get() == 1.4
+        assert dialog.offset_x.get() == .2
+        dialog.person_picker.current(1)
+        dialog.select_person()
+        assert dialog.offset_x.get() == round(second_offset, 3)
+        dialog.destroy()
+    finally:
+        root.destroy()
+
+
 def test_confident_subject_beats_large_backdrop():
     real=FaceDetection((400,400,140,180),(),.93)
     backdrop=FaceDetection((50,0,300,300),(),.84)
@@ -171,6 +225,10 @@ def test_next_unmarked_wraps_skips_hidden_and_preserves_edits(monkeypatch, tmp_p
     assets[3].subject_features=SimpleNamespace(face=None,head=(.2,.1,.3,.4))
     CropDialog.next_unmarked(dialog)
     assert '没有待补选' in calls[-1]
+    settings.photos[settings.key(assets[0])]={'selected_faces': []}
+    dialog.index=3
+    CropDialog.next_unmarked(dialog)
+    assert dialog.index==0  # explicit empty selection remains missing
     dialog.assets=[]
     CropDialog.next_unmarked(dialog)
     assert '请先扫描' in calls[-1]

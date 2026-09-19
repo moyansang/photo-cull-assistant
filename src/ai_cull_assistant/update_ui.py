@@ -45,7 +45,7 @@ class UpdateController:
                 if value:
                     if not manual and self.app.no_updates_var.get():
                         continue
-                    if messagebox.askyesno('发现新版本',f"发现 {value['version']}，是否下载并更新？\n下载校验后将关闭程序并重新启动。\n设置、照片、联系表等用户内容会保留。",parent=self.app):
+                    if messagebox.askyesno('发现新版本',f"发现 {value['version']}（构建 {value['build']}），是否下载并更新？\n下载校验后将关闭程序并重新启动。\n设置、照片、联系表等用户内容会保留。",parent=self.app):
                         self.download(value)
                     else: self.app._restore_scan_progress()
                 elif manual: messagebox.showinfo('检查更新','当前已是最新正式版。',parent=self.app)

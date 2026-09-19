@@ -55,6 +55,31 @@ def _subject_face(asset: Any, crop_settings: CropSettings) -> tuple[float, float
     return values
 
 
+def _subject_faces(asset: Any, crop_settings: CropSettings) -> list[tuple[Any, tuple[float, float, float, float]]]:
+    """Return selected participants while retaining the old single-face path."""
+    entry = crop_settings.photos.get(crop_settings.key(asset), {})
+    if 'selected_faces' not in entry:
+        face = _subject_face(asset, crop_settings)
+        subject = detail_features(asset, crop_settings) if face else None
+        return [(subject, face)] if face else []
+    from .subject import detail_features_list
+    result = []
+    for subject in detail_features_list(asset, crop_settings):
+        face = getattr(subject, "face", None)
+        if not face or len(face) != 4:
+            continue
+        try:
+            values = tuple(float(value) for value in face)
+        except (TypeError, ValueError):
+            continue
+        x, y, width, height = values
+        if (all(math.isfinite(value) for value in values)
+                and x >= 0 and y >= 0 and width > 0 and height > 0
+                and x + width <= 1.000001 and y + height <= 1.000001):
+            result.append((subject, values))
+    return result
+
+
 def _source_identity(asset: Any, face: tuple[float, float, float, float] | None) -> dict[str, Any]:
     source = Path(asset.raw_path or asset.primary_path)
     stat = source.stat()
@@ -143,6 +168,9 @@ def _prepare_focus_images(
     crop_settings: CropSettings,
     out_dir: Path,
     face: tuple[float, float, float, float] | None = None,
+    *,
+    subject_override: Any = None,
+    include_body: bool = True,
 ) -> tuple[list[Path], bool]:
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
@@ -165,7 +193,9 @@ def _prepare_focus_images(
         detail_paths: list[Path] = []
         # Dedicated native eye windows make important detail visible without
         # resampling a large face tile. Never invent landmarks for manual boxes.
-        subject = detail_features(asset, crop_settings) if reliable_face else None
+        subject = subject_override if reliable_face and subject_override is not None else (
+            detail_features(asset, crop_settings) if reliable_face else None
+        )
         landmarks = getattr(subject, "landmarks", None)
         if landmarks and len(landmarks) >= 2:
             radius = max(48, min(256, round(reliable_face[2] * width * .20)))
@@ -178,7 +208,7 @@ def _prepare_focus_images(
                 image.crop(box).save(path, format="PNG")
                 detail_paths.append(path)
         label = "face_native" if reliable_face else "center_native"
-        body=(getattr(asset, 'clarity_evidence', None) or {}).get('body') or {}
+        body = ((getattr(asset, 'clarity_evidence', None) or {}).get('body') or {}) if include_body else {}
         body_boxes = []
         if body:
             from .body_focus import body_review_boxes
@@ -314,20 +344,97 @@ def review_focus(
 ) -> dict[str, Any]:
     """Ask the configured model for one photo's focus state, with safe caching."""
     settings = crop_settings or CropSettings()
-    face = _subject_face(asset, settings)
+    participants = _subject_faces(asset, settings)
+    if len(participants) > 1:
+        results = []
+        for index, (subject, face) in enumerate(participants, 1):
+            result = _review_one(
+                asset,
+                settings,
+                profile,
+                Path(cache_dir),
+                face,
+                subject=subject,
+                participant_index=index,
+                include_body=False,
+            )
+            results.append(dict(result, participant=index))
+        statuses = [result["status"] for result in results]
+        status = (
+            "blur" if "blur" in statuses
+            else "clear" if all(value == "clear" for value in statuses)
+            else "uncertain"
+        )
+        body = (getattr(asset, 'clarity_evidence', None) or {}).get('body') or {}
+        if status == "clear" and body and body.get("state") != "clear":
+            status = "uncertain"
+            reason = "所选人物人脸均清楚，但现有身体清晰度证据不足，需人工确认。"
+        elif status == "blur":
+            item = next(result for result in results if result["status"] == "blur")
+            reason = f"P{item['participant']}：{item['reason']}"
+        elif status == "uncertain":
+            item = next(result for result in results if result["status"] == "uncertain")
+            reason = f"P{item['participant']}：{item['reason']}"
+        else:
+            reason = f"{len(results)} 位所选人物的人脸细节均清楚。"
+        return {
+            "status": status,
+            "reason": reason,
+            "source": "api",
+            "participants": results,
+            "prompt_version": PROMPT_VERSION,
+        }
+    face = participants[0][1] if participants else None
+    subject = participants[0][0] if participants else None
+    return _review_one(
+        asset,
+        settings,
+        profile,
+        Path(cache_dir),
+        face,
+        subject=subject,
+    )
+
+
+def _review_one(
+    asset: Any,
+    settings: CropSettings,
+    profile: Mapping[str, object],
+    root: Path,
+    face: tuple[float, float, float, float] | None,
+    *,
+    subject: Any = None,
+    participant_index: int | None = None,
+    include_body: bool = True,
+) -> dict[str, Any]:
+    """Review one selected face; callers aggregate participants conservatively."""
     digest = _cache_digest(asset, face, profile)
-    root = Path(cache_dir)
+    if participant_index is not None:
+        digest = hashlib.sha256(f"{digest}:participant:{participant_index}".encode()).hexdigest()
     cache_path = root / PROMPT_VERSION / f"{digest}.json"
     if not getattr(asset, "ai_focus_dirty", False):
         if cached := _cached_result(cache_path):
             return cached
 
     image_paths, face_found = _prepare_focus_images(
-        asset, settings, root / PROMPT_VERSION / "images" / digest, face
+        asset,
+        settings,
+        root / PROMPT_VERSION / "images" / digest,
+        face,
+        subject_override=subject,
+        include_body=include_body,
     )
-    photo_identity = str(asset.stem)
+    photo_identity = (
+        f"{asset.stem} · P{participant_index}"
+        if participant_index is not None else str(asset.stem)
+    )
     body_images = sum(path.name.startswith('body_native_') for path in image_paths)
     prompt = _prompt(photo_identity, face_found, body_images)
+    if participant_index is not None:
+        prompt += (
+            f"\n本次只检查合影成员 P{participant_index}，即后续原生细节图片对应的人脸。"
+            "总览里的其他人和海报脸不参与本次判断；不要用其他人的清晰程度代替此人的结果。"
+        )
     from .focus_audit import record_inputs, record_response
     audit = record_inputs(root, digest, image_paths, prompt, profile, PROMPT_VERSION)
     try:

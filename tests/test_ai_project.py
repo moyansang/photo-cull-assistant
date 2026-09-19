@@ -3,6 +3,7 @@ from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
+import threading
 import pytest
 from PIL import Image
 from ai_cull_assistant.ai_project import ReviewProject,fingerprint,photo_id,parse_answer
@@ -172,6 +173,30 @@ def test_worker_can_validate_batch_without_refreshing_shared_project(tmp_path, m
     assert project.batch_images(task, batch, refresh_state=False)
     assert project.prompt(task, batch, refresh_state=False) == batch['prompt']
     assert project.ingest(task, batch, answer(task, batch), refresh_state=False) == []
+
+
+def test_project_save_serializes_ui_and_worker_writes(tmp_path,monkeypatch):
+    project,_,_,_=setup_project(tmp_path)
+    from ai_cull_assistant import ai_project
+    first_entered=threading.Event();release_first=threading.Event();second_entered=threading.Event()
+    calls=[]
+
+    def blocked_write(_path,_value):
+        calls.append(1)
+        if len(calls)==1:
+            first_entered.set()
+            assert release_first.wait(2)
+        else:
+            second_entered.set()
+
+    monkeypatch.setattr(ai_project,'atomic_json',blocked_write)
+    first=threading.Thread(target=project.save)
+    second=threading.Thread(target=project.save)
+    first.start();assert first_entered.wait(2)
+    second.start()
+    assert not second_entered.wait(.1)
+    release_first.set();first.join(2);second.join(2)
+    assert second_entered.is_set() and not first.is_alive() and not second.is_alive()
 
 
 def test_replacing_current_task_discards_history_and_resets_scoped_results(tmp_path):
@@ -388,7 +413,7 @@ def test_lr_export_includes_technical_reject_without_ai(tmp_path):
     assert rows[1]['pick_status']==1
 
 
-def test_home_sheet_identity_ignores_timestamp_and_tracks_content(tmp_path):
+def test_home_sheet_render_cache_never_changes_review_identity(tmp_path):
     import os
     project,assets,task,batch=setup_project(tmp_path)
     page=tmp_path/'main.jpg';page.write_bytes(b'first')
@@ -402,7 +427,94 @@ def test_home_sheet_identity_ignores_timestamp_and_tracks_content(tmp_path):
     assert restored.current_task()['id']==task['id']
     assert all(p.get('ai') for p in restored.data['photos'].values())
     page.write_bytes(b'changed')
-    assert not restored.can_reuse_task(restored.home_sheet_signature(assets,CropSettings(),[page]))
+    assert restored.home_sheet_signature(assets,CropSettings(),[page])==signature
+    assert restored.can_reuse_task(signature)
+    page.unlink()
+    assert restored.home_sheet_signature(assets,CropSettings(),[page])==signature
+    assert restored.can_reuse_task(signature)
+
+
+def test_missing_batch_cache_is_rebuilt_only_when_requested(tmp_path,monkeypatch):
+    project,assets,task,batch=setup_project(tmp_path)
+    project.ingest(task,batch,answer(task,batch))
+    original_task=task['id']
+    original_answers={pid:dict(project.data['photos'][pid]['ai']) for pid in batch['photo_ids']}
+    for path in map(Path,batch['image_paths']):
+        path.unlink()
+    calls=[]
+    from ai_cull_assistant import ai_project
+    real=ai_project.generate_contact_sheets
+    monkeypatch.setattr(ai_project,'generate_contact_sheets',lambda *a,**kw:(calls.append(1),real(*a,**kw))[1])
+
+    project.refresh(assets,CropSettings())
+    signature=project.home_sheet_signature(assets,CropSettings(),[])
+    assert project.can_reuse_task(signature)
+    assert not calls and project.current_task()['id']==original_task
+    rebuilt=project.batch_images(task,batch)
+
+    assert calls==[1] and all(path.is_file() for path in rebuilt)
+    assert project.current_task()['id']==original_task
+    assert {pid:project.data['photos'][pid]['ai'] for pid in batch['photo_ids']}==original_answers
+
+
+def test_changed_photo_starts_scoped_followup_and_retains_other_answer(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    # Establish independent groups before accepting the baseline answers.
+    assets[1].group_id=2
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    for current in task['batches']:
+        assert project.ingest(task,current,answer(task,current))==[]
+    first,second=map(photo_id,assets)
+    old_first=dict(project.data['photos'][first]['ai'])
+    old_second=dict(project.data['photos'][second]['ai'])
+    Image.new('RGB',(100,150),'blue').save(assets[0].primary_path)
+    project.refresh(assets,CropSettings())
+
+    assert project.photos_needing_review()==[first]
+    followup=project.create_task(assets,CropSettings(),{},photo_ids=project.photos_needing_review())
+
+    assert [pid for item in followup['batches'] for pid in item['photo_ids']]==[first]
+    assert project.data['photos'][first]['ai']==old_first
+    assert project.data['photos'][second]['ai']==old_second
+    assert project.data['photos'][first]['stale'] is True
+    assert project.data['photos'][second]['stale'] is False
+
+
+def test_followup_includes_unchanged_pending_photos_so_current_task_is_complete(tmp_path):
+    project,assets,_task,_batch=setup_project(tmp_path)
+    task=project.create_task(assets,CropSettings(),{'_split_limit':1},replace_current=True)
+    first_batch,second_batch=task['batches']
+    assert project.ingest(task,first_batch,answer(task,first_batch))==[]
+    first,second=map(photo_id,assets)
+    saved=dict(project.data['photos'][first]['ai'])
+    Image.new('RGB',(100,150),'blue').save(assets[0].primary_path)
+    project.refresh(assets,CropSettings())
+    signature=project.home_sheet_signature(assets,CropSettings(),[])
+
+    assert not project.can_reuse_task(signature)
+    assert project.photos_needing_review()==[first,second]
+    followup=project.create_task(assets,CropSettings(),{'_split_limit':1},
+                                 photo_ids=project.photos_needing_review())
+
+    assert [pid for batch in followup['batches'] for pid in batch['photo_ids']]==[first,second]
+    assert project.data['photos'][first]['ai']==saved
+    assert 'ai' not in project.data['photos'][second]
+    assert second_batch['status']=='pending'
+
+
+def test_pending_batch_with_newly_rejected_member_does_not_strand_valid_photo(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[0].auto_rejected=True
+    assets[0].screening_reason='severe_subject_blur'
+    project.refresh(assets,CropSettings())
+    valid_id=photo_id(assets[1])
+    signature=project.home_sheet_signature(assets,CropSettings(),[])
+
+    assert project.photos_needing_review()==[valid_id]
+    assert not project.can_reuse_task(signature)
+    followup=project.create_task(assets,CropSettings(),{},photo_ids=project.photos_needing_review())
+
+    assert [pid for item in followup['batches'] for pid in item['photo_ids']]==[valid_id]
 
 
 def test_focus_review_keyword_only_export_and_clearing(tmp_path):

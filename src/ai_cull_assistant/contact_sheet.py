@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .models import PhotoAsset
-from .subject import features, face_crop, detail_features
+from .subject import features, face_crop, detail_features, detail_features_list
 from .crop_settings import CropSettings
 
 PAGE_BG = "white"
@@ -29,6 +29,11 @@ MAX_PAGE_HEIGHT = 2800
 class ContactSheetSet:
     main_pages: list[Path]
     rejected_pages: list[Path]
+
+
+def _detail_rail_labels(total: int) -> tuple[str, str | None]:
+    remaining = max(0, total - 4)
+    return f"SELECTED TOTAL: {total}", (f"REMAINING DETAILS: {remaining}" if remaining else None)
 
 
 
@@ -274,24 +279,57 @@ def _draw_cell(
         with Image.open(asset.preview_path) as img:
             img = ImageOps.exif_transpose(img)
             img = img.convert("RGB")
-            subject = detail_features(asset, crop_settings)
+            entry = crop_settings.photos.get(crop_settings.key(asset), {})
+            if 'selected_faces' in entry:
+                subjects = detail_features_list(asset, crop_settings)
+            else:
+                subject = detail_features(asset, crop_settings)
+                subjects = [subject] if subject else []
             local_settings = crop_settings.for_asset(asset)
-            face = subject.face if subject else None
-            detail = face or (subject.head if subject else None)
-            photo_box = (330, THUMB_BOX[1]) if detail else THUMB_BOX
+            details = [
+                subject for subject in subjects
+                if subject and (getattr(subject, 'face', None) or getattr(subject, 'head', None))
+            ]
+            explicit_people = 'selected_faces' in entry
+            photo_box = (330, THUMB_BOX[1]) if details else THUMB_BOX
             thumb = ImageOps.contain(img, photo_box)
             paste_x = x0 + 10 + (photo_box[0] - thumb.width) // 2
             paste_y = y0 + 8
             canvas.paste(thumb, (paste_x, paste_y))
-            if detail:
-                crop = ImageOps.contain(face_crop(img, face, subject.head, local_settings), (124, 150))
+            if len(details) == 1:
+                subject = details[0]
+                face = getattr(subject, 'face', None)
+                subject_settings = crop_settings.for_face(asset, face) if explicit_people and face else local_settings
+                crop = ImageOps.contain(face_crop(img, face, subject.head, subject_settings), (124, 150))
                 tile = Image.new("RGB", (124, 150), "white")
                 tile.paste(crop, ((124 - crop.width) // 2, (150 - crop.height) // 2))
                 inset_x = x0 + 350
                 inset_y = y0 + 30
-                draw.text((inset_x, y0 + 7), "FACE" if face else "HEAD", fill=TEXT_COLOR, font=small_font)
+                draw.text((inset_x, y0 + 7), "FACE 1" if face else "HEAD 1", fill=TEXT_COLOR, font=small_font)
                 canvas.paste(tile, (inset_x, inset_y))
                 draw.rectangle([inset_x - 2, inset_y - 2, inset_x + 126, inset_y + 152], outline=(100, 100, 100), width=2)
+            elif details:
+                # The narrow detail rail fits four numbered selected people.
+                # Additional selections remain part of focus assessment even
+                # when the compact sheet cannot display every crop.
+                total_label, remaining_label = _detail_rail_labels(len(details))
+                draw.text((x0 + 346, y0 + 7), total_label, fill=TEXT_COLOR, font=small_font)
+                for index, subject in enumerate(details[:4], 1):
+                    face = getattr(subject, 'face', None)
+                    subject_settings = crop_settings.for_face(asset, face) if explicit_people and face else local_settings
+                    crop = ImageOps.contain(face_crop(img, face, subject.head, subject_settings), (58, 70))
+                    tile = Image.new("RGB", (58, 70), "white")
+                    tile.paste(crop, ((58 - crop.width) // 2, (70 - crop.height) // 2))
+                    col = (index - 1) % 2
+                    row = (index - 1) // 2
+                    inset_x = x0 + 346 + col * 66
+                    inset_y = y0 + 55 + row * 100
+                    draw.text((inset_x, inset_y - 22), f"P{index}", fill=TEXT_COLOR, font=small_font)
+                    canvas.paste(tile, (inset_x, inset_y))
+                    draw.rectangle([inset_x - 1, inset_y - 1, inset_x + 59, inset_y + 71], outline=(100, 100, 100), width=1)
+                if len(details) > 4:
+                    draw.text((x0 + 346, y0 + 255), remaining_label, fill=TEXT_COLOR, font=small_font)
+                    draw.text((x0 + 346, y0 + 277), "NOT SHOWN", fill=TEXT_COLOR, font=small_font)
             bottom = paste_y + thumb.height
     else:
         draw.rectangle([x0 + 10, y0 + 10, x0 + CELL_W - 18, y0 + THUMB_BOX[1]], outline=(180, 0, 0))

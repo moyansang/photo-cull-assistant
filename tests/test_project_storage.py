@@ -87,3 +87,70 @@ def test_migrated_completed_analysis_and_ai_task_reopen_without_rescan(tmp_path)
     assert reopened.current_task()['batches'][0]['status']=='complete'
     assert all(p.is_file() for p in reopened.batch_images(reopened.current_task(),reopened.current_task()['batches'][0]))
     assert all(p['ai']['rating']==4 and not p['stale'] for p in reopened.data['photos'].values())
+
+@pytest.mark.parametrize('archived', [False, True])
+def test_discover_copied_workspace_on_new_computer(tmp_path, archived):
+    import zipfile
+    photos=tmp_path/'photos';photos.mkdir()
+    settings=tmp_path/'new-computer'/'settings'
+    copied=settings.parent/'workspaces'/'copied-name'
+    copied.mkdir(parents=True)
+    session=dict(version=1,input_dir=str(photos),workspace_dir=str(copied),source_stats={})
+    if archived:
+        # Discovery must not extract an archive merely to identify its source.
+        with zipfile.ZipFile(copied/'.workspace-archive.zip','w') as bundle:
+            bundle.writestr('scan-session.json', json.dumps(session))
+    else:
+        (copied/'scan-session.json').write_text(json.dumps(session))
+    assert storage.discover_workspaces(settings,photos)==[copied.resolve()]
+    if archived:
+        assert not (copied/'scan-session.json').exists()
+    else:
+        assert storage.workspace_for(settings,photos)==copied.resolve()
+        identity=json.loads((copied/'workspace-identity.json').read_text())['workspace_id']
+        assert storage.workspace_for(settings,photos)==copied.resolve()
+        assert json.loads((copied/'workspace-identity.json').read_text())['workspace_id']==identity
+
+
+def test_stale_machine_registry_finds_existing_migrated_workspace(tmp_path):
+    photos=tmp_path/'photos';photos.mkdir()
+    settings=tmp_path/'settings'
+    copied=tmp_path/'workspaces'/'moved';copied.mkdir(parents=True)
+    (copied/'workspace-identity.json').write_text(json.dumps(dict(workspace_id='stable',input_dir=str(photos))))
+    missing=tmp_path/'old-pc'/'missing'
+    save_values(settings,dict(workspaces={storage._key(photos):str(missing)}))
+    assert storage.workspace_for(settings,photos,preferred=missing)==copied.resolve()
+    assert not missing.exists()
+    assert json.loads((copied/'workspace-identity.json').read_text())['workspace_id']=='stable'
+
+
+def test_ambiguous_workspace_copies_require_explicit_choice(tmp_path):
+    photos=tmp_path/'photos';photos.mkdir()
+    for name in ('a','b'):
+        copied=tmp_path/'workspaces'/name;copied.mkdir(parents=True)
+        (copied/'workspace-identity.json').write_text(json.dumps(dict(input_dir=str(photos))))
+    with pytest.raises(ValueError,match='多个'):
+        storage.workspace_for(tmp_path/'settings',photos)
+    assert storage.workspace_for(tmp_path/'settings',photos,preferred=tmp_path/'workspaces'/'b').name=='b'
+
+
+def test_select_source_finds_copied_archived_workspace_without_old_registry(tmp_path):
+    import shutil
+    from test_workspace_archive import _completed_workspace
+    from ai_cull_assistant.workspace_archive import compact_workspace
+    from ai_cull_assistant.session_store import load_session
+    from ai_cull_assistant.ai_project import ReviewProject
+    photos, old, result, project, task, batch, export, crops = _completed_workspace(tmp_path)
+    assert compact_workspace(old)['compacted']
+    settings=tmp_path/'new-machine'/'settings'
+    copied=settings.parent/'workspaces'/'my-copied-project'
+    shutil.copytree(old,copied)
+    selected=storage.workspace_for(settings,photos)
+    assert selected==copied.resolve()
+    loaded=load_session(selected,photos)
+    assert loaded.workspace_dir==selected
+    reopened=ReviewProject(selected)
+    reopened.refresh(loaded.assets,crops)
+    assert reopened.current_task()['id']==task['id']
+    assert reopened.current_task()['batches'][0]['status']=='complete'
+    assert all(p['ai']['rating']==4 for p in reopened.data['photos'].values())

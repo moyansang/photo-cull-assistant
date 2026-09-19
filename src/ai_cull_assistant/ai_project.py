@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import threading
 import uuid
 
 from PIL import Image, ImageDraw
@@ -182,6 +183,7 @@ def parse_answer(text,task_id,batch_id,expected,clarity_expected=()):
 
 class ReviewProject:
     def __init__(self, workspace):
+        self._state_lock=threading.RLock()
         self.workspace=Path(workspace).resolve()
         from .workspace_archive import restore_workspace
         restore_workspace(self.workspace)
@@ -195,9 +197,15 @@ class ReviewProject:
             task.setdefault('web_submissions',[])
             for batch in task['batches']:
                 if batch['status']=='running':batch.update(status='failed',error='上次请求未完成，可重试')
+            self._rebase_task_paths(task)
         self._assets=[];self._crops=None
 
-    def save(self):atomic_json(self.path,self.data)
+    def save(self):
+        # Cache reconstruction and task preparation run outside Tk's thread.
+        # Serialize their durable writes with UI-triggered saves; atomic_json
+        # uses one fixed temporary path and is not safe for concurrent writers.
+        with self._state_lock:
+            atomic_json(self.path,self.data)
 
     def refresh(self,assets,crop_settings):
         self._assets=list(assets);self._crops=crop_settings
@@ -266,33 +274,84 @@ class ReviewProject:
         if resolved!=target or resolved.parent!=root:return
         shutil.rmtree(resolved,ignore_errors=True)
 
+    def _rebase_task_paths(self,task):
+        """Point durable snapshot records at this workspace after a copy/move.
+
+        Snapshot paths are storage locations, not part of review identity.  Old
+        projects stored absolute paths, so copying a workspace must not turn an
+        otherwise valid task into a new paid review.
+        """
+        task_id=task.get('id')
+        if not isinstance(task_id,str) or not re.fullmatch(r'[0-9a-f]{32}',task_id):
+            return
+        task_root=self.workspace/'ai_tasks'/task_id
+        for batch in task.get('batches',[]):
+            batch_id=batch.get('id')
+            if not isinstance(batch_id,str) or not re.fullmatch(r'B[0-9]{3,}',batch_id):
+                continue
+            batch['image_paths']=[str((task_root/batch_id/Path(value).name).resolve())
+                                  for value in batch.get('image_paths',[]) if isinstance(value,str)]
+        for submission in task.get('web_submissions',[]):
+            submission_id=submission.get('id')
+            if not isinstance(submission_id,str) or not re.fullmatch(r'W[0-9]{3}',submission_id):
+                continue
+            folder=task_root/'web'/submission_id/'images'
+            submission['image_paths']=[str((folder/Path(value).name).resolve())
+                                       for value in submission.get('image_paths',[]) if isinstance(value,str)]
+
     def home_sheet_signature(self, assets, crops, pages=None):
-        if pages is None:
-            # Standalone callers without a homepage use the analysis identity.
-            values=[(photo_id(a), fingerprint(a,crops), bool(a.auto_rejected)) for a in assets]
-        else:
-            values=[]
-            for page in pages:
-                path=Path(page)
-                values.append((path.name, hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None))
+        # Homepage sheets and previews are disposable render caches.  Their
+        # file names, layout version and presence must never decide whether an
+        # AI answer is current.  Keep the public method for older callers, but
+        # make it describe only the underlying analysis identity.
+        values=[(photo_id(a), fingerprint(a,crops), bool(a.auto_rejected)) for a in assets]
         return hashlib.sha256(json.dumps(values,sort_keys=True).encode()).hexdigest()
+
+    def photos_needing_review(self,task=None):
+        """Return all admitted photos without a current AI answer."""
+        needed=[]
+        for asset in self._assets:
+            pid=photo_id(asset);photo=self.data['photos'].get(pid,{})
+            if not self._photo_is_admitted(photo):
+                continue
+            ai=photo.get('ai')
+            if isinstance(ai,dict) and ai.get('fingerprint')==photo.get('fingerprint') and not photo.get('stale'):
+                continue
+            needed.append(pid)
+        return needed
+
+    def _pending_task_coverage(self,task):
+        covered=set()
+        for batch in task.get('batches',[]):
+            if str(batch.get('status','pending')).lower() in {'complete','completed','done','已完成'}:
+                continue
+            photo_ids=batch.get('photo_ids',[])
+            fingerprints=batch.get('fingerprints',{})
+            if (not isinstance(photo_ids,list) or not isinstance(fingerprints,dict)
+                    or not photo_ids or set(photo_ids)!=set(fingerprints)):
+                continue
+            valid=True
+            for pid,expected in fingerprints.items():
+                photo=self.data['photos'].get(pid)
+                if (photo is None or not self._photo_is_admitted(photo)
+                        or photo.get('fingerprint')!=expected):
+                    valid=False
+                    break
+            # A batch is usable as a unit.  If one member is stale or no longer
+            # admitted, API validation rejects the whole batch, so its otherwise
+            # valid members must be moved into the follow-up task as well.
+            if valid:
+                covered.update(photo_ids)
+        return covered
 
     def can_reuse_task(self, signature):
         task=self.current_task()
         if not task:
             return False
-        previous=self.data.get('home_sheet_signature')
-        if previous is not None:
-            return previous==signature and self._task_photos_are_admitted(task)
-        # Upgrade existing projects without discarding their completed answers.
-        # Adopt the current sheets as baseline only if their analysis is current.
-        if any(p.get('stale') for p in self.data['photos'].values()):
+        if not set(self.photos_needing_review(task)).issubset(self._pending_task_coverage(task)):
             return False
-        if any(self.data['photos'].get(pid,{}).get('fingerprint')!=fp
-               for b in task['batches'] for pid,fp in b['fingerprints'].items()):
-            return False
-        if not self._task_photos_are_admitted(task):
-            return False
+        # Retain this legacy field for forward/backward project compatibility;
+        # it now records analysis identity and never hashes generated sheets.
         self.data['home_sheet_signature']=signature
         self.save()
         return True
@@ -409,16 +468,67 @@ class ReviewProject:
         self._validate_ai_photos(batch.get('photo_ids',[]),'本批')
         return batch['prompt']
 
+    @staticmethod
+    def _snapshot_problem(paths,hashes):
+        if len(paths)!=len(hashes):
+            return 'missing' if not any(Path(path).is_file() for path in paths) else 'invalid'
+        missing=False
+        for path,expected in zip(paths,hashes):
+            path=Path(path)
+            if not path.is_file():
+                missing=True
+            elif hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
+                return 'modified'
+        return 'missing' if missing else None
+
+    def _rebuild_batch_images(self,task,batch):
+        """Recreate a missing render cache from still-current durable inputs."""
+        if self._crops is None:
+            raise ValueError('联系表快照丢失，请重新打开 AI 选片后再试')
+        task_id=task.get('id');batch_id=batch.get('id')
+        if (not isinstance(task_id,str) or not re.fullmatch(r'[0-9a-f]{32}',task_id)
+                or not isinstance(batch_id,str) or not re.fullmatch(r'B[0-9]{3,}',batch_id)):
+            raise ValueError('联系表任务编号异常')
+        assets_by_id={photo_id(asset):asset for asset in self._assets}
+        try:
+            chunk=[assets_by_id[pid] for pid in batch.get('photo_ids',[])]
+        except KeyError as exc:
+            raise ValueError(f'无法重建联系表，照片已不在当前项目中：{exc.args[0]}') from exc
+        folder=self.workspace/'ai_tasks'/task_id/batch_id
+        temporary=folder.parent/f'.{batch_id}-rebuild-{uuid.uuid4().hex}'
+        try:
+            labeled=[replace(asset,stem=photo_id(asset)) for asset in chunk]
+            generated=generate_contact_sheets(labeled,temporary,photos_per_page=12,columns=3,
+                                               crop_settings=self._crops)
+            folder.mkdir(parents=True,exist_ok=True)
+            images=[]
+            for source in generated:
+                target=folder/source.name
+                source.replace(target);images.append(target.resolve())
+            (folder/'prompt.txt').write_text(batch['prompt'],encoding='utf-8')
+        finally:
+            shutil.rmtree(temporary,ignore_errors=True)
+        with self._state_lock:
+            batch.update(
+                image_paths=[str(path) for path in images],
+                image_hashes=[hashlib.sha256(path.read_bytes()).hexdigest() for path in images],
+            )
+            self.save()
+        return images
+
     def batch_images(self,task,batch,*,refresh_state=True):
         if refresh_state and self._crops is not None:self.refresh(self._assets,self._crops)
         self._validate_ai_photos(batch.get('photo_ids',[]),'本批')
         for pid,fp in batch['fingerprints'].items():
             if self.data['photos'].get(pid,{}).get('fingerprint')!=fp:raise ValueError('本批照片或分组/裁切已改变，请创建新评审任务')
         images=[Path(p) for p in batch['image_paths']]
-        if len(images)!=len(batch['image_hashes']):raise ValueError('联系表清单异常')
-        for image,sha in zip(images,batch['image_hashes']):
-            if not image.is_file() or hashlib.sha256(image.read_bytes()).hexdigest()!=sha:
-                raise ValueError('联系表快照丢失或被修改，请创建新任务')
+        problem=self._snapshot_problem(images,batch.get('image_hashes',[]))
+        if problem=='missing':
+            return self._rebuild_batch_images(task,batch)
+        if problem=='modified':
+            raise ValueError('联系表快照已被修改，未自动覆盖')
+        if problem:
+            raise ValueError('联系表清单异常')
         return images
 
     def validate_batch_sources(self,assets,crops,batch):
@@ -570,11 +680,68 @@ clear 表示主体清晰；blur 只用于主体明确失焦或拖影；无可靠
             if self.data['photos'].get(pid,{}).get('fingerprint')!=fp:
                 raise ValueError('网页提交中的照片或分组/裁切已改变，请重新创建评审任务')
         images=[Path(path) for path in submission['image_paths']]
-        if len(images)!=len(submission['image_hashes']):
+        problem=self._snapshot_problem(images,submission.get('image_hashes',[]))
+        if problem=='missing':
+            return self._rebuild_web_images(task,submission)
+        if problem=='modified':
+            raise ValueError('网页提交联系表快照已被修改，未自动覆盖')
+        if problem:
             raise ValueError('网页提交联系表清单异常')
-        for image,sha in zip(images,submission['image_hashes']):
-            if not image.is_file() or hashlib.sha256(image.read_bytes()).hexdigest()!=sha:
-                raise ValueError('网页提交联系表快照丢失或被修改，请重新创建提交')
+        return images
+
+    def _rebuild_web_images(self,task,submission):
+        if self._crops is None:
+            raise ValueError('网页提交图片丢失，请重新打开 AI 选片后再试')
+        task_id=task.get('id');submission_id=submission.get('id')
+        if (not isinstance(task_id,str) or not re.fullmatch(r'[0-9a-f]{32}',task_id)
+                or not isinstance(submission_id,str) or not re.fullmatch(r'W[0-9]{3,}',submission_id)):
+            raise ValueError('网页提交编号异常')
+        batches={batch.get('id'):batch for batch in task.get('batches',[])}
+        assets_by_id={photo_id(asset):asset for asset in self._assets}
+        root=self.workspace/'ai_tasks'/task_id/'web'/submission_id
+        temporary=root.parent/f'.{submission_id}-rebuild-{uuid.uuid4().hex}'
+        image_folder=temporary/'images';image_folder.mkdir(parents=True)
+        rebuilt=[]
+        try:
+            for batch_id in submission.get('batch_ids',[]):
+                batch=batches.get(batch_id)
+                if batch is None:
+                    raise ValueError(f'无法重建网页提交，找不到批次：{batch_id}')
+                for index,source in enumerate(self.batch_images(task,batch),1):
+                    target=image_folder/f'{batch_id}_sheet_{index:03d}{source.suffix.lower()}'
+                    shutil.copy2(source,target);rebuilt.append(target)
+            focus_names=submission.get('focus_image_map',{})
+            for pid in submission.get('focus_photo_ids',[]):
+                asset=assets_by_id.get(pid)
+                if asset is None:
+                    raise ValueError(f'无法重建清晰度补图：{pid}')
+                from .ai_focus import prepare_focus_images
+                sources=prepare_focus_images(asset,self._crops,temporary/'focus_sources'/pid)
+                names=focus_names.get(pid,[])
+                if not isinstance(sources,(list,tuple)) or len(sources)!=len(names):
+                    raise ValueError(f'无法重建清晰度补图：{pid}')
+                for index,(source,name) in enumerate(zip(sources,names),1):
+                    label='OVERVIEW' if index==1 else ('NATIVE FOCUS CROP' if index==2 else f'FOCUS DETAIL {index}')
+                    target=image_folder/Path(name).name
+                    _write_labeled_focus_image(source,target,pid,label);rebuilt.append(target)
+            previous=[Path(path).name for path in submission.get('image_paths',[])]
+            current=[path.name for path in rebuilt]
+            if previous and previous!=current:
+                raise ValueError('网页提交图片清单无法重建')
+            destination=root/'images';destination.mkdir(parents=True,exist_ok=True)
+            images=[]
+            for source in rebuilt:
+                target=destination/source.name
+                source.replace(target);images.append(target.resolve())
+            (root/'prompt.txt').write_text(submission['prompt'],encoding='utf-8')
+        finally:
+            shutil.rmtree(temporary,ignore_errors=True)
+        with self._state_lock:
+            submission.update(
+                image_paths=[str(path) for path in images],
+                image_hashes=[hashlib.sha256(path.read_bytes()).hexdigest() for path in images],
+            )
+            self.save()
         return images
 
     def ingest_web(self,task,submission,text):

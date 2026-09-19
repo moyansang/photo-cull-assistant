@@ -653,8 +653,27 @@ class ReviewDialog(tk.Toplevel):
                 # off the Tk thread even when the current task is reusable.
                 self.project.refresh(self.assets, self.crop_settings)
                 signature = self.project.home_sheet_signature(self.assets, self.crop_settings, self.home_pages)
-                if reuse_unchanged and self.project.can_reuse_task(signature):
-                    self._api_queue.put(("prepared", self.project.current_task(), False, True))
+                if reuse_unchanged:
+                    if self.project.can_reuse_task(signature):
+                        self._api_queue.put(("prepared", self.project.current_task(), False, True))
+                        return
+                    # A source/group/crop change starts a small follow-up task.
+                    # Current answers and unaffected pending work stay durable;
+                    # all unresolved photos move together so none are stranded
+                    # behind the UI's single current-task view.
+                    changed = self.project.photos_needing_review()
+                    if not changed:
+                        current = self.project.current_task()
+                        if current is None:
+                            self._api_queue.put(("prepared_empty",))
+                        else:
+                            self._api_queue.put(("prepared", current, False, True))
+                        return
+                    task = self.project.create_task(
+                        self.assets, self.crop_settings, preferences, kind=kind,
+                        photo_ids=changed, replace_current=False, home_signature=signature,
+                    )
+                    self._api_queue.put(("prepared", task, submit_after))
                     return
                 task = self.project.create_task(self.assets, self.crop_settings, preferences,
                     kind=kind, photo_ids=photo_ids, replace_current=(kind == "initial" and photo_ids is None),
@@ -881,9 +900,16 @@ class ReviewDialog(tk.Toplevel):
                 self.status_var.set("准备失败：" + event[1])
                 messagebox.showerror("准备失败", event[1], parent=self)
             return
-        if event[0] in ("prepared", "prepare_error"):
+        if event[0] in ("prepared", "prepare_error", "prepared_empty"):
             self._set_preparing(False)
-            if event[0] == "prepared":
+            if event[0] == "prepared_empty":
+                self._refresh_tasks()
+                self._review_dirty = True
+                if self.notebook.index(self.notebook.select()) == 2:
+                    self._refresh_review()
+                self._refresh_export_status()
+                self.status_var.set("没有可提交 AI 的照片；初筛弃置结果仍可导出到 LR。")
+            elif event[0] == "prepared":
                 reused = len(event) > 3 and bool(event[3])
                 if not reused:
                     self._refresh_tasks()

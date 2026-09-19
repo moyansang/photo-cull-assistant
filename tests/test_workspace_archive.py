@@ -118,6 +118,32 @@ def test_completed_ai_review_can_compact_before_export(tmp_path):
     assert reopened.data["photos"] == paid_result
 
 
+def test_archived_ai_result_survives_snapshot_cache_cleanup_and_rebuilds_on_demand(tmp_path):
+    photos, workspace, _result, project, task, batch, _export, crops = _completed_workspace(tmp_path)
+    task_id = task['id']
+    answers = {pid: dict(project.data['photos'][pid]['ai']) for pid in batch['photo_ids']}
+    raw_responses = json.loads(json.dumps(batch['raw_responses']))
+    compact_workspace(workspace)
+    shutil.rmtree(workspace/'ai_tasks')
+
+    assert restore_workspace(workspace)['restored']
+    restored = load_session(workspace, photos)
+    reopened = ReviewProject(workspace)
+    reopened.refresh(restored.assets, crops)
+    current = reopened.current_task()
+
+    assert current['id'] == task_id
+    assert current['batches'][0]['status'] == 'complete'
+    assert current['batches'][0]['raw_responses'] == raw_responses
+    assert reopened.can_reuse_task(reopened.home_sheet_signature(restored.assets, crops, []))
+    assert not (workspace/'ai_tasks').exists()
+    images = reopened.batch_images(current, current['batches'][0])
+    assert images and all(path.is_file() for path in images)
+    assert {pid: reopened.data['photos'][pid]['ai'] for pid in batch['photo_ids']} == answers
+    assert current['batches'][0]['status'] == 'complete'
+    assert current['batches'][0]['raw_responses'] == raw_responses
+
+
 @pytest.mark.parametrize('state', ['pending', 'stale', 'changed_group', 'focus_dirty'])
 def test_saved_ai_work_compacts_without_losing_pending_or_stale_results(tmp_path, state):
     photos, workspace, result, project, task, batch, export, _crops = _completed_workspace(tmp_path)

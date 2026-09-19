@@ -172,9 +172,12 @@ def _valid_focus_result(value: object) -> bool:
 
 def _has_reliable_face(asset: PhotoAsset, crops: CropSettings) -> bool:
     try:
-        subject = detail_features(asset, crops)
-        face = getattr(subject, "face", None) if subject else None
-        return bool(face and len(face) == 4)
+        if 'selected_faces' in crops.photos.get(crops.key(asset), {}):
+            from .subject import detail_features_list
+            subjects = detail_features_list(asset, crops)
+        else:
+            subjects = [detail_features(asset, crops)]
+        return any(getattr(subject, 'face', None) and len(subject.face) == 4 for subject in subjects)
     except (OSError, ValueError, TypeError):
         return False
 

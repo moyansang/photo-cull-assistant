@@ -102,3 +102,23 @@ def test_unsupported_body_skips_paid_request_and_finishes_pending(tmp_path, monk
     assert completed.assets[0].ai_focus_result is None
     assert focus_review_status(completed.assets[0]) is True
     assert any('身体区域无法可靠判断' in line for line in logs)
+
+@pytest.mark.parametrize('second_state,expected,rejected', [('clear','clear',False),('uncertain','uncertain',False),('severe_blur','severe_blur',True)])
+def test_all_selected_participants_body_checks_are_combined(tmp_path,monkeypatch,second_state,expected,rejected):
+    from ai_cull_assistant.body_pipeline import apply_body_check
+    from ai_cull_assistant.body_focus import VERSION
+    asset=asset_at(tmp_path)
+    boxes=[(.1,.1,.15,.2),(.6,.1,.15,.2)]
+    settings=CropSettings(photos={CropSettings().key(asset):{'selected_faces':[list(b) for b in boxes]}})
+    monkeypatch.setattr('ai_cull_assistant.subject.detail_features_list',lambda *a:[SimpleNamespace(face=b) for b in boxes])
+    calls=[]
+    def check(image,box):
+        calls.append(box)
+        state='clear' if box==boxes[0] else second_state
+        return dict(version=VERSION,state=state,review_kind='motion_confirmed' if state=='severe_blur' else 'unsupported',reasons=[],regions=[])
+    monkeypatch.setattr('ai_cull_assistant.body_focus.assess_body_focus',check)
+    screened=ScreeningResult(False,'subject_not_obviously_blurred',True,focus_evidence={'state':'clear'})
+    result=apply_body_check(asset,screened,settings,tmp_path/'cache')
+    assert calls==boxes
+    assert result.focus_evidence['state']==expected and result.rejected is rejected
+    assert len(result.focus_evidence['body']['participants'])==2

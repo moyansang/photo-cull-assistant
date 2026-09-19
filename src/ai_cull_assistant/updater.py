@@ -14,7 +14,7 @@ import urllib.error
 import time
 import zipfile
 
-from .version import VERSION
+from .version import BUILD, VERSION
 
 REPO = 'moyansang/photo-cull-assistant'
 MANIFEST = 'program-manifest.json'
@@ -28,53 +28,91 @@ def version_tuple(value):
     return tuple(int(part or 0) for part in match.groups())
 
 
+def build_number(value):
+    if type(value) is not int or not 0 <= value <= 2_147_483_647:
+        raise ValueError('不支持的构建号')
+    return value
+
+
+def release_key(version, build=0):
+    return version_tuple(version), build_number(build)
+
+
 def request(url):
-    return urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'PhotoCullAssistant/'+VERSION}), timeout=25)
+    return urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':f'PhotoCullAssistant/{VERSION}.{BUILD}'}), timeout=25)
+
+
+def _release_info(url, expected_size=None):
+    with request(url) as response:
+        payload=response.read(1024*1024+1)
+    if len(payload)>1024*1024 or (expected_size is not None and len(payload)!=expected_size):
+        raise ValueError('更新信息文件大小异常')
+    return json.loads(payload)
+
+
+def _validated_release(info):
+    if not isinstance(info,dict):
+        raise ValueError('更新信息校验失败')
+    version_tuple(info.get('version'))
+    build=build_number(info.get('build',0))
+    name=f"AI-Photo-Cull-{info['version']}-Windows-x64-portable.zip"
+    expected=f"https://github.com/{REPO}/releases/download/{info['version']}/{name}"
+    if info.get('url')!=expected or not re.fullmatch('[0-9a-f]{64}',info.get('sha256','')) or type(info.get('size')) is not int or not 0<info['size']<=1024*1024*1024:
+        raise ValueError('更新信息校验失败')
+    result=dict(info)
+    result['build']=build
+    return result
 
 
 def api_release():
     with request(f'https://api.github.com/repos/{REPO}/releases/latest') as response:
         data = json.load(response)
-    if data.get('draft') or data.get('prerelease') or version_tuple(data['tag_name']) <= version_tuple(VERSION):
+    if data.get('draft') or data.get('prerelease'):
         return None
-    name = f"AI-Photo-Cull-{data['tag_name']}-Windows-x64-portable.zip"
+    tag=data['tag_name']
+    if version_tuple(tag)<version_tuple(VERSION):
+        return None
+    name = f"AI-Photo-Cull-{tag}-Windows-x64-portable.zip"
     asset = next((a for a in data['assets'] if a['name']==name and a.get('state')=='uploaded'), None)
     if not asset or not re.fullmatch(r'sha256:[0-9a-fA-F]{64}', asset.get('digest') or ''):
         raise ValueError('新版尚无完整安装包或校验信息，请稍后再试')
-    expected_url = f"https://github.com/{REPO}/releases/download/{data['tag_name']}/{name}"
+    expected_url = f"https://github.com/{REPO}/releases/download/{tag}/{name}"
     if asset['browser_download_url'] != expected_url:
         raise ValueError('更新下载地址不匹配')
-    return dict(version=data['tag_name'], url=expected_url, sha256=asset['digest'][7:].lower(), size=asset['size'])
+    metadata_url=f"https://github.com/{REPO}/releases/download/{tag}/update.json"
+    metadata=next((a for a in data['assets'] if a['name']=='update.json' and a.get('state')=='uploaded'),None)
+    if not metadata or metadata.get('browser_download_url')!=metadata_url or type(metadata.get('size')) is not int or not 0<metadata['size']<=1024*1024:
+        raise ValueError('新版尚无有效更新信息，请稍后再试')
+    info=_validated_release(_release_info(metadata_url,metadata['size']))
+    if (info['version']!=tag or info['url']!=expected_url or info['sha256']!=asset['digest'][7:].lower()
+            or info['size']!=asset.get('size')):
+        raise ValueError('更新信息与发布文件不匹配')
+    return info if release_key(info['version'],info['build'])>release_key(VERSION,BUILD) else None
 
 
 def checked_release(info):
     if info is None: return None
-    version_tuple(info['version'])
-    name=f"AI-Photo-Cull-{info['version']}-Windows-x64-portable.zip"
-    expected=f"https://github.com/{REPO}/releases/download/{info['version']}/{name}"
-    if info.get('url')!=expected or not re.fullmatch('[0-9a-f]{64}',info.get('sha256','')) or type(info.get('size')) is not int or not 0<info['size']<=1024*1024*1024:
-        raise ValueError('更新信息校验失败')
-    return info if version_tuple(info['version'])>version_tuple(VERSION) else None
+    info=_validated_release(info)
+    return info if release_key(info['version'],info['build'])>release_key(VERSION,BUILD) else None
 
 
 def latest_release(cache_path=None, force=False):
     if cache_path and not force:
         try:
             cache=json.loads(Path(cache_path).read_text('utf-8'))
-            if cache['client_version']==VERSION and 0<=time.time()-cache['checked_at']<21600:
+            if cache['client_version']==VERSION and cache['client_build']==BUILD and 0<=time.time()-cache['checked_at']<21600:
                 return checked_release(cache['release'])
         except (OSError,ValueError,KeyError,TypeError): pass
     try:
         release=api_release()
     except (urllib.error.URLError,TimeoutError):
         # Public release assets use the GitHub web/CDN route, not REST quota.
-        with request(f'https://github.com/{REPO}/releases/latest/download/update.json') as response:
-            release=checked_release(json.load(response))
+        release=checked_release(_release_info(f'https://github.com/{REPO}/releases/latest/download/update.json'))
     if cache_path:
         try:
             path=Path(cache_path)
             temporary=path.with_suffix('.tmp')
-            temporary.write_text(json.dumps(dict(client_version=VERSION,checked_at=time.time(),release=release)),encoding='utf-8')
+            temporary.write_text(json.dumps(dict(client_version=VERSION,client_build=BUILD,checked_at=time.time(),release=release)),encoding='utf-8')
             temporary.replace(path)
         except OSError: pass
     return release
@@ -97,6 +135,7 @@ def read_manifest(root):
     if data.get('format')!='photo-cull-program-v1' or not isinstance(data.get('files'),dict):
         raise ValueError('程序文件清单无效')
     version_tuple(data['version'])
+    build=build_number(data.get('build',0))
     keys=set()
     for name, value in data['files'].items():
         if not managed_name(name) or name.casefold() in keys or not re.fullmatch('[0-9a-f]{64}',value):
@@ -104,6 +143,8 @@ def read_manifest(root):
         keys.add(name.casefold())
     if EXE not in data['files']:
         raise ValueError('更新包缺少 EXE')
+    data=dict(data)
+    data['build']=build
     return data
 
 
@@ -121,8 +162,8 @@ def safe_target(root, name):
 
 def validate_install(stage, target):
     new=read_manifest(stage); old=read_manifest(target)
-    if version_tuple(new['version'])<=version_tuple(old['version']):
-        raise ValueError('更新版本不高于已安装版本')
+    if release_key(new['version'],new['build'])<=release_key(old['version'],old['build']):
+        raise ValueError('更新版本或构建号不高于已安装程序')
     for name, sha in new['files'].items():
         source=safe_target(stage,name); dest=safe_target(target,name)
         if not source.is_file() or digest(source)!=sha:
@@ -175,7 +216,7 @@ def prepare_update(release, target, progress=None):
             report(85 + index*10//len(members), 'extract')
     report(96, 'validate')
     new=validate_install(stage,target)
-    if version_tuple(new['version'])!=version_tuple(release['version']): raise ValueError('安装包版本不匹配')
+    if release_key(new['version'],new['build'])!=release_key(release['version'],release.get('build',0)): raise ValueError('安装包版本或构建号不匹配')
     if set(members)!={n.casefold() for n in new['files']}|{MANIFEST.casefold()}: raise ValueError('安装包文件与清单不一致')
     report(98, 'prepare')
     helper=work/'helper'; helper.mkdir()

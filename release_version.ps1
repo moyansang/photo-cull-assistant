@@ -4,4 +4,8 @@ if ($VersionText -notmatch '(?m)^VERSION\s*=\s*[''"]([0-9]+\.[0-9]+\.[0-9]+)[''"
     throw 'Cannot read application version'
 }
 $AppVersion = $Matches[1]
+if ($VersionText -notmatch '(?m)^BUILD\s*=\s*([0-9]+)\s*$') {
+    throw 'Cannot read application build number'
+}
+$ReleaseBuild = [int]$Matches[1]
 $ReleaseVersion = 'v' + ($AppVersion -replace '\.0$', '')

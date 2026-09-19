@@ -5,8 +5,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from ai_cull_assistant.contact_sheet import generate_contact_sheet_sets, page_filename
+from ai_cull_assistant.contact_sheet import generate_contact_sheet_sets, page_filename, _detail_rail_labels
 from ai_cull_assistant.models import PhotoAsset
+from ai_cull_assistant.crop_settings import CropSettings
 
 
 def make_asset(tmp_path: Path, stem: str, group_id: int, rejected: bool = False) -> PhotoAsset:
@@ -76,3 +77,35 @@ def test_head_only_inset_can_render_without_claiming_face(tmp_path, monkeypatch)
     monkeypatch.setattr(contact_sheet, 'face_crop', crop)
     result = generate_contact_sheet_sets([asset], tmp_path/'sheets')
     assert result.main_pages and crops == [(None, head.head)]
+
+
+def test_selected_people_each_get_a_detail_crop_in_persisted_order(tmp_path, monkeypatch):
+    from ai_cull_assistant import contact_sheet
+    from ai_cull_assistant.subject import SubjectFeatures
+    asset = make_asset(tmp_path, 'MULTI', 1)
+    key = str(asset.primary_path.resolve()).casefold()
+    boxes = [(.1,.1,.2,.2), (.6,.2,.2,.2)]
+    from ai_cull_assistant.crop_settings import face_box_key
+    settings = CropSettings(photos={key: {
+        'selected_faces': [list(box) for box in boxes],
+        'face_crops': {
+            face_box_key(boxes[0]): {'scale_factor': 1.2},
+            face_box_key(boxes[1]): {'scale_factor': 1.8},
+        },
+    }})
+    subjects = [SubjectFeatures('a','b',None,box,box) for box in boxes]
+    monkeypatch.setattr(contact_sheet, 'detail_features_list', lambda *a: subjects)
+    crops = []
+    def crop(_image, face, _head, person_settings):
+        crops.append((face, person_settings.scale_factor))
+        return Image.new('RGB',(124,150),'red')
+    monkeypatch.setattr(contact_sheet, 'face_crop', crop)
+
+    result = generate_contact_sheet_sets([asset], tmp_path/'sheets', crop_settings=settings)
+
+    assert result.main_pages and crops == [(boxes[0], 1.2), (boxes[1], 1.8)]
+
+
+def test_more_than_four_details_label_total_and_remaining():
+    assert _detail_rail_labels(6) == ('SELECTED TOTAL: 6', 'REMAINING DETAILS: 2')
+    assert _detail_rail_labels(4) == ('SELECTED TOTAL: 4', None)

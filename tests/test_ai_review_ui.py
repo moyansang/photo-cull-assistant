@@ -3,6 +3,7 @@ import time
 import tkinter as tk
 from pathlib import Path
 import pytest
+from PIL import Image
 from ai_cull_assistant.ai_review_ui import ReviewDialog, _api_request_stubs
 from ai_cull_assistant import ai_api
 from ai_cull_assistant.crop_settings import CropSettings
@@ -230,7 +231,7 @@ def test_tab_round_trip_keeps_api_layout(ui):
     root.withdraw()
 
 
-def test_reopen_preserves_answers_until_home_sheet_changes(ui, monkeypatch, tmp_path):
+def test_reopen_preserves_answers_when_home_sheet_changes_or_disappears(ui, monkeypatch, tmp_path):
     root,dialog,project,task,batch,errors=ui
     project.ingest(task,batch,answer(task,batch))
     page=tmp_path/'main.jpg';page.write_bytes(b'unchanged')
@@ -249,11 +250,75 @@ def test_reopen_preserves_answers_until_home_sheet_changes(ui, monkeypatch, tmp_
     changed=ReviewDialog(root,project,dialog.assets,dialog.crop_settings,tmp_path,home_pages=[page])
     try:
         drive(root,changed)
-        assert project.current_task()['id']!=previous_id
-        assert all(b['status']=='pending' for b in project.current_task()['batches'])
-        assert all(not p.get('ai') for p in project.data['photos'].values())
+        assert project.current_task()['id']==previous_id
+        assert all(b['status']=='complete' for b in project.current_task()['batches'])
+        assert all(p.get('ai') for p in project.data['photos'].values())
     finally:
         changed._destroy_now()
+    page.unlink()
+    missing=ReviewDialog(root,project,dialog.assets,dialog.crop_settings,tmp_path,home_pages=[page])
+    try:
+        drive(root,missing)
+        assert project.current_task()['id']==previous_id
+        assert all(p.get('ai') for p in project.data['photos'].values())
+    finally:
+        missing._destroy_now()
+
+
+def test_reopen_moves_stale_answer_and_unchanged_pending_photo_into_one_followup(tk_root,monkeypatch,tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    original=project.create_task(assets,CropSettings(),{'_split_limit':1},replace_current=True)
+    first_batch,second_batch=original['batches']
+    project.ingest(original,first_batch,answer(original,first_batch))
+    first_id,second_id=first_batch['photo_ids'][0],second_batch['photo_ids'][0]
+    saved=dict(project.data['photos'][first_id]['ai'])
+    Image.new('RGB',(100,150),'blue').save(assets[0].primary_path)
+    profile=dict(id='test',name='test',base_url='https://example.invalid/v1',model='vision',timeout=5)
+    monkeypatch.setattr(ai_api,'load_profiles',lambda _: [profile])
+    monkeypatch.setattr(tk_root,'_selected_api_profile',lambda:profile,raising=False)
+    errors=[]
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showerror',lambda *a,**kw:errors.append(a))
+    dialog=ReviewDialog(tk_root,project,assets,CropSettings(),tmp_path)
+    try:
+        drive(tk_root,dialog)
+        current=project.current_task()
+        assert not errors and current['id']!=original['id']
+        assert [pid for batch in current['batches'] for pid in batch['photo_ids']]==[first_id,second_id]
+        assert project.data['photos'][first_id]['ai']==saved
+        assert project.data['photos'][first_id]['stale'] is True
+        assert 'ai' not in project.data['photos'][second_id]
+        assert second_batch['status']=='pending'
+    finally:
+        dialog._destroy_now()
+
+
+def test_fresh_all_rejected_project_has_no_task_and_can_export_lr(tk_root,monkeypatch,tmp_path):
+    _seed,assets,_,_=setup_project(tmp_path)
+    for asset in assets:
+        asset.auto_rejected=True
+        asset.screening_reason='severe_subject_blur'
+    from ai_cull_assistant.ai_project import ReviewProject
+    project=ReviewProject(tmp_path/'fresh-workspace')
+    profile=dict(id='test',name='test',base_url='https://example.invalid/v1',model='vision',timeout=5)
+    monkeypatch.setattr(ai_api,'load_profiles',lambda _: [profile])
+    monkeypatch.setattr(tk_root,'_selected_api_profile',lambda:profile,raising=False)
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.askyesno',lambda *a,**kw:True)
+    errors=[];opened=[]
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showerror',lambda *a,**kw:errors.append(a))
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showinfo',lambda *a,**kw:None)
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile',lambda path:opened.append(Path(path)))
+    dialog=ReviewDialog(tk_root,project,assets,CropSettings(),tmp_path)
+    try:
+        drive(tk_root,dialog)
+        assert project.current_task() is None and not errors
+        assert '仍可导出到 LR' in dialog.status_var.get()
+        dialog._export_ai_ratings()
+        payload=json.loads((project.workspace/'exports'/'lightroom_results.json').read_text('utf-8'))
+        assert len(payload['photos'])==2
+        assert all(row['pick_status']==-1 and 'rating' not in row for row in payload['photos'])
+        assert opened==[project.workspace/'exports'] and not errors
+    finally:
+        dialog._destroy_now()
 
 
 def test_review_uses_homepage_profile_and_refreshes_changes(ui, monkeypatch):

@@ -9,8 +9,8 @@ from tkinter import ttk, messagebox
 
 from PIL import Image, ImageDraw, ImageOps, ImageTk
 
-from .crop_settings import CropSettings, crop_bounds
-from .subject import face_crop, detail_features
+from .crop_settings import CropSettings, crop_bounds, face_box_key
+from .subject import face_crop, detail_features, detail_features_list
 from .preview import ensure_preview
 from .window_layout import fit_window, scrollable_body
 
@@ -31,6 +31,9 @@ class CropDialog(tk.Toplevel):
         self._source_cache = OrderedDict()
         self._candidate_cache = OrderedDict()
         self.candidates = []
+        self._selected_boxes = []
+        self._active_face_key = None
+        self._person_dirty = False
         self.index = 0
         self.on_save = on_save
         self.scale = tk.DoubleVar(value=settings.scale_factor)
@@ -38,6 +41,7 @@ class CropDialog(tk.Toplevel):
         self.offset_x = tk.DoubleVar(value=settings.offset_x_factor)
         self.confidence = tk.DoubleVar(value=settings.detection_confidence)
         self.ratio = tk.StringVar(value=settings.aspect_ratio)
+        self.person = tk.StringVar(value="自动主体")
         self._pending = None
         # Reserve the action footer before allocating the scrollable content.
         actions = ttk.Frame(self, padding=(16, 8))
@@ -51,7 +55,7 @@ class CropDialog(tk.Toplevel):
         body = scrollable_body(self, padding=16)
         ttk.Label(
             body,
-            text="在照片上直接拖拽框选人脸；点击绿框内部变为黄框后，可上下左右拖动。在框外拖拽可重新框选，滚轮可细调范围。",
+            text="点击蓝框加入人物，重新点击其绿色或橙色检测框可移除；拖拽可补框漏检人脸。点击裁切框空白处后可移动，滚轮可细调范围。",
             wraplength=460,
         ).pack(fill="x", anchor="w")
         row = ttk.Frame(body)
@@ -77,6 +81,19 @@ class CropDialog(tk.Toplevel):
         ttk.Label(row, text="裁切比例", width=12).pack(side="left")
         ttk.Combobox(row, textvariable=self.ratio, values=("124:150", "1:1", "3:4"), state="readonly", width=16).pack(side="left")
         ttk.Label(row, text="默认 / 正方形 / 竖向 3:4").pack(side="left", padx=16)
+        person_row = ttk.Frame(body)
+        person_row.pack(fill="x", pady=4)
+        ttk.Label(person_row, text="当前人物", width=12).pack(side="left")
+        self.person_picker = ttk.Combobox(
+            person_row,
+            textvariable=self.person,
+            values=("自动主体",),
+            state="readonly",
+            width=16,
+        )
+        self.person_picker.pack(side="left")
+        self.person_picker.bind("<<ComboboxSelected>>", self.select_person)
+        ttk.Label(person_row, text="多人照片可逐人设置范围、位置和比例").pack(side="left", padx=16)
         self.caption = ttk.Label(body)
         self.caption.pack(pady=(12, 4))
         self.canvas = tk.Canvas(body, width=1, height=400, background="#eeeeee", highlightthickness=0)
@@ -88,7 +105,7 @@ class CropDialog(tk.Toplevel):
         self.canvas.bind('<MouseWheel>', self.mouse_wheel)
         self.canvas.bind('<Button-4>', self.mouse_wheel)
         self.canvas.bind('<Button-5>', self.mouse_wheel)
-        ttk.Label(body, text="绿框：最终裁切范围。黄框：已选中，可上下左右拖动。蓝框：检测候选。位置、范围和裁切比例仅影响当前照片。").pack()
+        ttk.Label(body, text="蓝框：候选。绿框：已选人物。橙框：当前人物。裁切框点中后变黄；多人照片的设置彼此独立。").pack()
         manual = ttk.Frame(body)
         manual.pack(pady=4)
         ttk.Button(manual, text="恢复本张自动选脸", command=self.auto_face).pack(side="left", padx=6)
@@ -98,9 +115,10 @@ class CropDialog(tk.Toplevel):
         ttk.Button(navigation, text="上一张", command=lambda: self.navigate(-1)).pack(side="left", padx=6)
         ttk.Button(navigation, text="下一张", command=lambda: self.navigate(1)).pack(side="left", padx=6)
         ttk.Button(navigation, text="下一张未标记", command=self.next_unmarked).pack(side="left", padx=6)
-        ttk.Button(navigation, text="重置本张裁切", command=self.reset).pack(side="left", padx=6)
-        for variable in (self.scale, self.shift, self.offset_x, self.ratio, self.confidence):
-            variable.trace_add("write", self.schedule_preview)
+        ttk.Button(navigation, text="重置当前裁切", command=self.reset).pack(side="left", padx=6)
+        for variable in (self.scale, self.shift, self.offset_x, self.ratio):
+            variable.trace_add("write", self.schedule_crop_preview)
+        self.confidence.trace_add("write", self.schedule_preview)
         fit_window(self, (850, 790), minimum_size=(520, 440), parent=parent)
         self.update_idletasks()
         self.load_current()
@@ -122,6 +140,27 @@ class CropDialog(tk.Toplevel):
         if self._pending:
             self.after_cancel(self._pending)
         self._pending = self.after(60, self.render)
+
+    def schedule_crop_preview(self, *_):
+        if self._loading:
+            return
+        if self._active_face_key:
+            self._person_dirty = True
+        self.schedule_preview()
+
+    def select_person(self, *_):
+        if self._loading or not self.assets:
+            return
+        self.store_current()
+        selected = self.current_entry().get('selected_faces')
+        if not isinstance(selected, list) or not selected:
+            self._active_face_key = None
+        else:
+            index = max(0, min(self.person_picker.current(), len(selected) - 1))
+            self._active_face_key = face_box_key(selected[index])
+        self._crop_selected = False
+        self.load_current()
+        self.render()
 
     @staticmethod
     def _remember(cache, key, value, limit):
@@ -173,6 +212,7 @@ class CropDialog(tk.Toplevel):
             self.store_current()
             self.index = (self.index + step) % len(self.assets)
             self._crop_selected = False
+            self._active_face_key = None
             self.load_current()
             self.render()
 
@@ -193,13 +233,19 @@ class CropDialog(tk.Toplevel):
             # detail_features here decodes and detects every intervening photo,
             # causing a long freeze when the search wraps around a large set.
             subject = getattr(asset, 'subject_features', None)
-            located = bool(
-                entry.get('manual_face')
-                or (subject and (getattr(subject, 'head', None) or getattr(subject, 'face', None)))
-            )
+            if 'selected_faces' in entry:
+                # An explicit empty list is a user-visible "nobody selected"
+                # state and must remain discoverable as missing.
+                located = bool(entry.get('selected_faces'))
+            else:
+                located = bool(
+                    entry.get('manual_face')
+                    or (subject and (getattr(subject, 'head', None) or getattr(subject, 'face', None)))
+                )
             if not located:
                 self.index = index
                 self._crop_selected = False
+                self._active_face_key = None
                 self.load_current()
                 self.render()
                 self.caption.configure(text=f"{index+1}/{len(self.assets)}  ·  {asset.stem}  ·  待补选人脸")
@@ -227,7 +273,7 @@ class CropDialog(tk.Toplevel):
             self.caption.configure(text="扫描照片后可预览；现在可先保存全局置信度。")
             return
         asset = self.assets[self.index]
-        mode = "拖动黄框调整位置" if self._crop_selected else "直接框选；点击绿框可移动"
+        mode = "拖动黄框调整位置" if self._crop_selected else "拖拽补框；点裁切框空白处可移动"
         self.caption.configure(text=(
             f"{self.index+1}/{len(self.assets)}  ·  {asset.stem}  ·  G{asset.group_id:03d}"
             f"  ·  范围 {self.scale.get():.2f}  ·  {mode}"
@@ -242,12 +288,66 @@ class CropDialog(tk.Toplevel):
             preview_x = padding + preview_width / 2
             final_x = canvas_width - padding - inset_width / 2
             original, source_key = self._source_preview(asset)
-            subject = detail_features(asset, self.global_settings())
+            current_settings = self.global_settings()
+            entry = current_settings.photos.get(current_settings.key(asset), {})
+            if 'selected_faces' in entry:
+                subjects = detail_features_list(asset, current_settings)
+            else:
+                subject = detail_features(asset, current_settings)
+                subjects = [subject] if subject else []
+            self._selected_boxes = [
+                tuple(item.face) for item in subjects
+                if item and getattr(item, 'face', None)
+            ]
+            selected_keys = [face_box_key(box) for box in self._selected_boxes]
+            if 'selected_faces' in entry and selected_keys:
+                if self._active_face_key not in selected_keys:
+                    self._active_face_key = selected_keys[0]
+                active_index = selected_keys.index(self._active_face_key)
+                subject = subjects[active_index]
+                picker_values = tuple(f"人物 {number}" for number in range(1, len(selected_keys) + 1))
+                self.person_picker.configure(values=picker_values, state="readonly")
+                self._loading = True
+                self.person.set(picker_values[active_index])
+                self._loading = False
+            else:
+                self._active_face_key = None
+                subject = subjects[0] if subjects else None
+                picker_value = "未选择人物" if 'selected_faces' in entry else "自动主体"
+                self.person_picker.configure(values=(picker_value,), state="disabled")
+                self._loading = True
+                self.person.set(picker_value)
+                self._loading = False
             self.candidates = self._detected_candidates(original, source_key)
             marked = original.copy()
+            painter = ImageDraw.Draw(marked)
             for candidate in self.candidates:
                 x,y,w,h = candidate.box
-                ImageDraw.Draw(marked).rectangle((x,y,x+w,y+h), outline="#3399ff", width=max(2, original.width//300))
+                normalized = (x/original.width, y/original.height, w/original.width, h/original.height)
+                selected_index = next(
+                    (index for index, box in enumerate(self._selected_boxes, 1) if self._same_face(box, normalized)),
+                    None,
+                )
+                if not selected_index:
+                    painter.rectangle(
+                        (x, y, x + w, y + h),
+                        outline="#3399ff",
+                        width=max(2, original.width // 300),
+                    )
+            # Draw persisted boxes independently from current detector output so
+            # manually added people and candidates lost at a new confidence
+            # threshold remain visible and numbered.
+            for selected_index, box in enumerate(self._selected_boxes, 1):
+                x, y, w, h = box
+                bounds = (
+                    x * original.width,
+                    y * original.height,
+                    (x + w) * original.width,
+                    (y + h) * original.height,
+                )
+                color = "#ff9900" if face_box_key(box) == self._active_face_key else "#00aa66"
+                painter.rectangle(bounds, outline=color, width=max(3, original.width // 300))
+                painter.text((bounds[0] + 3, bounds[1] + 3), str(selected_index), fill=color)
             head = (getattr(subject, 'head', None) or getattr(subject, 'face', None)) if subject else None
             if head:
                 bounds = crop_bounds(original.size, head, self.settings())
@@ -263,6 +363,14 @@ class CropDialog(tk.Toplevel):
                 self.canvas.create_text(final_x, max(10, (canvas_height - tile.height) / 2 - 12), text=inset_label)
             else:
                 self.canvas.create_text(final_x, canvas_height / 2, text="未检测到可靠人脸\n本张不显示小窗", justify="center")
+            selected_count = len(self._selected_boxes)
+            if 'selected_faces' in entry:
+                current_person = f"人物 {selected_keys.index(self._active_face_key) + 1}" if self._active_face_key in selected_keys else "未选择人物"
+                self.caption.configure(text=(
+                    f"{self.index+1}/{len(self.assets)}  ·  {asset.stem}  ·  G{asset.group_id:03d}"
+                    f"  ·  已选 {selected_count} 人  ·  当前 {current_person}"
+                    f"  ·  范围 {self.scale.get():.2f}  ·  {mode}"
+                ))
             preview = ImageOps.contain(marked, (preview_width, preview_height))
             self._image_rect = (preview_x-preview.width/2, canvas_height/2-preview.height/2, preview.width, preview.height, original.width, original.height)
             self.photos.append(ImageTk.PhotoImage(preview, master=self))
@@ -294,13 +402,27 @@ class CropDialog(tk.Toplevel):
         key = self.global_settings().key(self.assets[self.index])
         entry = self.edits.setdefault(key, {})
         value = self.settings()
-        entry.update(
-            scale_factor=value.scale_factor,
-            shift_factor=value.shift_factor,
-            offset_x_factor=value.offset_x_factor,
-            aspect_ratio=value.aspect_ratio,
-        )
-        if entry.get('manual_face'):
+        if 'selected_faces' in entry:
+            selected_keys = {
+                face_box_key(box) for box in entry.get('selected_faces', [])
+                if face_box_key(box)
+            }
+            if self._active_face_key in selected_keys and self._person_dirty:
+                entry.setdefault('face_crops', {})[self._active_face_key] = {
+                    'scale_factor': value.scale_factor,
+                    'shift_factor': value.shift_factor,
+                    'offset_x_factor': value.offset_x_factor,
+                    'aspect_ratio': value.aspect_ratio,
+                }
+                self._person_dirty = False
+        else:
+            entry.update(
+                scale_factor=value.scale_factor,
+                shift_factor=value.shift_factor,
+                offset_x_factor=value.offset_x_factor,
+                aspect_ratio=value.aspect_ratio,
+            )
+        if entry.get('manual_face') or 'selected_faces' in entry:
             preview_version = self._preview_version(self.assets[self.index])
             if preview_version:
                 entry['preview_version'] = preview_version
@@ -308,13 +430,26 @@ class CropDialog(tk.Toplevel):
     def load_current(self):
         if not self.assets:
             return
-        value = self.global_settings().for_asset(self.assets[self.index])
+        settings = self.global_settings()
+        asset = self.assets[self.index]
+        entry = settings.photos.get(settings.key(asset), {})
+        selected = entry.get('selected_faces')
+        if isinstance(selected, list) and selected:
+            keys = [face_box_key(box) for box in selected]
+            if self._active_face_key not in keys:
+                self._active_face_key = keys[0]
+            box = selected[keys.index(self._active_face_key)]
+            value = settings.for_face(asset, box)
+        else:
+            self._active_face_key = None
+            value = settings.for_asset(asset)
         self._loading = True
         self.scale.set(value.scale_factor)
         self.shift.set(value.shift_factor)
         self.offset_x.set(value.offset_x_factor)
         self.ratio.set(value.aspect_ratio)
         self._loading = False
+        self._person_dirty = False
 
     def current_entry(self):
         return self.edits.setdefault(self.global_settings().key(self.assets[self.index]), {})
@@ -324,12 +459,18 @@ class CropDialog(tk.Toplevel):
             self._crop_selected = False
             entry = self.current_entry()
             entry.pop('manual_face', None)
+            entry.pop('selected_faces', None)
+            entry.pop('face_crops', None)
             entry.pop('preview_version', None)
             entry.pop('hidden', None)
+            self._active_face_key = None
+            self._person_dirty = False
+            self.load_current()
             self.render()
 
     def hide_face(self):
         if self.assets:
+            self.store_current()
             self._crop_selected = False
             self.current_entry()['hidden'] = True
             self.render()
@@ -339,6 +480,10 @@ class CropDialog(tk.Toplevel):
             return
         x,y,w,h,_,_ = self._image_rect
         if not (x <= event.x <= x+w and y <= event.y <= y+h):
+            return
+        candidate = self._candidate_at(event.x, event.y)
+        if candidate is not None:
+            self._drag = ("candidate", event.x, event.y, candidate)
             return
         if self._crop_rect:
             left, top, right, bottom = self._crop_rect
@@ -357,6 +502,8 @@ class CropDialog(tk.Toplevel):
     def pointer_move(self, event):
         if not self._drag:
             return
+        if self._drag[0] == "candidate":
+            return
         if self._drag[0] == "manual":
             self.canvas.delete('drag')
             _, ax, ay = self._drag
@@ -371,6 +518,13 @@ class CropDialog(tk.Toplevel):
     def pointer_up(self, event):
         if not self._drag or not self._image_rect:
             return
+        if self._drag[0] == "candidate":
+            _, start_x, start_y, box = self._drag
+            self._drag = None
+            if abs(event.x - start_x) < 8 and abs(event.y - start_y) < 8:
+                self._toggle_selected(box)
+                self.render()
+            return
         if self._drag[0] == "crop":
             _, ax, ay, original_x, original_y, _ = self._drag
             dx, dy = self._clamped_crop_delta(event.x, event.y)
@@ -384,6 +538,8 @@ class CropDialog(tk.Toplevel):
                     self.offset_x.set(original_x + dx / display_width * image_width / base_h)
                     self.shift.set(original_y + dy / display_height * image_height / base_h)
                     self._loading = False
+                    if self._active_face_key and (dx or dy):
+                        self._person_dirty = True
             self.render()
             return
         _, ax, ay = self._drag
@@ -403,13 +559,89 @@ class CropDialog(tk.Toplevel):
                 left,top = max(0,fx/iw),max(0,fy/ih)
                 box = [left,top,min(1,(fx+fw)/iw)-left,min(1,(fy+fh)/ih)-top]
         if box:
+            self.store_current()
             entry = self.current_entry()
-            entry['manual_face'] = box
+            if not self._selected_boxes and 'selected_faces' not in entry:
+                # Preserve the long-standing single-manual-face representation
+                # when this is the only participant in an untouched photo.
+                entry['manual_face'] = box
+            else:
+                selected = list(self._selected_boxes)
+                if not any(self._same_face(current, box) for current in selected):
+                    selected.append(tuple(box))
+                entry['selected_faces'] = [list(current) for current in selected]
+                entry.pop('manual_face', None)
+                self._active_face_key = face_box_key(box)
+                self._person_dirty = False
             preview_version = self._preview_version(self.assets[self.index])
             if preview_version:
                 entry['preview_version'] = preview_version
             entry.pop('hidden', None)
+            self.load_current()
             self.render()
+
+    @staticmethod
+    def _same_face(first, second):
+        try:
+            ax, ay, aw, ah = map(float, first)
+            bx, by, bw, bh = map(float, second)
+        except (TypeError, ValueError):
+            return False
+        left, top = max(ax, bx), max(ay, by)
+        right, bottom = min(ax + aw, bx + bw), min(ay + ah, by + bh)
+        intersection = max(0.0, right - left) * max(0.0, bottom - top)
+        union = aw * ah + bw * bh - intersection
+        return intersection / max(union, 1e-9) >= .45
+
+    def _candidate_at(self, event_x, event_y):
+        if not self._image_rect:
+            return None
+        image_x, image_y, display_w, display_h, image_w, image_h = self._image_rect
+        px = (event_x - image_x) / display_w * image_w
+        py = (event_y - image_y) / display_h * image_h
+        hits = [
+            face for face in self.candidates
+            if face.box[0] <= px <= face.box[0] + face.box[2]
+            and face.box[1] <= py <= face.box[1] + face.box[3]
+        ]
+        if not hits:
+            return None
+        face = max(hits, key=lambda item: item.score)
+        x, y, w, h = face.box
+        return (x / image_w, y / image_h, w / image_w, h / image_h)
+
+    def _toggle_selected(self, box):
+        self.store_current()
+        selected = list(self._selected_boxes)
+        match = next(
+            (index for index, current in enumerate(selected) if self._same_face(current, box)),
+            None,
+        )
+        if match is None:
+            selected.append(tuple(box))
+            self._active_face_key = face_box_key(box)
+        else:
+            removed = selected.pop(match)
+            removed_key = face_box_key(removed)
+            if self._active_face_key == removed_key:
+                self._active_face_key = face_box_key(selected[min(match, len(selected) - 1)]) if selected else None
+        entry = self.current_entry()
+        entry['selected_faces'] = [list(current) for current in selected]
+        entry.pop('manual_face', None)
+        entry.pop('hidden', None)
+        face_crops = entry.get('face_crops')
+        if isinstance(face_crops, dict):
+            valid_keys = {face_box_key(current) for current in selected}
+            entry['face_crops'] = {
+                key: value for key, value in face_crops.items() if key in valid_keys
+            }
+            if not entry['face_crops']:
+                entry.pop('face_crops')
+        self._person_dirty = False
+        preview_version = self._preview_version(self.assets[self.index])
+        if preview_version:
+            entry['preview_version'] = preview_version
+        self.load_current()
 
     def _clamped_crop_delta(self, event_x, event_y):
         """Keep a dragged crop frame inside the displayed source image."""

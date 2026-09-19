@@ -8,9 +8,11 @@ import re
 import shutil
 import sys
 import uuid
+import zipfile
 from .settings import application_dir, read_values, save_values
 
 WORKSPACE_NAMES = (
+    'workspace-identity.json',
     'scan-session.json', 'ai_project.json', 'groups.json', 'screening_results.json',
     'processing-settings.json', 'workspace-settings.json', 'lightroom_results.json',
     'session.log', 'previews', 'contact_sheets', 'ai_tasks', '.analysis-cache', '.processing',
@@ -48,7 +50,14 @@ def workspace_for(settings_dir,input_dir,preferred=None):
     registry=values.get('workspaces',{})
     if not isinstance(registry,dict):registry={}
     source=_key(input_dir)
-    chosen=Path(preferred or registry.get(source) or _default_workspace(settings_dir,input_dir)).resolve()
+    saved = preferred or registry.get(source)
+    chosen=Path(saved or _default_workspace(settings_dir,input_dir)).resolve()
+    if not saved or not chosen.exists():
+        matches = discover_workspaces(settings_dir, input_dir)
+        if len(matches) > 1:
+            raise ValueError('发现多个属于此照片文件夹的工作区，请通过工作区选择框明确打开其中一个：' + '；'.join(map(str, matches)))
+        if matches:
+            chosen = matches[0]
     for other,target in registry.items():
         if other!=source and _key(target)==_key(chosen):
             raise ValueError('这个工作区已关联其他照片文件夹，请选择独立工作区。')
@@ -62,9 +71,48 @@ def workspace_for(settings_dir,input_dir,preferred=None):
             raise ValueError('这个工作区包含另一批照片的分析，请选择独立工作区。')
         relocate_copied_workspace(chosen, data)
     chosen.mkdir(parents=True,exist_ok=True)
+    identity_path = chosen/'workspace-identity.json'
+    identity = json.loads(identity_path.read_text('utf-8')) if identity_path.exists() else {}
+    if identity.get('input_dir') and _key(identity['input_dir']) != source:
+        raise ValueError('这个工作区已关联其他照片文件夹，请选择独立工作区。')
+    identity.setdefault('workspace_id', uuid.uuid4().hex)
+    identity.update(version=1, input_dir=str(Path(input_dir).resolve()))
+    _atomic(identity_path, identity)
     registry[source]=str(chosen)
     save_values(settings_dir,{'workspaces':registry})
     return chosen
+
+
+def discover_workspaces(settings_dir, input_dir):
+    """Find copied workspaces by recorded source, without extracting their caches."""
+    root = _default_workspace(settings_dir, input_dir).parent
+    if not root.is_dir():
+        return []
+    source = _key(input_dir)
+    matches = []
+    for candidate in sorted(root.iterdir()):
+        if not candidate.is_dir() or candidate.is_symlink() or getattr(candidate, 'is_junction', lambda: False)():
+            continue
+        try:
+            recorded = None
+            for name in ('workspace-identity.json', 'scan-session.json'):
+                path = candidate/name
+                if path.is_file() and not path.is_symlink():
+                    recorded = json.loads(path.read_text('utf-8')).get('input_dir')
+                    if recorded:
+                        break
+            archive = candidate/'.workspace-archive.zip'
+            if not recorded and archive.is_file() and not archive.is_symlink():
+                with zipfile.ZipFile(archive) as bundle:
+                    entry = bundle.getinfo('scan-session.json')
+                    if entry.file_size > 64 * 1024 * 1024:
+                        continue
+                    recorded = json.loads(bundle.read(entry)).get('input_dir')
+            if recorded and _key(recorded) == source:
+                matches.append(candidate.resolve())
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, zipfile.BadZipFile):
+            continue
+    return matches
 
 
 def workspace_input(workspace):
