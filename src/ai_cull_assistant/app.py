@@ -172,6 +172,10 @@ class App(tk.Tk):
         self._schedule_settings_save()
 
     def _input_path_changed(self, *_):
+        if not self._suppress_settings_trace:
+            # The latest explicit photo selection wins over a previously edited
+            # workspace field that has not yet reached its delayed save.
+            self._workspace_user_custom = False
         self._schedule_settings_save()
 
     def _workspace_path_changed(self, *_):
@@ -499,6 +503,10 @@ class App(tk.Tk):
         path = filedialog.askdirectory(title="选择照片文件夹")
         if path:
             self.input_var.set(path)
+            if self._settings_pending:
+                self.after_cancel(self._settings_pending)
+                self._settings_pending = None
+            self._save_preferences()
 
     def _choose_workspace(self) -> None:
         path = filedialog.askdirectory(title="选择工作区")
@@ -883,10 +891,13 @@ class App(tk.Tk):
             messagebox.showerror("处理出错照片", str(exc), parent=self)
 
     def _stop_processing(self):
+        if getattr(self, "_clearing_workspace", False):
+            self.next_step_var.set("正在清空工作区，请等待完成")
+            return
         if self._processing_busy:
             self._stop_event.set()
             self.stop_button.configure(state="disabled")
-            self.next_step_var.set("推荐下一步：等待当前处理单元保存")
+            self.next_step_var.set("正在停止：等待当前请求结束并保存进度，完成后可清空工作区")
 
     def _continue_processing(self):
         self._start_processing(resume=True, mode=self._processing_mode)
@@ -1014,19 +1025,53 @@ class App(tk.Tk):
                         asset.primary_path, asset.raw_path, asset.jpg_path, *asset.rating_target_paths
                     ) if value
                 )
+        # Cancel delayed preference writes before deleting their destination.
+        if self._settings_pending:
+            self.after_cancel(self._settings_pending)
+            self._settings_pending = None
         with self._log_lock:
             self._log_epoch += 1
+        workspace = self.workspace_var.get()
+        input_dir = self.input_var.get()
+        program_dir = application_dir()
+        completed = queue.Queue()
+        self._clearing_workspace = True
+        self._set_processing_busy(True)
+        self.stop_button.configure(state="disabled")
+        self.next_step_var.set("正在清空工作区，请等待完成")
+
+        def remove_files():
             try:
                 from .workspace_clear import clear_workspace
-                clear_workspace(
-                    self.workspace_var.get(),
-                    input_dir=self.input_var.get(),
-                    program_dir=application_dir(),
-                    original_paths=originals,
-                )
-            except (OSError, ValueError) as exc:
-                messagebox.showerror("无法清空工作区", str(exc), parent=self)
+                clear_workspace(workspace, input_dir=input_dir,
+                                program_dir=program_dir, original_paths=originals)
+            except Exception as exc:
+                completed.put(exc)
+            else:
+                completed.put(None)
+
+        def finish():
+            try:
+                error = completed.get_nowait()
+            except queue.Empty:
+                self.after(50, finish)
                 return
+            self._clearing_workspace = False
+            if error is None:
+                self._reset_cleared_workspace()
+            self._set_processing_busy(False)
+            if error is not None:
+                self.next_step_var.set("工作区未清空，请检查错误后重试")
+                messagebox.showerror("无法清空工作区", str(error), parent=self)
+            if self._close_after_stop:
+                self._close_after_stop = False
+                self.after(0, self._close)
+
+        threading.Thread(target=remove_files, name="workspace-clear", daemon=True).start()
+        self.after(50, finish)
+
+    def _reset_cleared_workspace(self):
+        with self._log_lock:
             self.scan_result = None
             self.review_project = None
             self._processing_job = None

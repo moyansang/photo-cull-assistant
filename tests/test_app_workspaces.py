@@ -1,3 +1,4 @@
+from pathlib import Path
 import json
 import shutil
 
@@ -294,3 +295,29 @@ def test_existing_ai_task_opens_even_when_homepage_sheets_missing(tmp_path,monke
                           _sheets_ready=lambda:False)
     App._open_ai_review(owner)
     assert opened==[task['id']] and not notices
+
+
+def test_latest_photo_selection_wins_over_pending_workspace_edit(tmp_path, monkeypatch):
+    first = make_source(tmp_path, "116_PANA")
+    second = make_source(tmp_path, "110_PANA")
+    old = workspace_for(tmp_path, first)
+    app = make_app(tmp_path, first, old)
+    monkeypatch.setattr('ai_cull_assistant.project_storage.workspace_input', lambda path: str(first))
+    monkeypatch.setattr(app_module.filedialog, 'askdirectory', lambda **kw: str(second))
+    try:
+        app.workspace_var.set(str(old))  # A pending workspace selection.
+        assert app._workspace_user_custom
+        app._choose_input()
+        assert app.input_var.get() == str(second)
+        assert app._active_input == str(second)
+        assert Path(app.workspace_var.get()).name.startswith('110_PANA-')
+        assert json.loads((old / 'workspace-identity.json').read_text())['input_dir'] == str(first)
+        chosen = app.workspace_var.get()
+        app.input_var.set(str(first))
+        app._save_preferences()
+        assert app.workspace_var.get() == str(old)
+        app.input_var.set(str(second))
+        app._save_preferences()
+        assert app.workspace_var.get() == chosen
+    finally:
+        app._close()

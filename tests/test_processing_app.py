@@ -1,3 +1,5 @@
+import time
+import threading
 import tkinter as tk
 import json
 from types import SimpleNamespace
@@ -21,11 +23,53 @@ def test_clear_workspace_removes_all_project_state(tmp_path, monkeypatch):
     (workspace/'nested').mkdir();(workspace/'nested'/'preview.jpg').write_bytes(b'x')
     monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno',lambda *a,**kw:True)
     try:
-        app._clear_workspace();app.update()
+        app._clear_workspace()
+        wait_clear(app)
         assert list(workspace.iterdir()) == []
         assert app.scan_result is None
         assert app.next_step_var.get() == '推荐下一步：扫描图片'
     finally:app._close()
+
+
+def wait_clear(app):
+    deadline = time.monotonic() + 5
+    while getattr(app, "_clearing_workspace", False) and time.monotonic() < deadline:
+        app.update()
+        time.sleep(.01)
+    assert not app._clearing_workspace
+
+
+def test_clear_paused_job_runs_in_background(tmp_path, monkeypatch):
+    from ai_cull_assistant.workspace_clear import clear_workspace
+    app = make_app(tmp_path)
+    workspace = Path(app.workspace_var.get())
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "paused-checkpoint.json").write_text("{}")
+    entered, release = threading.Event(), threading.Event()
+    def slow_clear(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        clear_workspace(*args, **kwargs)
+    monkeypatch.setattr('ai_cull_assistant.workspace_clear.clear_workspace', slow_clear)
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno', lambda *a, **k: True)
+    try:
+        app._processing_job = object()  # A saved, paused job is allowed to clear.
+        app._clear_workspace()
+        assert entered.wait(1)
+        heartbeats = []
+        app.after(0, lambda: heartbeats.append(True))
+        app.update()
+        assert heartbeats and app._processing_busy
+        assert str(app.continue_button.cget('state')) == 'disabled'
+        release.set()
+        wait_clear(app)
+        assert app._processing_job is None
+        assert not app._processing_busy
+        assert list(workspace.iterdir()) == []
+    finally:
+        release.set()
+        if getattr(app, '_clearing_workspace', False): wait_clear(app)
+        app._close()
 
 
 def test_busy_controls_and_stop(tmp_path):
@@ -243,5 +287,24 @@ def test_homepage_reopens_one_api_editor_and_restores_owner_grab(tmp_path):
         app.update()
         assert app.grab_current() is app
         app.grab_release()
+    finally:
+        app._close()
+
+
+def test_clear_failure_restores_controls(tmp_path, monkeypatch):
+    app = make_app(tmp_path)
+    Path(app.workspace_var.get()).mkdir(parents=True, exist_ok=True)
+    errors = []
+    def fail(*args, **kwargs):
+        raise PermissionError("file in use")
+    monkeypatch.setattr('ai_cull_assistant.workspace_clear.clear_workspace', fail)
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno', lambda *a, **k: True)
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.showerror', lambda *a, **k: errors.append(a))
+    try:
+        app._clear_workspace()
+        wait_clear(app)
+        assert errors and 'file in use' in errors[0][1]
+        assert not app._processing_busy
+        assert str(app.clear_log_button.cget('state')) == 'normal'
     finally:
         app._close()
