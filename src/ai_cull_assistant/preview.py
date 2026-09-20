@@ -61,10 +61,20 @@ def ensure_preview(asset: PhotoAsset, preview_dir: Path | None = None) -> Path:
     the helper with only an asset while still keeping regenerated files inside
     the workspace-owned preview directory.
     """
+    cache_dir = Path(preview_dir) if preview_dir is not None else None
     existing = Path(asset.preview_path) if asset.preview_path else None
     if existing is not None and existing.is_file():
-        return existing
-    cache_dir = Path(preview_dir) if preview_dir is not None else None
+        if cache_dir is None:
+            return existing
+        try:
+            existing.resolve().relative_to(cache_dir.resolve())
+        except ValueError:
+            # A copied/migrated session can still point at a valid preview in
+            # the old workspace.  An explicit cache directory is authoritative:
+            # rebuild locally and leave the old workspace untouched.
+            pass
+        else:
+            return existing
     if cache_dir is None and existing is not None and existing.parent.name in {"v04", PREVIEW_VERSION}:
         cache_dir = existing.parent.parent
     if cache_dir is None:

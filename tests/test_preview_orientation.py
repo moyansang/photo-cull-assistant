@@ -48,3 +48,21 @@ def test_missing_legacy_preview_retains_old_coordinate_system(tmp_path, monkeypa
     assert restored == legacy and requested == [False]
     new = preview.build_preview(asset, tmp_path/'new')
     assert new.parent.name == 'v05' and requested == [False,True]
+
+
+def test_explicit_preview_directory_rehomes_stale_existing_preview(tmp_path):
+    source = tmp_path / 'photos' / 'a.jpg'
+    source.parent.mkdir()
+    Image.new('RGB', (20, 30), 'white').save(source)
+    stale = tmp_path / 'old-workspace' / 'previews' / 'v04' / 'a.jpg'
+    stale.parent.mkdir(parents=True)
+    Image.new('RGB', (10, 15), 'black').save(stale)
+    stale_bytes = stale.read_bytes()
+    asset = PhotoAsset('a', source, source, None, source, datetime.now(), '.jpg', preview_path=stale)
+
+    current = tmp_path / 'new-workspace' / 'previews'
+    rebuilt = preview.ensure_preview(asset, current)
+
+    assert rebuilt == current / 'v04' / 'a.jpg'
+    assert rebuilt.is_file() and asset.preview_path == rebuilt
+    assert stale.read_bytes() == stale_bytes

@@ -79,9 +79,17 @@ def run(report_path: str) -> None:
             dialog.shift.set(-.15)
             dialog.ratio.set('1:1')
             dialog.render()
+            deadline = time.monotonic() + 15
+            while (dialog._future is not None or dialog._pending) and time.monotonic() < deadline:
+                test_app.update(); time.sleep(.02)
+            assert dialog._future is None
             assert len(dialog.photos) == 2
             dialog.confidence.set(.75)
             dialog.render()
+            deadline = time.monotonic() + 15
+            while (dialog._future is not None or dialog._pending) and time.monotonic() < deadline:
+                test_app.update(); time.sleep(.02)
+            assert dialog._future is None
             assert result.assets[0].subject_confidence == .75
             assert len(dialog.photos) == 1  # Blank synthetic photo is still rejected.
             dialog.navigate(1)

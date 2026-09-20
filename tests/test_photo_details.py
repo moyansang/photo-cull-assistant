@@ -1,3 +1,12 @@
+import time
+
+def wait_preview(dialog):
+    deadline = time.monotonic() + 10
+    while (dialog._future is not None or dialog._wanted is not None or dialog._pending) and time.monotonic() < deadline:
+        dialog.update()
+        time.sleep(.01)
+    assert dialog._future is None and dialog._wanted is None
+
 from dataclasses import asdict
 from datetime import datetime
 from types import SimpleNamespace
@@ -21,8 +30,10 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
     try:
         initial=CropSettings()
         d=CropDialog(root,assets,initial,saved.append)
+        wait_preview(d)
         d.scale.set(1.4); d.shift.set(.1); d.offset_x.set(.2); d.ratio.set('1:1')
         d.render()
+        wait_preview(d)
         x,y,w,h,_,_=d._image_rect
         d.pointer_down(SimpleNamespace(x=x+w*.3,y=y+h*.2))
         d.pointer_up(SimpleNamespace(x=x+w*.6,y=y+h*.4))
@@ -43,6 +54,7 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
         assert detail_features(assets[1],settings).face is None
         assert initial.photos=={}
         d=CropDialog(root,assets,settings,saved.append)
+        wait_preview(d)
         d.auto_face(); d.scale.set(2); d.destroy()
         assert settings.for_asset(assets[0]).scale_factor==1.4
         assert settings.photos[settings.key(assets[0])]['manual_face']
@@ -68,7 +80,9 @@ def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monke
     root=tk.Tk();root.withdraw()
     try:
         dialog=CropDialog(root,[asset],CropSettings(),lambda settings:None)
+        wait_preview(dialog)
         dialog.render()
+        wait_preview(dialog)
         left,top,right,bottom=dialog._crop_rect
         start_x=(left+right)/2;start_y=(top+bottom)/2
         dialog.pointer_down(SimpleNamespace(x=start_x,y=start_y))
@@ -90,6 +104,7 @@ def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monke
         dialog.mouse_wheel(SimpleNamespace(x=x+w/2,y=y+h/2,delta=120,num=0))
         assert dialog.scale.get()==old_scale-.02
         dialog.render()
+        wait_preview(dialog)
         assert len(detections)==1
         assert len(opened)==1
         start_x=x+w*.05;start_y=y+h*.65
@@ -98,6 +113,7 @@ def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monke
         assert dialog._drag[0]=='manual'
         dialog.pointer_move(SimpleNamespace(x=start_x+30,y=start_y+30))
         dialog.pointer_up(SimpleNamespace(x=start_x+30,y=start_y+30))
+        wait_preview(dialog)
         assert dialog.current_entry()['preview_version']=='v05'
         assert dialog.canvas.itemcget('crop-outline','outline')=='#00aa66'
         left,top,right,bottom=dialog._crop_rect
@@ -110,6 +126,7 @@ def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monke
         dialog.destroy()
         asset.subject_features=SimpleNamespace(face=None,head=(.3,.12,.3,.36))
         head_dialog=CropDialog(root,[asset],CropSettings(),lambda settings:None)
+        wait_preview(head_dialog)
         assert head_dialog._crop_rect is not None
         labels=[head_dialog.canvas.itemcget(item,'text') for item in head_dialog.canvas.find_all()
                 if head_dialog.canvas.type(item)=='text']
@@ -133,6 +150,7 @@ def test_multi_person_selector_saves_independent_crops_only_after_edit(tmp_path,
     root = tk.Tk(); root.withdraw()
     try:
         dialog = CropDialog(root, [asset], settings, lambda _settings: None)
+        wait_preview(dialog)
         entry = dialog.current_entry()
         assert 'face_crops' not in entry
         assert tuple(dialog.person_picker.cget('values')) == ('人物 1', '人物 2')
@@ -258,6 +276,7 @@ def test_crop_title_and_footer_visible_on_small_screen(tmp_path, monkeypatch):
     a=PhotoAsset('sample',p,p,None,p,datetime.now(),'.jpg',preview_path=p)
     try:
         d=CropDialog(root,[a],CropSettings(),lambda s:None)
+        wait_preview(d)
         root.update()
         assert d.title()=='检测/调整人脸框'
         buttons=[]
@@ -271,4 +290,67 @@ def test_crop_title_and_footer_visible_on_small_screen(tmp_path, monkeypatch):
             assert b.winfo_viewable()
             assert b.winfo_rooty()+b.winfo_height()<=d.winfo_rooty()+d.winfo_height()
     finally:
+        root.destroy()
+
+
+def test_slow_preview_does_not_block_navigation_or_show_stale_photo(tmp_path, monkeypatch):
+    import threading
+    import ai_cull_assistant.crop_dialog as module
+    started, release = threading.Event(), threading.Event()
+    paths = [tmp_path/'first.jpg', tmp_path/'second.jpg']
+    for path in paths:
+        Image.new('RGB', (120, 180), 'gray').save(path)
+    assets = [PhotoAsset(p.stem, p, p, None, p, datetime.now(), '.jpg', preview_path=p) for p in paths]
+    original = CropDialog._prepare_preview
+    def delayed(asset, settings):
+        if asset.stem == 'first':
+            started.set()
+            assert release.wait(5)
+        return original(asset, settings)
+    monkeypatch.setattr(CropDialog, '_prepare_preview', staticmethod(delayed))
+    monkeypatch.setattr(module, 'detail_features', lambda *_: None)
+    monkeypatch.setattr(module, 'detect', lambda *_: [])
+    root = tk.Tk(); root.withdraw()
+    try:
+        dialog = CropDialog(root, assets, CropSettings(), lambda _: None)
+        assert started.wait(2)
+        tick = []
+        root.after(0, lambda: tick.append(True))
+        dialog.navigate(1)
+        root.update()
+        assert tick and dialog.index == 1 and dialog._image_rect is None
+        release.set()
+        wait_preview(dialog)
+        assert dialog.index == 1 and 'second' in dialog.caption.cget('text')
+        assert dialog._image_rect is not None
+        dialog.destroy()
+    finally:
+        release.set()
+        root.destroy()
+
+
+def test_close_during_background_preview_is_safe(tmp_path, monkeypatch):
+    import threading
+    release = threading.Event()
+    p = tmp_path/'slow.jpg'
+    Image.new('RGB', (120, 180)).save(p)
+    asset = PhotoAsset(p.stem, p, p, None, p, datetime.now(), '.jpg', preview_path=p)
+    def slow(*_):
+        release.wait(3)
+        raise OSError('late error')
+    monkeypatch.setattr(CropDialog, '_prepare_preview', staticmethod(slow))
+    root = tk.Tk(); root.withdraw()
+    try:
+        dialog = CropDialog(root, [asset], CropSettings(), lambda _: None)
+        future = dialog._future[1]
+        dialog.destroy()
+        assert dialog._closed and dialog._poll_token is None
+        release.set()
+        try:
+            future.result(timeout=3)
+        except OSError:
+            pass
+        root.update()
+    finally:
+        release.set()
         root.destroy()

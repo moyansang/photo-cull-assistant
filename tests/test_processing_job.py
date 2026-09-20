@@ -641,6 +641,57 @@ def test_staged_focus_collects_errors_then_retries_only_failed_photos(tmp_path, 
     ]
 
 
+def test_migrated_compacted_focus_rebuilds_preview_and_checkpoints_current_path(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from ai_cull_assistant.project_storage import migrate_workspace
+    from ai_cull_assistant.session_store import load_session, save_session
+    from ai_cull_assistant.subject import SubjectFeatures
+    from ai_cull_assistant.workspace_archive import compact_workspace, restore_workspace
+
+    photos = _photos(tmp_path, 1)
+    original_bytes = (photos / 'P0000.jpg').read_bytes()
+    old_workspace = tmp_path / 'old-workspace'
+    first = start_job(photos, old_workspace, _options(), CropSettings(), mode='scan').run(
+        _options(), CropSettings(), Event(), None
+    )
+    asset = first.assets[0]
+    asset.screening_reason = 'face_focus_uncertain'
+    asset.subject_checked = True
+    asset.subject_confidence = CropSettings().detection_confidence
+    asset.subject_features = SubjectFeatures('', '', None, (.2, .2, .4, .4))
+    save_session(first, fresh=True)
+
+    workspace = tmp_path / 'new-workspace'
+    migrate_workspace(old_workspace, workspace)
+    assert compact_workspace(workspace)['compacted']
+    assert restore_workspace(workspace)['restored']
+    restored = load_session(workspace, photos)
+    assert restored is not None
+    assert not restored.assets[0].preview_path.exists()
+
+    seen = []
+    def fail_after_preview(photo, *_args):
+        seen.append(Path(photo.preview_path))
+        assert photo.preview_path == workspace / 'previews' / 'v05' / 'P0000.jpg'
+        assert photo.preview_path.is_file()
+        raise ValueError('forced API failure')
+
+    monkeypatch.setitem(sys.modules, 'ai_cull_assistant.ai_focus', SimpleNamespace(review_focus=fail_after_preview))
+    job = start_job(photos, workspace, _options(), CropSettings(), result=restored, mode='focus')
+    assert job.run(
+        _options(), CropSettings(), Event(), None, focus_profile={'id': 'profile'}
+    ) is None
+
+    checkpoint = load_job(workspace, photos)
+    assert seen == [workspace / 'previews' / 'v05' / 'P0000.jpg']
+    assert checkpoint is not None and checkpoint.awaiting_focus_error_decision
+    assert checkpoint.assets[0].preview_path == seen[0]
+    assert checkpoint.assets[0].preview_path.is_file()
+    assert (photos / 'P0000.jpg').read_bytes() == original_bytes
+    assert (old_workspace / 'previews' / 'v05' / 'P0000.jpg').is_file()
+
+
 def test_staged_focus_can_skip_failed_photos_and_keep_them_pending(tmp_path, monkeypatch):
     import sys
     from types import SimpleNamespace

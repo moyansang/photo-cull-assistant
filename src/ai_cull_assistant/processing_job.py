@@ -25,7 +25,7 @@ from .crop_settings import CropSettings
 from .group_store import load_groups, save_groups
 from .grouping import assign_groups
 from .models import PhotoAsset
-from .preview import build_preview
+from .preview import build_preview, ensure_preview
 from .scan_diagnostics import collect_diagnostics, DiagnosticReport
 from .scan_adaptive import AdaptiveConcurrencyPolicy
 from .scan_tuning import ScanHistory
@@ -490,6 +490,8 @@ class ProcessingJob:
                 override = crops.photos.get(crops.key(asset), {})
                 legacy = bool(override.get('manual_face') and override.get('preview_version', 'v04') == 'v04')
                 build_preview(asset, self.output / 'previews', **({'legacy_orientation': True} if legacy else {}))
+            else:
+                ensure_preview(asset, self.workspace / 'previews')
             if current['technical_screening']:
                 screened = screen_assets([asset], crop_settings=crops,
                     cache_dir=resolve_workspace_path(self.workspace, '.analysis-cache'),
@@ -730,6 +732,12 @@ class ProcessingJob:
                             if stop_event.is_set():
                                 return None
                             continue
+                        preview_root = (
+                            self.output / "previews"
+                            if self.kind == "scan" or self._data.get("incremental")
+                            else self.workspace / "previews"
+                        )
+                        ensure_preview(asset, preview_root)
                         if self.mode == "focus" and not _has_reliable_face(asset, crop_settings):
                             _notify_log(
                                 on_log,

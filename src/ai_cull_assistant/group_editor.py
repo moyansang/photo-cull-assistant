@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from dataclasses import dataclass
+from itertools import count
 from pathlib import Path
+from queue import Empty, SimpleQueue
+from threading import Lock
 import tkinter as tk
 from tkinter import messagebox, ttk
+from typing import Callable
 
 from PIL import Image, ImageOps, ImageTk
 
@@ -36,10 +42,147 @@ def visible_group_range(count: int, viewport_top: int, viewport_height: int, row
     return range(first, last)
 
 
+ThumbnailKey = tuple[int, tuple[int, int]]
+
+
+def load_thumbnail(asset: PhotoAsset, box: tuple[int, int]) -> Image.Image | None:
+    """Decode and resize a thumbnail without creating any Tk objects."""
+    try:
+        from .preview import ensure_preview
+
+        with Image.open(ensure_preview(asset)) as img:
+            oriented = ImageOps.exif_transpose(img).convert("RGB")
+            return ImageOps.contain(oriented, box)
+    except Exception:
+        return None
+
+
+@dataclass
+class _ThumbnailRequest:
+    token: int
+    asset: PhotoAsset
+    box: tuple[int, int]
+    future: Future[Image.Image | None] | None = None
+
+
+class ThumbnailLoader:
+    """A bounded worker pool whose completion queue is safe to poll from Tk."""
+
+    def __init__(
+        self,
+        *,
+        max_workers: int = 2,
+        max_pending: int = 24,
+        worker: Callable[[PhotoAsset, tuple[int, int]], Image.Image | None] = load_thumbnail,
+    ) -> None:
+        self.max_pending = max_pending
+        self._max_workers = max_workers
+        self._worker = worker
+        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="group-thumb")
+        self._pending: dict[ThumbnailKey, _ThumbnailRequest] = {}
+        self._active_assets: set[int] = set()
+        self._completed: SimpleQueue[tuple[ThumbnailKey, int, Image.Image | None]] = SimpleQueue()
+        self._tokens = count()
+        self._state_lock = Lock()
+        self._closed = False
+
+    @property
+    def has_pending(self) -> bool:
+        return bool(self._pending)
+
+    @property
+    def pending_count(self) -> int:
+        return len(self._pending)
+
+    def request(self, key: ThumbnailKey, asset: PhotoAsset, box: tuple[int, int]) -> bool:
+        if self._closed or key in self._pending or len(self._pending) >= self.max_pending:
+            return False
+        self._pending[key] = _ThumbnailRequest(next(self._tokens), asset, box)
+        self._dispatch()
+        return True
+
+    def _dispatch(self) -> None:
+        if self._closed:
+            return
+        active_count = sum(request.future is not None for request in self._pending.values())
+        for key, request in self._pending.items():
+            if active_count >= self._max_workers:
+                break
+            asset_key = id(request.asset)
+            if request.future is not None or asset_key in self._active_assets:
+                continue
+            self._active_assets.add(asset_key)
+            future = self._executor.submit(self._worker, request.asset, request.box)
+            request.future = future
+            future.add_done_callback(
+                lambda done, k=key, t=request.token: self._collect(k, t, done)
+            )
+            active_count += 1
+
+    def _collect(self, key: ThumbnailKey, token: int, future: Future[Image.Image | None]) -> None:
+        try:
+            image = future.result()
+        except CancelledError:
+            image = None
+        except Exception:
+            image = None
+        with self._state_lock:
+            if self._closed:
+                if image is not None:
+                    image.close()
+                return
+            self._completed.put((key, token, image))
+
+    def pop_completed(self) -> list[tuple[ThumbnailKey, Image.Image | None]]:
+        ready: list[tuple[ThumbnailKey, Image.Image | None]] = []
+        while True:
+            try:
+                key, token, image = self._completed.get_nowait()
+            except Empty:
+                break
+            current = self._pending.get(key)
+            if current is None or current.token != token:
+                if image is not None:
+                    image.close()
+                continue
+            self._active_assets.discard(id(current.asset))
+            del self._pending[key]
+            ready.append((key, image))
+        self._dispatch()
+        return ready
+
+    def cancel_except(self, wanted: set[ThumbnailKey]) -> None:
+        for key, request in list(self._pending.items()):
+            if key in wanted:
+                continue
+            if request.future is None or request.future.cancel():
+                if request.future is not None:
+                    self._active_assets.discard(id(request.asset))
+                del self._pending[key]
+        self._dispatch()
+
+    def close(self) -> None:
+        with self._state_lock:
+            if self._closed:
+                return
+            self._closed = True
+        for request in self._pending.values():
+            if request.future is not None:
+                request.future.cancel()
+        self._pending.clear()
+        self._active_assets.clear()
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        for _key, image in self.pop_completed():
+            if image is not None:
+                image.close()
+
+
 class GroupEditor(tk.Toplevel):
     ROW_H = 145
     ROW_THUMB = (105, 105)
     DETAIL_THUMB = (150, 125)
+    THUMB_CACHE_SIZE = 160
+    THUMB_POLL_MS = 20
 
     def __init__(self, parent: tk.Misc, assets: list[PhotoAsset], on_change) -> None:
         super().__init__(parent)
@@ -52,6 +195,11 @@ class GroupEditor(tk.Toplevel):
         self._row_images: list[ImageTk.PhotoImage] = []
         self._detail_images: list[ImageTk.PhotoImage] = []
         self._thumb_cache: OrderedDict[tuple[int, tuple[int, int]], ImageTk.PhotoImage | None] = OrderedDict()
+        self._thumbnail_loader = ThumbnailLoader()
+        self._row_requested_keys: set[ThumbnailKey] = set()
+        self._detail_requested_keys: set[ThumbnailKey] = set()
+        self._thumb_poll_token: str | None = None
+        self._closed = False
         self._groups: list[tuple[int, list[PhotoAsset]]] = grouped_assets(self.assets)
         self._members_by_group = {group_id: members for group_id, members in self._groups}
         self._redraw_token: str | None = None
@@ -110,7 +258,7 @@ class GroupEditor(tk.Toplevel):
 
     def _run_scheduled_redraw(self) -> None:
         self._redraw_token = None
-        if self.winfo_exists():
+        if not self._closed and self.winfo_exists():
             self._redraw_rows()
 
     def _scroll_detail(self, *args: str) -> None:
@@ -123,7 +271,7 @@ class GroupEditor(tk.Toplevel):
 
     def _run_scheduled_detail_redraw(self) -> None:
         self._detail_redraw_token = None
-        if self.winfo_exists():
+        if not self._closed and self.winfo_exists():
             self._redraw_detail()
 
     def _redraw_rows(self) -> None:
@@ -138,7 +286,14 @@ class GroupEditor(tk.Toplevel):
         # buffer makes wheel and scrollbar movement appear continuous.
         viewport_top = max(0, int(self.rows_canvas.canvasy(0)))
         viewport_height = max(self.ROW_H, self.rows_canvas.winfo_height())
-        for row_index in visible_group_range(len(self._groups), viewport_top, viewport_height, self.ROW_H):
+        visible_rows = visible_group_range(len(self._groups), viewport_top, viewport_height, self.ROW_H)
+        self._row_requested_keys = {
+            self._thumbnail_key(asset, self.ROW_THUMB)
+            for row_index in visible_rows
+            for asset in self._groups[row_index][1][:8]
+        }
+        self._cancel_stale_thumbnail_requests()
+        for row_index in visible_rows:
             group_id, members = self._groups[row_index]
             y0 = row_index * self.ROW_H
             selected = group_id == self.selected_group_id
@@ -176,6 +331,10 @@ class GroupEditor(tk.Toplevel):
         viewport_width = max(170, self.detail_canvas.winfo_width())
         first = max(0, viewport_left // 170 - 1)
         last = min(len(members), (viewport_left + viewport_width) // 170 + 2)
+        self._detail_requested_keys = {
+            self._thumbnail_key(members[index], self.DETAIL_THUMB) for index in range(first, last)
+        }
+        self._cancel_stale_thumbnail_requests()
         for index in range(first, last):
             asset = members[index]
             x = 10 + index * 170
@@ -239,24 +398,64 @@ class GroupEditor(tk.Toplevel):
         self._redraw_detail()
 
     def _cached_photo(self, asset: PhotoAsset, box: tuple[int, int]) -> ImageTk.PhotoImage | None:
-        key = (id(asset), box)
+        key = self._thumbnail_key(asset, box)
         if key in self._thumb_cache:
             photo = self._thumb_cache.pop(key)
             self._thumb_cache[key] = photo
             return photo
-        photo = self._make_photo(asset, box)
-        self._thumb_cache[key] = photo
-        while len(self._thumb_cache) > 160:
-            self._thumb_cache.popitem(last=False)
-        return photo
+        self._thumbnail_loader.request(key, asset, box)
+        self._ensure_thumbnail_poll()
+        return None
 
     @staticmethod
-    def _make_photo(asset: PhotoAsset, box: tuple[int, int]) -> ImageTk.PhotoImage | None:
-        try:
-            from .preview import ensure_preview
-            with Image.open(ensure_preview(asset)) as img:
-                img = ImageOps.exif_transpose(img).convert("RGB")
-                thumb = ImageOps.contain(img, box)
-                return ImageTk.PhotoImage(thumb)
-        except Exception:
-            return None
+    def _thumbnail_key(asset: PhotoAsset, box: tuple[int, int]) -> ThumbnailKey:
+        return id(asset), box
+
+    def _cancel_stale_thumbnail_requests(self) -> None:
+        wanted = self._row_requested_keys | self._detail_requested_keys
+        self._thumbnail_loader.cancel_except(wanted)
+
+    def _ensure_thumbnail_poll(self) -> None:
+        if self._closed or self._thumb_poll_token is not None or not self._thumbnail_loader.has_pending:
+            return
+        self._thumb_poll_token = self.after(self.THUMB_POLL_MS, self._drain_thumbnail_results)
+
+    def _drain_thumbnail_results(self) -> None:
+        self._thumb_poll_token = None
+        if self._closed:
+            return
+        ready = self._thumbnail_loader.pop_completed()
+        for key, thumb in ready:
+            try:
+                photo = ImageTk.PhotoImage(thumb, master=self) if thumb is not None else None
+            except Exception:
+                photo = None
+            finally:
+                if thumb is not None:
+                    thumb.close()
+            self._thumb_cache[key] = photo
+            while len(self._thumb_cache) > self.THUMB_CACHE_SIZE:
+                self._thumb_cache.popitem(last=False)
+        if ready:
+            # One batched redraw both reveals completed images and submits any
+            # visible requests that previously waited for a bounded queue slot.
+            self._schedule_rows_redraw()
+            self._schedule_detail_redraw()
+        self._ensure_thumbnail_poll()
+
+    def destroy(self) -> None:
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+        for token_name in ("_redraw_token", "_detail_redraw_token", "_thumb_poll_token"):
+            token = getattr(self, token_name, None)
+            if token is not None:
+                try:
+                    self.after_cancel(token)
+                except tk.TclError:
+                    pass
+                setattr(self, token_name, None)
+        loader = getattr(self, "_thumbnail_loader", None)
+        if loader is not None:
+            loader.close()
+        super().destroy()

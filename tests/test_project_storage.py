@@ -37,6 +37,38 @@ def test_workspace_migration_rebases_only_owned_paths_and_preserves_source(tmp_p
     assert not (new/'original.jpg').exists() and not (new/'ai-api-profiles.json').exists()
     assert storage.migrate_workspace(old,new)==new
 
+
+def test_workspace_migration_rebases_formal_and_checkpoint_previews(tmp_path):
+    old = tmp_path / 'old'
+    formal = old / 'previews' / 'v05' / 'formal.jpg'
+    checkpoint = old / 'cache' / 'processing' / 'a' / 'output' / 'previews' / 'v04' / 'pending.jpg'
+    formal.parent.mkdir(parents=True)
+    checkpoint.parent.mkdir(parents=True)
+    formal.write_bytes(b'formal-preview')
+    checkpoint.write_bytes(b'checkpoint-preview')
+    (old / 'scan-session.json').write_text(json.dumps({
+        'workspace_dir': str(old),
+        'preview_path': str(formal),
+    }))
+    job = checkpoint.parents[3] / 'job.json'
+    job.write_text(json.dumps({
+        'workspace': str(old),
+        'assets': [{'preview_path': str(checkpoint)}],
+    }))
+
+    new = tmp_path / 'new'
+    storage.migrate_workspace(old, new)
+
+    session = json.loads((new / 'scan-session.json').read_text())
+    migrated_job = json.loads((new / 'cache' / 'processing' / 'a' / 'job.json').read_text())
+    assert session['preview_path'] == str(new / 'previews' / 'v05' / 'formal.jpg')
+    assert migrated_job['workspace'] == str(new)
+    assert migrated_job['assets'][0]['preview_path'] == str(
+        new / 'cache' / 'processing' / 'a' / 'output' / 'previews' / 'v04' / 'pending.jpg'
+    )
+    assert formal.read_bytes() == b'formal-preview'
+    assert checkpoint.read_bytes() == b'checkpoint-preview'
+
 def test_runtime_migration_preserves_profile_ids_and_user_overrides(tmp_path,monkeypatch):
     old=tmp_path/'program';old.mkdir();data=tmp_path/'data'
     photos=tmp_path/'photos';photos.mkdir()
