@@ -86,3 +86,37 @@ def test_active_photos_are_not_counted_twice_against_free_memory():
     assert budget.last_decision['limiting_factor'] == 'memory'
     # If other applications consume the headroom, no extra photo is admitted.
     assert budget.choose_workers(snapshot(16, 16, 3), in_flight=2) == 2
+
+
+def test_reused_worker_excludes_retained_memory_but_new_worker_pays_cold_cost():
+    current = snapshot(16, 16, 6)
+    budget = ResourceBudget(lambda: current)
+    # Cold growth 800MiB -> 1000MiB with margin. Transient 400MiB -> floor512.
+    budget.observe(100*MIB, 500*MIB, peak_rss_bytes=900*MIB)
+    budget.register_worker(101, True)
+    assert budget.observed_per_photo_bytes == 1000*MIB
+    assert budget.steady_photo_bytes == 512*MIB
+    assert budget.choose_workers() == 2
+    assert budget.last_decision['required_memory_bytes'] == 1512*MIB
+    budget.register_worker(102, False)
+    assert budget.choose_workers() == 2
+    assert budget.last_decision['ready_workers'] == 1
+    budget.register_worker(102, True)
+    budget.register_worker(103, True)
+    budget.register_worker(104, True)
+    assert budget.choose_workers() == 4
+    assert budget.last_decision['required_memory_bytes'] == 2048*MIB
+    assert budget.choose_workers(snapshot(16, 16, 4.4)) == 1
+
+
+def test_later_large_transient_raises_steady_budget_and_missing_reading_stays_cold():
+    budget = ResourceBudget(lambda: snapshot(16, 16, 6))
+    budget.observe(100*MIB, 500*MIB, peak_rss_bytes=900*MIB)
+    budget.observe(500*MIB, 500*MIB, peak_rss_bytes=1300*MIB)
+    assert budget.steady_photo_bytes == 1000*MIB
+    other = ResourceBudget(lambda: snapshot(16, 16, 6))
+    other.observe(100*MIB, 900*MIB)
+    assert other.steady_photo_bytes is None
+    other.register_worker(1, True)
+    assert other.choose_workers() == 2
+    assert other.last_decision['steady_photo_bytes'] == 1000*MIB

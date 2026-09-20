@@ -188,6 +188,13 @@ class ResourceBudget:
         self.reserve_bytes = _positive(reserve_bytes) if reserve_bytes is not None else None
         self.per_photo_floor_bytes = max(1, int(per_photo_floor_bytes))
         self.observed_per_photo_bytes: int | None = None
+        self.steady_photo_bytes: int | None = None
+        self.retained_growth_bytes = 0
+        self._ready_workers: set[int] = set()
+
+    def register_worker(self, worker_id: int, models_ready: bool) -> None:
+        if models_ready:
+            self._ready_workers.add(worker_id)
 
     def snapshot(self) -> ResourceSnapshot:
         return self._snapshot_provider()
@@ -219,6 +226,14 @@ class ResourceBudget:
         if start_rss is not None and candidates:
             growth = max(0, max(candidates) - start_rss)
         estimate = max(self.per_photo_floor_bytes, (growth * 5 + 3) // 4)
+        # Resident allocations are already charged to available system memory.
+        # Reused, initialized workers need only the transient peak above BOTH
+        # endpoints. New workers still pay the full conservative cold estimate.
+        if start_rss is not None and end_rss is not None and peak_rss is not None:
+            transient = max(0, peak_rss - max(start_rss, end_rss))
+            steady = max(self.per_photo_floor_bytes, (transient * 5 + 3) // 4)
+            self.steady_photo_bytes = max(self.steady_photo_bytes or 0, steady)
+            self.retained_growth_bytes = max(self.retained_growth_bytes, end_rss - start_rss)
         if self.observed_per_photo_bytes is None:
             self.observed_per_photo_bytes = estimate
         else:
@@ -259,13 +274,26 @@ class ResourceBudget:
         # Available memory is headroom for NEW work; active photos already use
         # part of the process working set. The coordinator also retains the last
         # idle ceiling so partially allocated workers cannot raise that ceiling.
-        free_slots = usable // max(1, per_photo)
+        steady = self.steady_photo_bytes or per_photo
         active = max(0, min(8, int(in_flight)))
+        ready = len(self._ready_workers)
+        # Assume active tasks occupy ready threads first. This leaves the most
+        # conservative mix of cold/reusable threads for additional dispatch.
+        idle_ready = max(0, ready - active)
+        def required(extra):
+            warm_slots = min(extra, idle_ready)
+            return warm_slots * steady + (extra - warm_slots) * per_photo
+        free_slots = max(n for n in range(9) if required(n) <= usable)
         memory_limit = max(1, min(8, active + free_slots))
         limit = min(cpu_limit, memory_limit, 8)
         cap = next(level for level in (8, 6, 4, 2, 1) if level <= limit)
         self.last_decision.update(reserve_bytes=reserve, usable_memory_bytes=usable,
                                   per_photo_bytes=per_photo, memory_limit=memory_limit,
+                                  cold_worker_peak_bytes=per_photo,
+                                  steady_photo_bytes=steady,
+                                  retained_growth_bytes=self.retained_growth_bytes,
+                                  ready_workers=ready,
+                                  required_memory_bytes=required(max(0, cap-active)),
                                   free_slots=free_slots, in_flight=active,
                                   resource_cap=cap,
                                   limiting_factor='memory' if memory_limit < cpu_limit else 'cpu')

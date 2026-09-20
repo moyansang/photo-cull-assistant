@@ -12,7 +12,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import shutil
-from threading import Event
+from threading import Event, get_ident
 from time import perf_counter
 from typing import Callable, Mapping
 import uuid
@@ -505,6 +505,13 @@ class ProcessingJob:
             asset.ai_focus_result = None
             if self.mode == 'rescan':
                 asset.ai_focus_dirty = False
+        from . import yunet, body_focus
+        diagnostics['worker_id'] = get_ident()
+        # Head fallback can load the body detector even with body checks off.
+        # Until both TLS model sets exist, retain the cold worker budget.
+        diagnostics['worker_models_ready'] = (
+            hasattr(yunet._local, 'detector')
+            and getattr(body_focus._worker_state, 'models', None) is not None)
         return asset, screened, values, diagnostics
 
     def _run_local_photos(self, current, crops, stop_event, progress, on_log):
@@ -568,6 +575,10 @@ class ProcessingJob:
                     position, before, peak = pending.pop(future)
                     try:
                         ready[position] = future.result()
+                        if len(ready[position]) > 3 and hasattr(budget, 'register_worker'):
+                            details = ready[position][3]
+                            budget.register_worker(details.get('worker_id', 0),
+                                                   details.get('worker_models_ready', False))
                     except Exception as exc:
                         ready[position] = exc
                         failure = failure or exc
