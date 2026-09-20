@@ -136,8 +136,7 @@ def screen_assets(
     results: dict[str, ScreeningResult] = {}
     for asset in assets:
         from .shared_decode import shared_decode
-        from contextlib import nullcontext
-        with shared_decode(asset) if body_check else nullcontext():
+        with shared_decode(asset):
             if asset.preview_path is None:
                 result = ScreeningResult(False, "preview_unavailable", False)
             elif face_provider is not None:
@@ -149,12 +148,15 @@ def screen_assets(
                 from .body_pipeline import apply_body_check
                 from .crop_settings import CropSettings
                 result = apply_body_check(asset, result, crop_settings or CropSettings(), cache_dir)
-        asset.auto_rejected = result.rejected
-        asset.screening_reason = result.reason
-        asset.focus_score = result.laplacian_variance
-        asset.face_found = result.face_found
-        asset.clarity_version = "clarity-v2"
-        asset.clarity_evidence = result.focus_evidence
+            asset.auto_rejected = result.rejected
+            asset.screening_reason = result.reason
+            asset.focus_score = result.laplacian_variance
+            asset.face_found = result.face_found
+            asset.clarity_version = "clarity-v2"
+            asset.clarity_evidence = result.focus_evidence
+            if cache_dir and face_provider is None:
+                from .focus_image_cache import warm_focus_images
+                warm_focus_images(asset, crop_settings, cache_dir)
         results[asset.stem] = result
     return results
 

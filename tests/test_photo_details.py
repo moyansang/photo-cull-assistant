@@ -302,12 +302,12 @@ def test_slow_preview_does_not_block_navigation_or_show_stale_photo(tmp_path, mo
         Image.new('RGB', (120, 180), 'gray').save(path)
     assets = [PhotoAsset(p.stem, p, p, None, p, datetime.now(), '.jpg', preview_path=p) for p in paths]
     original = CropDialog._prepare_preview
-    def delayed(asset, settings):
+    def delayed(self, asset, settings):
         if asset.stem == 'first':
             started.set()
             assert release.wait(5)
-        return original(asset, settings)
-    monkeypatch.setattr(CropDialog, '_prepare_preview', staticmethod(delayed))
+        return original(self, asset, settings)
+    monkeypatch.setattr(CropDialog, '_prepare_preview', delayed)
     monkeypatch.setattr(module, 'detail_features', lambda *_: None)
     monkeypatch.setattr(module, 'detect', lambda *_: [])
     root = tk.Tk(); root.withdraw()
@@ -353,4 +353,33 @@ def test_close_during_background_preview_is_safe(tmp_path, monkeypatch):
         root.update()
     finally:
         release.set()
+        root.destroy()
+
+
+def test_revisit_many_photos_and_manual_edit_reuse_detection(tmp_path, monkeypatch):
+    import ai_cull_assistant.crop_dialog as module
+    calls = []
+    monkeypatch.setattr(module, 'detect', lambda *args: calls.append(True) or [])
+    monkeypatch.setattr(module, 'detail_features', lambda *_: None)
+    assets = []
+    for i in range(7):
+        path = tmp_path / f'{i}.jpg'
+        Image.new('RGB', (120,180)).save(path)
+        assets.append(PhotoAsset(path.stem,path,path,None,path,datetime.now(),'.jpg',preview_path=path))
+    root = tk.Tk(); root.withdraw()
+    try:
+        dialog = CropDialog(root, assets, CropSettings(), lambda _:None)
+        wait_preview(dialog)
+        for _ in range(6):
+            dialog.navigate(1); wait_preview(dialog)
+        assert len(calls) == 7
+        dialog.navigate(-6); wait_preview(dialog)
+        assert len(calls) == 7 and dialog._image_rect is not None
+        entry = dialog.current_entry()
+        entry['manual_face'] = [.2,.2,.3,.3]
+        dialog.render(); wait_preview(dialog)
+        assert len(calls) == 7
+        assert sum(i.width*i.height*3 for i in dialog._image_cache.values()) <= dialog._image_budget
+        dialog.destroy()
+    finally:
         root.destroy()

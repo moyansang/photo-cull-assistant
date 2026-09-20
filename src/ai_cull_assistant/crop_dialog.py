@@ -1,6 +1,7 @@
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 import json
+import threading
 from collections import OrderedDict
 from pathlib import Path
 import cv2
@@ -31,6 +32,13 @@ class CropDialog(tk.Toplevel):
         self._crop_selected = False
         self._current_head = None
         self._prepared = OrderedDict()
+        self._image_cache = OrderedDict()
+        self._detection_cache = OrderedDict()
+        self._cache_lock = threading.Lock()
+        from .scan_resources import capture_resource_snapshot
+        available = capture_resource_snapshot().available_memory_bytes or 1024**3
+        self._image_budget = max(32 * 1024**2, min(256 * 1024**2, available // 32))
+        self._loading_image_key = None
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='face-preview')
         self._future = None
         self._wanted = None
@@ -176,36 +184,73 @@ class CropDialog(tk.Toplevel):
             cache.popitem(last=False)
 
     @staticmethod
-    def _prepare_preview(asset, settings):
+    def _source_key(asset):
+        path = Path(asset.primary_path)
+        st = path.stat()
+        version = Path(asset.preview_path).parent.name if asset.preview_path else 'v05'
+        return (str(path), st.st_size, st.st_mtime_ns, version)
+
+    def _cached_image(self, key):
+        with self._cache_lock:
+            value = self._image_cache.get(key)
+            if value is not None:
+                self._image_cache.move_to_end(key)
+            return value
+
+    def _load_preview_image(self, asset):
         # Worker owns the copied asset and PIL data. It never reads Tk variables.
         path = Path(asset.preview_path) if asset.preview_path else None
         if path is None or not path.is_file():
             path = Path(ensure_preview(asset))
-        with Image.open(path) as image:
-            original = ImageOps.exif_transpose(image).convert('RGB')
+        image_key = self._source_key(asset)
+        original = self._cached_image(image_key)
+        if original is None:
+            with Image.open(path) as image:
+                original = ImageOps.exif_transpose(image).convert('RGB')
+            with self._cache_lock:
+                if self._closed:
+                    return image_key, original
+                self._image_cache[image_key] = original
+                while len(self._image_cache) > 1 and sum(i.width*i.height*3 for i in self._image_cache.values()) > self._image_budget:
+                    self._image_cache.popitem(last=False)
+        return image_key, original
+
+    def _prepare_preview(self, asset, settings):
+        image_key, original = self._load_preview_image(asset)
         entry = settings.photos.get(settings.key(asset), {})
         if 'selected_faces' in entry:
             subjects = detail_features_list(asset, settings)
         else:
             subject = detail_features(asset, settings)
             subjects = [subject] if subject else []
-        candidates = detect(cv2.cvtColor(np.asarray(original), cv2.COLOR_RGB2BGR),
-                            settings.detection_confidence)
-        return original, subjects, candidates, asset
+        detection_key = (image_key, settings.detection_confidence)
+        with self._cache_lock:
+            candidates = self._detection_cache.get(detection_key)
+        if candidates is None:
+            candidates = detect(cv2.cvtColor(np.asarray(original), cv2.COLOR_RGB2BGR),
+                                settings.detection_confidence)
+            with self._cache_lock:
+                if not self._closed:
+                    self._remember(self._detection_cache, detection_key, candidates, 512)
+        return image_key, subjects, candidates, asset
 
     def _prepared_preview(self, asset, settings):
         entry = settings.photos.get(settings.key(asset), {})
         # Crop geometry is painted using the cached source; moving the box must
         # not trigger image loading or inference again.
         selection = {k: entry[k] for k in ('selected_faces', 'manual_face', 'hidden') if k in entry}
-        key = (self.index, settings.detection_confidence, json.dumps(selection, sort_keys=True))
-        if key in self._prepared:
+        image_key = self._source_key(asset)
+        key = (self.index, image_key, settings.detection_confidence, json.dumps(selection, sort_keys=True))
+        if isinstance(self._prepared.get(key), Exception):
+            raise ValueError(str(self._prepared[key]))
+        if key in self._prepared and self._cached_image(image_key) is not None:
             self._wanted = None
             self._prepared.move_to_end(key)
             value = self._prepared[key]
             if isinstance(value, Exception):
                 raise ValueError(str(value))
-            original, subjects, candidates, resolved = value
+            _, subjects, candidates, resolved = value
+            original = self._cached_image(image_key)
             asset.preview_path = resolved.preview_path
             asset.subject_features = resolved.subject_features
             asset.subject_checked = resolved.subject_checked
@@ -229,6 +274,12 @@ class CropDialog(tk.Toplevel):
             return
         key, future = self._future
         if not future.done():
+            try:
+                image_key = self._source_key(self.assets[self.index])
+            except OSError:
+                image_key = None
+            if image_key is not None and self._loading_image_key != image_key and self._cached_image(image_key) is not None:
+                self.render()
             self._poll_token = self.after(25, self._poll_preview)
             return
         self._future = None
@@ -236,13 +287,47 @@ class CropDialog(tk.Toplevel):
             value = future.result()
         except Exception as exc:
             value = exc
-        self._remember(self._prepared, key, value, 3)
+        if key[0] != 'prefetch':
+            self._remember(self._prepared, key, value, 512)
         # Render only the currently selected photo/settings. A late previous
         # result can warm the cache but cannot replace the current selection.
         self.render()
         if self._wanted is not None and self._wanted[0] in self._prepared:
             self._wanted = None
         self._start_preview_work()
+        self._prefetch_nearby()
+
+    def _prefetch_nearby(self):
+        if self._closed or self._future is not None or self._wanted is not None:
+            return
+        if getattr(self, '_prefetch_anchor', None) != self.index:
+            self._prefetch_anchor = self.index
+            self._prefetch_attempted = set()
+        settings = self.global_settings()
+        indices = [self.index + 1, self.index - 1]
+        for step in range(1, len(self.assets)):
+            index = (self.index + step) % len(self.assets)
+            asset = self.assets[index]
+            entry = settings.photos.get(settings.key(asset), {})
+            subject = asset.subject_features
+            located = bool(entry.get('selected_faces')) if 'selected_faces' in entry else bool(
+                entry.get('manual_face') or (subject and (subject.head or subject.face)))
+            if not entry.get('hidden') and not located:
+                indices.append(index)
+                break
+        for index in indices:
+            if not 0 <= index < len(self.assets) or index in self._prefetch_attempted:
+                continue
+            self._prefetch_attempted.add(index)
+            try:
+                if self._cached_image(self._source_key(self.assets[index])) is not None:
+                    continue
+            except OSError:
+                continue
+            self._future = (('prefetch', index), self._executor.submit(
+                self._load_preview_image, deepcopy(self.assets[index])))
+            self._poll_token = self.after(25, self._poll_preview)
+            break
 
     @staticmethod
     def _preview_version(asset):
@@ -336,8 +421,16 @@ class CropDialog(tk.Toplevel):
             prepared = self._prepared_preview(asset, current_settings)
             if prepared is None:
                 self.candidates = []
+                image_key = self._source_key(asset)
+                cached = self._cached_image(image_key)
+                if cached is not None:
+                    shown = ImageOps.contain(cached, (preview_width, preview_height))
+                    photo = ImageTk.PhotoImage(shown)
+                    self.photos.append(photo)
+                    self.canvas.create_image(preview_x, canvas_height / 2, image=photo)
+                    self._loading_image_key = image_key
                 self.canvas.create_text(canvas_width / 2, canvas_height / 2,
-                                        text="正在加载预览和人脸，可继续切换照片…")
+                                        text="正在加载人脸框，可继续切换照片…" if cached is not None else "正在加载预览和人脸，可继续切换照片…")
                 return
             original, subjects, candidates = prepared
             self._selected_boxes = [
@@ -728,7 +821,11 @@ class CropDialog(tk.Toplevel):
             self._poll_token = None
         self._wanted = None
         self._executor.shutdown(wait=False, cancel_futures=True)
+        self._future = None
         self._prepared.clear()
+        with self._cache_lock:
+            self._image_cache.clear()
+            self._detection_cache.clear()
         if self._pending:
             self.after_cancel(self._pending)
             self._pending = None

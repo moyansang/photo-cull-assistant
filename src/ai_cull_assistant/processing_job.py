@@ -851,7 +851,14 @@ class ProcessingJob:
                 if changed:
                     _notify_log(on_log, f"同组清晰度比较：{len(changed)} 张细节偏弱，标为清晰度待确认。")
             self._validate_sources()
-            return self._publish(progress)
+            result = self._publish(progress)
+            if self.mode == 'focus':
+                from .focus_image_cache import clear_focus_images
+                try:
+                    clear_focus_images(resolve_workspace_path(self.workspace, '.analysis-cache'))
+                except (OSError, ValueError) as exc:
+                    _notify_log(on_log, f'AI 复核已完成，临时细节缓存未能清理：{exc}')
+            return result
 
         for mode in ("main", "rejected"):
             completed_keys = {

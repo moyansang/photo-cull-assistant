@@ -172,19 +172,19 @@ def _prepare_focus_images(
     *,
     subject_override: Any = None,
     include_body: bool = True,
+    decoded_image=None,
 ) -> tuple[list[Path], bool]:
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
     proposed_face = face if face is not None else _subject_face(asset, crop_settings)
-    with load_full_image(asset) as decoded:
-        image = decoded.convert("RGB")
+    from contextlib import nullcontext
+    with (nullcontext(decoded_image) if decoded_image is not None else load_full_image(asset)) as decoded:
+        image = decoded if decoded.mode == "RGB" else decoded.convert("RGB")
         width, height = image.size
         if width <= 0 or height <= 0:
             raise ValueError("源照片尺寸无效。")
 
-        overview = image.copy()
-        if max(overview.size) > MAX_IMAGE_EDGE:
-            overview.thumbnail((MAX_IMAGE_EDGE, MAX_IMAGE_EDGE), Image.Resampling.BOX)
+        overview = ImageOps.contain(image, (MAX_IMAGE_EDGE, MAX_IMAGE_EDGE), Image.Resampling.BOX) if max(image.size) > MAX_IMAGE_EDGE else image.copy()
         overview_path = directory / "overview.png"
         overview.save(overview_path, format="PNG")
         overview.close()
@@ -417,13 +417,9 @@ def _review_one(
         if cached := _cached_result(cache_path):
             return cached
 
-    image_paths, face_found = _prepare_focus_images(
-        asset,
-        settings,
-        root / PROMPT_VERSION / "images" / digest,
-        face,
-        subject_override=subject,
-        include_body=include_body,
+    from .focus_image_cache import cached_focus_images
+    image_paths, face_found = cached_focus_images(
+        asset, settings, root, face, subject=subject, include_body=include_body,
     )
     photo_identity = (
         f"{asset.stem} · P{participant_index}"

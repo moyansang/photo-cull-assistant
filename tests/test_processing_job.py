@@ -484,10 +484,17 @@ def test_staged_focus_reviews_only_pending_without_repeating_valid_result(tmp_pa
     monkeypatch.setattr("ai_cull_assistant.processing_job.build_preview", forbidden)
     monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
     job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode="focus")
+    native_cache = workspace / 'focus-evidence' / 'native-cache'
+    native_cache.mkdir(parents=True)
+    (native_cache / 'pending.png').write_bytes(b'cached detail')
+    paused = Event(); paused.set()
+    assert job.run(_options(), CropSettings(), paused, None, focus_profile={'id':'profile'}) is None
+    assert native_cache.exists()
     result = job.run(
         _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
     )
 
+    assert not native_cache.exists()
     assert calls == ["P0000"]
     assert result.assets[0].auto_rejected is True
     assert result.assets[1].ai_focus_result == {"status": "uncertain", "reason": "already reviewed"}

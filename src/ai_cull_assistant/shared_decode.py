@@ -29,3 +29,9 @@ def full_image(asset):
     if scope['image'] is None:
         scope['image'] = load_full_image(asset)
     yield scope['image']
+
+
+def decoded_image(asset):
+    """Return an already decoded image without causing new RAW work."""
+    scope = getattr(_state, 'scope', None)
+    return scope['image'] if scope is not None and scope['asset'] is asset else None
