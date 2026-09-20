@@ -53,6 +53,25 @@ class DiagnosticReport:
     def __enter__(self):
         return self
 
+    def scheduler(self, budget, workers, cap, active, reason):
+        snapshot = budget.snapshot()
+        row = dict(type='scheduler', run_id=self.run_id, workers=workers,
+                   resource_cap=cap, active=active, reason=reason,
+                   cpu_count=snapshot.cpu_count,
+                   total_memory_bytes=snapshot.total_memory_bytes,
+                   available_memory_bytes=snapshot.available_memory_bytes,
+                   process_rss_bytes=snapshot.process_rss_bytes,
+                   per_photo_bytes=getattr(budget, 'observed_per_photo_bytes', None),
+                   reserve_bytes=getattr(budget, 'reserve_bytes', None)
+                       or max(2 * 1024**3, (snapshot.total_memory_bytes or 0) // 4))
+        if reason != 'warmup':
+            row.update(getattr(budget, 'last_decision', {}))
+            row['resource_cap'] = cap
+        try:
+            append_log(self.workspace, DETAIL_PREFIX+json.dumps(row, ensure_ascii=False))
+        except OSError:
+            pass
+
     def add(self, filename, diagnostics, timings):
         row = dict(diagnostics, filename=filename, stage_seconds=dict(timings), run_id=self.run_id)
         try:

@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from copy import deepcopy
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from datetime import datetime
 import json
 from pathlib import Path
 import shutil
-from threading import Event, Thread
+from threading import Event
 from time import perf_counter
 from typing import Callable, Mapping
 import uuid
@@ -514,43 +514,77 @@ class ProcessingJob:
         indices = self._data['work_indices']
         warmed = 0
         last_workers = None
+        last_decision = None
+        idle_cap = 1
+        next_position = int(self._data['completed_photos'])
+        pending, ready = {}, {}
+        failure = None
+        window_workers, window_count = None, 0
+        window_valid = False
+        window_started = perf_counter()
         with DiagnosticReport(self.workspace) as report, ThreadPoolExecutor(max_workers=8, thread_name_prefix='photo-scan') as pool:
-            while self._data['completed_photos'] < len(indices):
-                if stop_event.is_set():
-                    return False
-                first = int(self._data['completed_photos'])
+            while next_position < len(indices) or pending or ready:
                 warming = warmed < 2
-                workers = 1 if warming else policy.choose(budget.choose_workers())
+                cap = 1 if warming else budget.choose_workers(in_flight=len(pending))
+                if pending:
+                    cap = min(cap, idle_cap)
+                else:
+                    idle_cap = cap
+                workers = 1 if warming else policy.choose(cap)
                 if workers != last_workers:
-                    _notify_log(on_log, f'扫描并行：同时处理 {workers} 张' + ('（前两张估算内存）' if warmed < 2 else '（按 CPU 与可用内存自动调整）'))
+                    _notify_log(on_log, f'扫描并行：同时处理 {workers} 张' + ('（前两张估算内存）' if warming else '（按 CPU 与可用内存自动调整）'))
                     last_workers = workers
-                batch = indices[first:first+workers]
-                before = budget.snapshot()
-                peak = [before.process_rss_bytes or 0]
-                sampled = Event()
-                def sample():
-                    while not sampled.wait(.05):
-                        peak[0] = max(peak[0], budget.snapshot().process_rss_bytes or 0)
-                sampler = Thread(target=sample, daemon=True)
-                sampler.start()
-                batch_started = perf_counter()
-                try:
-                    futures = [pool.submit(self._scan_one, self.assets[index], current, crops) for index in batch]
-                    outcomes = []
-                    for future in futures:
-                        try:
-                            outcomes.append(future.result())
-                        except Exception as exc:
-                            outcomes.append(exc)
-                finally:
-                    sampled.set()
-                    sampler.join()
-                if len(batch) == 1:
-                    budget.observe(before, budget.snapshot(), peak_rss_bytes=peak[0])
-                warmed += len(batch)
-                for index, outcome in zip(batch, outcomes):
+                if (workers, cap) != last_decision:
+                    report.scheduler(budget, workers, cap, len(pending),
+                                     'warmup' if warming else 'resource_and_throughput')
+                    last_decision = (workers, cap)
+                if workers != window_workers:
+                    window_workers, window_count = workers, 0
+                    window_valid = False
+                # On a level change, drain the old level before measuring the new
+                # one. Otherwise its nearly finished work inflates the new rate.
+                if not window_valid and not pending:
+                    window_valid = True
+                    window_count = 0
+                    window_started = perf_counter()
+                # Bound both active work and out-of-order results. Checkpoints remain
+                # a contiguous prefix, so older interrupted jobs still resume safely.
+                while (not stop_event.is_set() and failure is None
+                       and window_valid and next_position < len(indices) and len(pending) < workers
+                       and len(pending) + len(ready) < 8):
+                    position = next_position
+                    before = budget.snapshot() if warming else None
+                    future = pool.submit(self._scan_one, self.assets[indices[position]], current, crops)
+                    pending[future] = (position, before, before.process_rss_bytes or 0 if before else 0)
+                    next_position += 1
+                if not pending:
+                    break
+                done, _ = wait(pending, timeout=.05, return_when=FIRST_COMPLETED)
+                if warming:
+                    rss = budget.snapshot().process_rss_bytes or 0
+                    for future, (position, before, peak) in list(pending.items()):
+                        pending[future] = (position, before, max(peak, rss))
+                for future in done:
+                    position, before, peak = pending.pop(future)
+                    try:
+                        ready[position] = future.result()
+                    except Exception as exc:
+                        ready[position] = exc
+                        failure = failure or exc
+                    if before is not None:
+                        budget.observe(before, budget.snapshot(), peak_rss_bytes=peak)
+                    warmed += 1
+                    if window_valid and not warming:
+                        window_count += 1
+                while int(self._data['completed_photos']) in ready:
+                    position = int(self._data['completed_photos'])
+                    outcome = ready.pop(position)
                     if isinstance(outcome, Exception):
-                        raise outcome
+                        # Drain already submitted work before leaving. Nothing after
+                        # this gap is committed or mistaken for completed on resume.
+                        failure = outcome
+                        break
+                    index = indices[position]
                     asset, screened, values = outcome[:3]
                     self.assets[index] = asset
                     key = _asset_key(asset)
@@ -563,11 +597,17 @@ class ProcessingJob:
                     self._checkpoint(progress, index=index)
                     if len(outcome) > 3:
                         report.add(asset.primary_path.name, outcome[3], values)
-                if not warming and policy.observe(workers, len(batch), perf_counter()-batch_started):
-                    history.save(policy.best_workers)
-                if stop_event.is_set():
-                    return False
-        return True
+                # Feed equal-size completion windows, not individual overlapping
+                # worker durations, to the existing throughput policy.
+                if not warming and window_valid and window_count >= workers and not failure:
+                    elapsed = perf_counter() - window_started
+                    if policy.observe(workers, workers, elapsed * workers / window_count):
+                        history.save(policy.best_workers)
+                    window_count = 0
+                    window_started = perf_counter()
+            if failure is not None:
+                raise failure
+        return not stop_event.is_set()
 
     def _run(
         self,

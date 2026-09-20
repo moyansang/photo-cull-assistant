@@ -74,3 +74,15 @@ def test_snapshot_provider_is_injectable_and_scan_name_is_same_policy():
     assert budget.initial_snapshot.cpu_count == 8
     assert budget.snapshot().cpu_count == 4
     assert ScanBudget is ResourceBudget
+
+
+def test_active_photos_are_not_counted_twice_against_free_memory():
+    current = snapshot(16, 16, 5)
+    budget = ResourceBudget(lambda: current)
+    # Reserve 4 GiB, 1 GiB free for two NEW photos in addition to two active.
+    assert budget.choose_workers() == 2
+    assert budget.choose_workers(in_flight=2) == 4
+    assert budget.last_decision['free_slots'] == 2
+    assert budget.last_decision['limiting_factor'] == 'memory'
+    # If other applications consume the headroom, no extra photo is admitted.
+    assert budget.choose_workers(snapshot(16, 16, 3), in_flight=2) == 2

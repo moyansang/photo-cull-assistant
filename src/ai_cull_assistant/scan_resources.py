@@ -225,7 +225,7 @@ class ResourceBudget:
             self.observed_per_photo_bytes = max(self.observed_per_photo_bytes, estimate)
         return self.observed_per_photo_bytes
 
-    def choose_workers(self, snapshot: ResourceSnapshot | None = None) -> int:
+    def choose_workers(self, snapshot: ResourceSnapshot | None = None, *, in_flight: int = 0) -> int:
         """Return the resource ceiling; throughput policy chooses within it."""
 
         current = snapshot or self.snapshot()
@@ -243,7 +243,12 @@ class ResourceBudget:
 
         total = _positive(current.total_memory_bytes)
         available = _positive(current.available_memory_bytes)
+        self.last_decision = dict(cpu_limit=cpu_limit,
+                                  total_memory_bytes=total, available_memory_bytes=available,
+                                  process_rss_bytes=current.process_rss_bytes,
+                                  cpu_count=cpu_count)
         if total is None or available is None:
+            self.last_decision.update(limiting_factor='memory_read_unavailable', resource_cap=1)
             return 1
 
         reserve = self.reserve_bytes
@@ -251,9 +256,20 @@ class ResourceBudget:
             reserve = max(MIN_OS_RESERVE_BYTES, total // 4)
         usable = max(0, available - reserve)
         per_photo = self.observed_per_photo_bytes or self.per_photo_floor_bytes
-        memory_limit = max(1, min(8, usable // max(1, per_photo)))
+        # Available memory is headroom for NEW work; active photos already use
+        # part of the process working set. The coordinator also retains the last
+        # idle ceiling so partially allocated workers cannot raise that ceiling.
+        free_slots = usable // max(1, per_photo)
+        active = max(0, min(8, int(in_flight)))
+        memory_limit = max(1, min(8, active + free_slots))
         limit = min(cpu_limit, memory_limit, 8)
-        return next(level for level in (8, 6, 4, 2, 1) if level <= limit)
+        cap = next(level for level in (8, 6, 4, 2, 1) if level <= limit)
+        self.last_decision.update(reserve_bytes=reserve, usable_memory_bytes=usable,
+                                  per_photo_bytes=per_photo, memory_limit=memory_limit,
+                                  free_slots=free_slots, in_flight=active,
+                                  resource_cap=cap,
+                                  limiting_factor='memory' if memory_limit < cpu_limit else 'cpu')
+        return cap
 
 
 # The scan integration uses this more task-specific name; ResourceBudget stays

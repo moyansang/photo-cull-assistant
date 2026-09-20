@@ -19,7 +19,7 @@ class FixedBudget:
     def observe(self, *args, **kwargs):
         pass
 
-    def choose_workers(self):
+    def choose_workers(self, **kwargs):
         return 4
 
 
@@ -41,7 +41,7 @@ def setup_job(tmp_path, monkeypatch, count=9):
 
 
 def test_parallel_batch_is_bounded_and_stop_saves_started_photos(tmp_path, monkeypatch):
-    folder, job, options = setup_job(tmp_path, monkeypatch)
+    folder, job, options = setup_job(tmp_path, monkeypatch, 12)
     active = peak = 0
     calls = []
     lock = Lock()
@@ -68,20 +68,21 @@ def test_parallel_batch_is_bounded_and_stop_saves_started_photos(tmp_path, monke
     # Call local stage directly to simulate no final full-snapshot flush.
     assert not job._run_local_photos(module._normalise_options(options), CropSettings(), stopped, progress, None)
     assert peak == 4
-    assert job._data['completed_photos'] == 6
+    completed = job._data['completed_photos']
+    assert 6 <= completed <= 10
     base = json.loads((job.root/'job.json').read_text('utf-8'))
     assert base['completed_photos'] == 0
-    assert len(list((job.root/'journal').glob('*.json'))) == 6
+    assert len(list((job.root/'journal').glob('*.json'))) == completed
     restored = module.load_job(job.workspace, folder)
-    assert restored._data['completed_photos'] == 6
-    assert all(restored.assets[i].preview_path.is_file() for i in range(6))
-    # Finished photos retain old settings, only the remaining three use new ones.
+    assert restored._data['completed_photos'] == completed
+    assert all(restored.assets[i].preview_path.is_file() for i in range(completed))
+    # Finished photos retain old settings, only the remaining photos use new ones.
     monkeypatch.setattr(module, 'assign_groups', lambda *args: None)
     logs = []
     result = restored.run(dict(technical_screening=False), CropSettings(), Event(), None, on_log=logs.append)
     assert result is not None
-    assert Counter(calls) == Counter(f'P{i:04}' for i in range(6))
-    assert all(restored._data['photo_options'][str(i)]['technical_screening'] == (i < 6) for i in range(9))
+    assert Counter(calls) == Counter(f'P{i:04}' for i in range(completed))
+    assert all(restored._data['photo_options'][str(i)]['technical_screening'] == (i < completed) for i in range(12))
     assert any('耗时统计' in line for line in logs)
 
 
@@ -89,8 +90,8 @@ def test_low_memory_reduces_next_batch_without_extra_dispatch(tmp_path, monkeypa
     _folder, job, options = setup_job(tmp_path, monkeypatch, 7)
     choices = iter([4, 1])
     class ShrinkingBudget(FixedBudget):
-        def choose_workers(self):
-            return next(choices)
+        def choose_workers(self, **kwargs):
+            return next(choices, 1)
     monkeypatch.setattr(module, 'ResourceBudget', ShrinkingBudget)
     monkeypatch.setattr(module, 'screen_assets', lambda assets, **kw: {
         assets[0].stem: ScreeningResult(False, 'no_reliable_face', False)})
@@ -139,3 +140,80 @@ def test_old_snapshot_can_resume_with_new_journal(tmp_path, monkeypatch):
     assert restored._data['version'] == module.JOB_VERSION
     monkeypatch.setattr(module, 'assign_groups', lambda *a: None)
     assert restored.run(dict(technical_screening=False), CropSettings(), Event(), None)
+
+
+def test_fast_worker_refills_before_slow_photo_finishes(tmp_path, monkeypatch):
+    _folder, job, options = setup_job(tmp_path, monkeypatch, 10)
+    slow_started, replacement_started = Event(), Event()
+    def screen(assets, **kwargs):
+        stem = assets[0].stem
+        if stem == 'P0002':
+            slow_started.set()
+            assert replacement_started.wait(3), 'idle slot was not refilled'
+        if stem == 'P0006':
+            assert slow_started.is_set()
+            replacement_started.set()
+        return {stem: ScreeningResult(False, 'no_reliable_face', False)}
+    monkeypatch.setattr(module, 'screen_assets', screen)
+    monkeypatch.setattr(module, 'assign_groups', lambda *args: None)
+    assert job.run(options, CropSettings(), Event(), None)
+    assert job._data['completed_photos'] == 10
+    assert replacement_started.is_set()
+    lines = (job.workspace / 'logs' / 'session.log').read_text('utf-8').splitlines()
+    records = [json.loads(line.split(' ', 1)[1]) for line in lines if line.startswith('[扫描诊断] ')]
+    events = [row for row in records if row.get('type') == 'scheduler']
+    assert events and 'available_memory_bytes' in events[-1]
+
+
+def test_worker_level_change_does_not_mix_old_completions_into_new_window(tmp_path, monkeypatch):
+    _folder, job, options = setup_job(tmp_path, monkeypatch, 10)
+    release_old_worker = Event()
+    old_worker_finished = Event()
+    state_lock = Lock()
+    new_level_finished = 0
+
+    class SwitchingPolicy:
+        instance = None
+
+        def __init__(self, **kwargs):
+            self.choose_calls = 0
+            self.observations = []
+            SwitchingPolicy.instance = self
+
+        @property
+        def best_workers(self):
+            return 4
+
+        def choose(self, cap):
+            self.choose_calls += 1
+            if self.choose_calls == 1:
+                return 2
+            release_old_worker.set()
+            return 4
+
+        def observe(self, workers, count, elapsed):
+            with state_lock:
+                completed_at_new_level = new_level_finished
+            self.observations.append((workers, count, completed_at_new_level))
+            assert old_worker_finished.is_set()
+            assert completed_at_new_level >= 4
+            return False
+
+    def screen(assets, **kwargs):
+        nonlocal new_level_finished
+        stem = assets[0].stem
+        if stem == 'P0002':
+            assert release_old_worker.wait(3), 'scheduler never requested the new worker level'
+            old_worker_finished.set()
+        elif stem >= 'P0004':
+            with state_lock:
+                new_level_finished += 1
+        return {stem: ScreeningResult(False, 'no_reliable_face', False)}
+
+    monkeypatch.setattr(module, 'AdaptiveConcurrencyPolicy', SwitchingPolicy)
+    monkeypatch.setattr(module, 'screen_assets', screen)
+    monkeypatch.setattr(module, 'assign_groups', lambda *args: None)
+
+    assert job.run(options, CropSettings(), Event(), None)
+    assert SwitchingPolicy.instance.observations
+    assert all(row[:2] == (4, 4) for row in SwitchingPolicy.instance.observations)
