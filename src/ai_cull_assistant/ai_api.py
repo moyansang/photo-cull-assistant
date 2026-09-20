@@ -5,7 +5,6 @@ credentials in Windows Credential Manager and are never written to JSON.
 """
 from __future__ import annotations
 
-import base64
 import ctypes
 from ctypes import wintypes
 import json
@@ -323,7 +322,7 @@ def _completion_url(base_url: str) -> str:
     return base_url if base_url.endswith("/chat/completions") else base_url + "/chat/completions"
 
 
-def _image_content(image_paths: list[Path]) -> list[dict[str, Any]]:
+def _image_content(image_paths: list[Path], *, warm=False) -> list[dict[str, Any]]:
     if len(image_paths) > MAX_IMAGES:
         raise ValueError(f"一次最多发送 {MAX_IMAGES} 张图片。")
     content: list[dict[str, Any]] = []
@@ -348,7 +347,8 @@ def _image_content(image_paths: list[Path]) -> list[dict[str, Any]]:
         total += len(data)
         if total > MAX_TOTAL_IMAGE_BYTES:
             raise ValueError(f"图片总大小不能超过 {MAX_TOTAL_IMAGE_BYTES // (1024 * 1024)} MiB。")
-        encoded = base64.b64encode(data).decode("ascii")
+        from .upload_image_cache import encode
+        encoded = encode(data, warm=warm)
         content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}})
     return content
 

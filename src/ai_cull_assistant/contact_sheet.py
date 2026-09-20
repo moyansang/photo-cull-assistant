@@ -292,7 +292,8 @@ def _draw_cell(
             ]
             explicit_people = 'selected_faces' in entry
             photo_box = (330, THUMB_BOX[1]) if details else THUMB_BOX
-            thumb = ImageOps.contain(img, photo_box)
+            from .sheet_thumbnail import thumbnail
+            thumb = thumbnail(asset, img, photo_box)
             paste_x = x0 + 10 + (photo_box[0] - thumb.width) // 2
             paste_y = y0 + 8
             canvas.paste(thumb, (paste_x, paste_y))

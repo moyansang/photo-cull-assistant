@@ -466,6 +466,18 @@ class ProcessingJob:
         self._persist()
 
     def run(self, options, crops, stop_event, progress, *, focus_profile=None, on_log=None):
+        if self.mode == 'focus':
+            from .focus_prefetch import FocusPrefetch
+            settings = crops if isinstance(crops, CropSettings) else CropSettings.from_dict(crops or {})
+            self._focus_prefetch = FocusPrefetch(
+                stop_event, resolve_workspace_path(self.workspace, '.analysis-cache'),
+                self.workspace / 'previews', settings, self.assets)
+            try:
+                return self._run(options, crops, stop_event, progress,
+                                 focus_profile=focus_profile, on_log=on_log)
+            finally:
+                self._focus_prefetch.close()
+                self._focus_prefetch = None
         if self.mode not in {'scan', 'rescan'}:
             return self._run(options, crops, stop_event, progress,
                              focus_profile=focus_profile, on_log=on_log)
@@ -665,6 +677,10 @@ class ProcessingJob:
             position = int(self._data["completed_photos"])
             index = int(work_indices[position])
             asset = self.assets[index]
+            if self.mode == 'focus':
+                self._focus_prefetch.wait()
+                if stop_event.is_set():
+                    return None
             key = _asset_key(asset)
             locally_saved = self._data.get("local_screening_pending") == index and key in self._data["screening_results"]
             if locally_saved:
@@ -750,6 +766,10 @@ class ProcessingJob:
                             if stop_event.is_set():
                                 return None
                             continue
+                        if self.mode == 'focus':
+                            following = (self.assets[int(work_indices[position + 1])]
+                                         if position + 1 < len(work_indices) else None)
+                            self._focus_prefetch.schedule(asset, following)
                         reviewed = review_focus(
                             asset,
                             crop_settings,
@@ -853,6 +873,7 @@ class ProcessingJob:
             self._validate_sources()
             result = self._publish(progress)
             if self.mode == 'focus':
+                self._focus_prefetch.close()
                 from .focus_image_cache import clear_focus_images
                 try:
                     clear_focus_images(resolve_workspace_path(self.workspace, '.analysis-cache'))

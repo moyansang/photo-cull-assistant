@@ -47,9 +47,11 @@ def test_completed_workspace_compacts_and_roundtrips_without_invalidating_ai(tmp
     evidence = {p.relative_to(audit_root(audit_cache)): p.read_bytes()
                 for p in audit_root(audit_cache).rglob('*') if p.is_file()}
 
+    preview_count = sum(p.is_file() for p in (workspace / 'previews').rglob('*'))
+    assert list((workspace / 'previews').rglob('.sheet-thumbs/*.png'))
     stats = compact_workspace(workspace, progress.append)
 
-    assert stats["compacted"] and stats["removed_previews"] == 1
+    assert stats["compacted"] and stats["removed_previews"] == preview_count
     assert progress[0] == 0 and progress[-1] == 100
     assert not (workspace / "scan-session.json").exists()
     assert not (workspace / "previews").exists()

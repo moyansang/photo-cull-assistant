@@ -28,6 +28,40 @@ def _options(**changes):
     return values
 
 
+def test_focus_lookahead_overlaps_serial_review(tmp_path, monkeypatch):
+    from ai_cull_assistant.focus_prefetch import FocusPrefetch
+    import ai_cull_assistant.ai_focus as focus
+    photos = _photos(tmp_path, 2)
+    workspace = tmp_path / 'workspace'
+    first = start_job(photos, workspace, _options(), CropSettings(), mode='scan').run(
+        _options(), CropSettings(), Event(), None)
+    for asset in first.assets:
+        asset.screening_reason = 'face_focus_uncertain'
+    monkeypatch.setattr('ai_cull_assistant.processing_job._has_reliable_face', lambda *_: True)
+    prepared, first_returned = Event(), Event()
+    calls = []
+    def prepare(self, current, following, extras):
+        if following is not None:
+            assert following.stem == 'P0001'
+            assert not first_returned.is_set()
+            prepared.set()
+    monkeypatch.setattr(FocusPrefetch, '_prepare', prepare)
+    def review(asset, *_):
+        calls.append(asset.stem)
+        if asset.stem == 'P0000':
+            assert prepared.wait(3)
+            assert calls == ['P0000']
+            first_returned.set()
+        else:
+            assert first_returned.is_set()
+        return dict(status='clear', reason='test')
+    monkeypatch.setattr(focus, 'review_focus', review)
+    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode='focus')
+    result = job.run(_options(), CropSettings(), Event(), None, focus_profile={'model': 'test'})
+    assert result is not None and calls == ['P0000', 'P0001']
+    assert job._focus_prefetch is None
+
+
 def test_stop_resume_uses_new_settings_only_for_unfinished_photos(tmp_path, monkeypatch):
     photos = _photos(tmp_path, 3)
     workspace = tmp_path / "workspace"
