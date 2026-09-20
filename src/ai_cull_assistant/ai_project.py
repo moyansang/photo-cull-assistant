@@ -1,3 +1,4 @@
+from .models import source_identity_path
 """Persistent AI suggestions and human decisions, with immutable review batches."""
 from collections import Counter, OrderedDict
 import copy
@@ -113,7 +114,7 @@ def atomic_json(path, value):
 
 
 def photo_id(asset):
-    return 'P'+hashlib.sha256(str(asset.primary_path.resolve()).casefold().encode()).hexdigest()[:12].upper()
+    return 'P'+hashlib.sha256(source_identity_path(asset, asset.primary_path).casefold().encode()).hexdigest()[:12].upper()
 
 
 def fingerprint(asset, crops):
@@ -121,8 +122,8 @@ def fingerprint(asset, crops):
     for p in asset.rating_target_paths:
         p=Path(p)
         try:
-            st=p.stat();paths.append((str(p.resolve()),st.st_size,st.st_mtime_ns))
-        except OSError: paths.append((str(p.resolve()),None,None))
+            st=p.stat();paths.append((source_identity_path(asset, p),st.st_size,st.st_mtime_ns))
+        except OSError: paths.append((source_identity_path(asset, p),None,None))
     crop_values=asdict(crops.for_asset(asset))
     manual_values=dict(crops.photos.get(crops.key(asset),{}))
     # offset_x_factor was added after v1.2.  Omitting its neutral value keeps

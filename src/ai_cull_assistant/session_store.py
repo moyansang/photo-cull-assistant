@@ -27,6 +27,15 @@ def save_session(result, fresh=False):
         if isinstance(value,datetime):return value.isoformat()
         raise TypeError(type(value).__name__)
     atomic_json(result.workspace_dir/'scan-session.json',json.loads(json.dumps(data,default=encode)))
+    # Relative inventory is portable; the active session retains legacy absolute
+    # paths for existing code and is rebound by the relocation operation.
+    if result.input_dir:
+        root = Path(result.input_dir).resolve()
+        atomic_json(result.workspace_dir / '.source-location.json', {
+            'version': 1, 'input_dir': str(root),
+            'files': {str(Path(name).relative_to(root)): stats
+                      for name, stats in data['source_stats'].items()},
+        })
 
 
 def source_changes(workspace, input_dir):

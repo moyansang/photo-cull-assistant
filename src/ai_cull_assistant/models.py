@@ -37,6 +37,9 @@ class PhotoAsset:
     clarity_version: str | None = None
     clarity_evidence: dict | None = None
 
+    # Preserve existing AI IDs/cache signatures when a source root is relocated.
+    source_identity_paths: dict[str, str] = field(default_factory=dict)
+
     @property
     def rating_target_paths(self) -> list[Path]:
         paths: list[Path] = []
@@ -47,3 +50,8 @@ class PhotoAsset:
         if not paths:
             paths.append(self.primary_path)
         return paths
+
+
+def source_identity_path(asset, path):
+    actual = str(Path(path).resolve())
+    return getattr(asset, 'source_identity_paths', {}).get(actual.casefold(), actual)

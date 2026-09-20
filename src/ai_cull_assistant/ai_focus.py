@@ -1,5 +1,6 @@
 """Per-photo AI focus review using bounded, native-source evidence images."""
 from __future__ import annotations
+from .models import source_identity_path
 
 import hashlib
 import json
@@ -84,7 +85,7 @@ def _source_identity(asset: Any, face: tuple[float, float, float, float] | None)
     source = Path(asset.raw_path or asset.primary_path)
     stat = source.stat()
     return {
-        "path": str(source.resolve()),
+        "path": source_identity_path(asset, source),
         "size": stat.st_size,
         "mtime_ns": stat.st_mtime_ns,
         "face": list(face) if face else None,

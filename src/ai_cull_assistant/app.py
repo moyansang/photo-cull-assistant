@@ -379,7 +379,7 @@ class App(tk.Tk):
             return
         messagebox.showerror(
             "工作区无法恢复",
-            "当前工作区的数据没有被覆盖。请选择其他工作区，或确认不再需要其中内容后清空工作区。\n\n"
+            "当前工作区的数据没有被覆盖。如盘符或照片位置变化，请点击“重新定位原照片”；也可选择其他工作区。\n\n"
             + self._workspace_error,
             parent=self,
         )
@@ -398,6 +398,7 @@ class App(tk.Tk):
         self.no_updates_var = tk.BooleanVar(value=self.saved_options.get('no_auto_updates') is True)
         row = 0
         self._path_row(frame, row, "照片文件夹", self.input_var, self._choose_input)
+        ttk.Button(frame, text="重新定位原照片", command=self._relink_source).grid(row=row, column=6, padx=(4, 0))
         row += 1
         self._path_row(frame, row, "工作区", self.workspace_var, self._choose_workspace)
         row += 1
@@ -511,7 +512,82 @@ class App(tk.Tk):
     def _choose_workspace(self) -> None:
         path = filedialog.askdirectory(title="选择工作区")
         if path:
+            from .source_relocation import recorded_source
+            try:
+                source = recorded_source(path)
+            except (OSError, ValueError, zipfile.BadZipFile) as exc:
+                messagebox.showerror("工作区无法打开", str(exc), parent=self)
+                return
+            if source and not Path(source).is_dir():
+                self._relink_source(workspace=path)
+                return
             self.workspace_var.set(path)
+
+    def _relink_source(self, workspace=None):
+        if self._processing_busy or self.updates.busy:
+            messagebox.showinfo("暂不能重新定位", "请先停止当前任务并等待保存完成。", parent=self)
+            return
+        if any(isinstance(child, tk.Toplevel) and child.winfo_exists() for child in self.winfo_children()):
+            messagebox.showinfo("暂不能重新定位", "请先关闭人脸、分组或 AI 选片窗口。", parent=self)
+            return
+        workspace = workspace or self.workspace_var.get().strip()
+        from .source_relocation import recorded_source, relocate_source
+        try:
+            old = recorded_source(workspace) if workspace else None
+            if not old:
+                raise ValueError("请先选择有扫描记录的工作区。")
+        except (OSError, ValueError, zipfile.BadZipFile) as exc:
+            messagebox.showerror("无法重新定位", str(exc), parent=self)
+            return
+        new = filedialog.askdirectory(title="选择同一批原照片在当前电脑上的位置")
+        if not new:
+            return
+        if not messagebox.askyesno("重新定位原照片",
+                f"原位置：{old}\n新位置：{new}\n\n将按相对路径、文件大小和修改时间核对原片，并保留分组、人脸调整和 AI 结果。确定继续？", parent=self):
+            return
+        if self._settings_pending:
+            self.after_cancel(self._settings_pending)
+            self._settings_pending = None
+        self._save_active_workspace_preferences()
+        completed = queue.Queue()
+        self._relocating_source = True
+        self._set_processing_busy(True)
+        self.stop_button.configure(state="disabled")
+        self.next_step_var.set("正在核对原照片并更新工作区路径…")
+        def work():
+            try:
+                completed.put((relocate_source(workspace, new, self.settings_dir), None))
+            except Exception as exc:
+                completed.put((None, exc))
+        def finish():
+            try:
+                result, error = completed.get_nowait()
+            except queue.Empty:
+                self.after(50, finish)
+                return
+            self._relocating_source = False
+            self._set_processing_busy(False)
+            if error:
+                messagebox.showerror("重新定位未完成", str(error), parent=self)
+                self.next_step_var.set("推荐下一步：重新定位原照片")
+            else:
+                # Do not write the old in-memory crop keys over migrated settings.
+                self._workspace_blocked = True
+                self._suppress_settings_trace = True
+                try:
+                    self.input_var.set(result['input_dir'])
+                    self.workspace_var.set(result['workspace'])
+                finally:
+                    self._suppress_settings_trace = False
+                self._workspace_user_custom = False
+                self._activate_workspace(result['input_dir'], Path(result['workspace']))
+                self._save_preferences()
+                self._log(f"原照片已重新定位：匹配 {result['matched']} 个文件；缺少 {result['missing']} 个文件。")
+            if self._close_after_stop:
+                self._close_after_stop = False
+                self.after(0, self._close)
+        threading.Thread(target=work, name="source-relocation", daemon=True).start()
+        self.after(50, finish)
 
     def _processing_options(self):
         return dict(grouping_preset=GROUPING_LABELS[self.preset_var.get()], photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), technical_screening=self.screening_var.get(), body_screening=self.body_screening_var.get())
@@ -562,7 +638,9 @@ class App(tk.Tk):
             self._processing_job = None
             self.continue_button.configure(state="disabled")
             self.next_step_var.set(
-                "推荐下一步：清空工作区或选择其他工作区"
+                ("推荐下一步：重新定位原照片或选择其他工作区"
+                 if not Path(self.input_var.get()).is_dir()
+                 else "推荐下一步：清空工作区或选择其他工作区")
                 if self._workspace_blocked else "推荐下一步：扫描图片"
             )
             return
@@ -891,8 +969,8 @@ class App(tk.Tk):
             messagebox.showerror("处理出错照片", str(exc), parent=self)
 
     def _stop_processing(self):
-        if getattr(self, "_clearing_workspace", False):
-            self.next_step_var.set("正在清空工作区，请等待完成")
+        if getattr(self, "_clearing_workspace", False) or getattr(self, "_relocating_source", False):
+            self.next_step_var.set("正在整理工作区，请等待完成")
             return
         if self._processing_busy:
             self._stop_event.set()

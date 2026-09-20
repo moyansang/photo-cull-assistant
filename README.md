@@ -14,12 +14,12 @@
 
 ## 下载与开始
 
-1. 在 [Releases](https://github.com/moyansang/photo-cull-assistant/releases/latest) 下载 `AI-Photo-Cull-v1.5.2-Windows-x64-portable.zip`。GitHub 自动提供的 **Source code** 是源码，不是可运行 EXE。
+1. 在 [Releases](https://github.com/moyansang/photo-cull-assistant/releases/latest) 下载 `AI-Photo-Cull-v1.5.3-Windows-x64-portable.zip`。GitHub 自动提供的 **Source code** 是源码，不是可运行 EXE。
 2. **完整解压**到可写目录，运行其中的 `AI选片助手.exe`。不要只拿走 EXE，旁边的 `_internal` 和 `lightroom` 需要保留。
 3. 选择照片目录和独立工作区，点击 **扫描图片**。使用便携包无需安装 Python；本地扫描无需 API Key。
 4. 新版可直接选择原有工作区。API Key 保存在当前 Windows 用户的凭据管理器，更换电脑需要重新填写。
 
-当前版本：**v1.5.2**。本版更新扫描调度、内存预算和诊断日志，见 [v1.5.2 发布说明](docs/releases/v1.5.2.md)。
+当前版本：**v1.5.3**。支持跨电脑重新定位原照片，改善编辑界面响应，并修复缺失预览与清空工作区卡顿，见 [v1.5.3 发布说明](docs/releases/v1.5.3.md)。
 
 ## 一次选片怎么完成
 
@@ -51,6 +51,7 @@ flowchart LR
 ## 核心功能
 
 - **保留分析，增量处理**：关闭后恢复分组、人脸、日志、AI 回答与任务状态。v1.5 删图后移除对应记录；新增文件提示数量，点击扫描只处理新增或 RAW/JPG 配对变化的照片。
+- **跨电脑重新定位**：移动硬盘盘符变化时，在原工作区点击“重新定位原照片”，核对后更新路径，保留分组、人脸调整、AI 评分和暂停进度。
 - **人脸细节可直接编辑**：预览中拖拽补框，点击绿框内部变黄后上下左右拖动；滚轮微调范围，逐张保存裁切比例与位置；一键找下一张未标记照片。
 - **保守的技术筛查**：原尺寸人脸/眼部细节、本地证据与可选 API 复核。身体清晰度检查是默认关闭的实验选项。
 - **两种 AI 选片方式**：共用偏好和结果；网页可一次合并多个批次，用一份完整提示词提交。也可先 API 复核清晰度，再网页选片。

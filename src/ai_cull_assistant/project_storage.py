@@ -12,7 +12,7 @@ import zipfile
 from .settings import application_dir, read_values, save_values
 
 WORKSPACE_NAMES = (
-    'workspace-identity.json',
+    'workspace-identity.json', '.source-location.json',
     'scan-session.json', 'ai_project.json', 'groups.json', 'screening_results.json',
     'processing-settings.json', 'workspace-settings.json', 'lightroom_results.json',
     'session.log', 'previews', 'contact_sheets', 'ai_tasks', '.analysis-cache', '.processing',
@@ -61,8 +61,13 @@ def workspace_for(settings_dir,input_dir,preferred=None):
     for other,target in registry.items():
         if other!=source and _key(target)==_key(chosen):
             raise ValueError('这个工作区已关联其他照片文件夹，请选择独立工作区。')
+    from .source_relocation import recover_relocation
+    recover_relocation(chosen)
     from .workspace_archive import restore_workspace
     restore_workspace(chosen)
+    if not Path(input_dir).is_dir() and any((chosen / n).exists() for n in
+            ('scan-session.json', 'cache/processing/active.json', '.processing/active.json')):
+        raise ValueError('原照片文件夹不可访问；请使用“重新定位原照片”选择当前电脑上的位置，原扫描和暂停进度已保留。')
     session=chosen/'scan-session.json'
     if session.is_file():
         data=json.loads(session.read_text(encoding='utf-8'))
@@ -119,6 +124,8 @@ def workspace_input(workspace):
     """Read the source associated with an explicitly selected saved workspace."""
     from .workspace_archive import restore_workspace
     workspace=Path(workspace).resolve()
+    from .source_relocation import recover_relocation
+    recover_relocation(workspace)
     restore_workspace(workspace)
     session=workspace/'scan-session.json'
     if not session.is_file():return None
