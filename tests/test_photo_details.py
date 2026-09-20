@@ -377,7 +377,12 @@ def test_revisit_many_photos_and_manual_edit_reuse_detection(tmp_path, monkeypat
         assert len(calls) == 7 and dialog._image_rect is not None
         entry = dialog.current_entry()
         entry['manual_face'] = [.2,.2,.3,.3]
-        dialog.render(); wait_preview(dialog)
+        dialog.render()
+        assert not any('正在加载' in dialog.canvas.itemcget(item, 'text')
+                       for item in dialog.canvas.find_all() if dialog.canvas.type(item) == 'text')
+        assert '正在更新人脸框' not in dialog.caption.cget('text')
+        wait_preview(dialog)
+        assert '正在更新人脸框' not in dialog.caption.cget('text')
         assert len(calls) == 7
         assert sum(i.width*i.height*3 for i in dialog._image_cache.values()) <= dialog._image_budget
         dialog.destroy()

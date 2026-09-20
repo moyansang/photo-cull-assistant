@@ -429,8 +429,6 @@ class CropDialog(tk.Toplevel):
                     self.photos.append(photo)
                     self.canvas.create_image(preview_x, canvas_height / 2, image=photo)
                     self._loading_image_key = image_key
-                self.canvas.create_text(canvas_width / 2, canvas_height / 2,
-                                        text="正在加载人脸框，可继续切换照片…" if cached is not None else "正在加载预览和人脸，可继续切换照片…")
                 return
             original, subjects, candidates = prepared
             self._selected_boxes = [
