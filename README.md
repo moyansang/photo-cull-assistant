@@ -14,12 +14,12 @@
 
 ## 下载与开始
 
-1. 在 [Releases](https://github.com/moyansang/photo-cull-assistant/releases/latest) 下载 `AI-Photo-Cull-v1.5.3-Windows-x64-portable.zip`。GitHub 自动提供的 **Source code** 是源码，不是可运行 EXE。
+1. 在 [Releases](https://github.com/moyansang/photo-cull-assistant/releases/latest) 下载 `AI-Photo-Cull-v1.5.4-Windows-x64-portable.zip`。GitHub 自动提供的 **Source code** 是源码，不是可运行 EXE。
 2. **完整解压**到可写目录，运行其中的 `AI选片助手.exe`。不要只拿走 EXE，旁边的 `_internal` 和 `lightroom` 需要保留。
 3. 选择照片目录和独立工作区，点击 **扫描图片**。使用便携包无需安装 Python；本地扫描无需 API Key。
 4. 新版可直接选择原有工作区。API Key 保存在当前 Windows 用户的凭据管理器，更换电脑需要重新填写。
 
-当前版本：**v1.5.3**。支持跨电脑重新定位原照片，改善编辑界面响应，并修复缺失预览与清空工作区卡顿，见 [v1.5.3 发布说明](docs/releases/v1.5.3.md)。
+当前版本：**v1.5.4**。改善人脸预览切换，复用原尺寸清晰度细节，减少重复解码；见 [v1.5.4 发布说明](docs/releases/v1.5.4.md)。
 
 ## 一次选片怎么完成
 

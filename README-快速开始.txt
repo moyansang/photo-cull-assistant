@@ -1,4 +1,4 @@
-AI选片助手 v1.5.3 快速开始（程序版本 1.5.3）
+AI选片助手 v1.5.4 快速开始（程序版本 1.5.4）
 
 1. 完整解压，运行 AI选片助手.exe；保留 _internal 和 lightroom 文件夹。
 2. 选择照片目录与独立工作区，点击“扫描图片”：本地人脸检测、虚焦初筛与分组，不调用 API。
@@ -25,3 +25,5 @@ AI 任务恢复：压缩、清理图片缓存和迁移工作区不代表重新�
 
 完整说明：https://github.com/moyansang/photo-cull-assistant
 版本下载：https://github.com/moyansang/photo-cull-assistant/releases/latest
+
+预览与细节缓存：人脸窗口按内存预算复用图片与检测结果，并预加载附近照片。新扫描尽量复用已解码原图准备待复核细节；暂停时保留，整轮 AI 复核完成后清理临时细节缓存，AI 结果和审计记录保留。旧工作区首次复核可能仍需解码。
