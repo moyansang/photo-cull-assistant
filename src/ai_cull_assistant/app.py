@@ -125,12 +125,12 @@ class App(tk.Tk):
             except Exception as exc:
                 self._log(f"分析记录保存失败：{exc}")
 
-    def _restore_session(self):
+    def _restore_session(self, *, restore_log=True):
         if self._workspace_blocked or not self.input_var.get().strip() or not self.workspace_var.get().strip():
             return
         workspace = Path(self.workspace_var.get())
         logfile = workspace_path(workspace, 'session.log')
-        if logfile.exists():
+        if restore_log and logfile.exists():
             try:
                 self.log_text.configure(state="normal")
                 self.log_text.insert("end", visible_log(logfile.read_text('utf-8')))
@@ -240,10 +240,8 @@ class App(tk.Tk):
         self.scan_result = None
         self.review_project = None
         self._processing_job = None
-        self.log_text.configure(state="normal")
-        self.log_text.delete("1.0", "end")
-        self.log_text.configure(state="disabled")
-        self._restore_session()
+        self._clear_log()
+        self._restore_session(restore_log=False)
         self._restore_processing_job()
         if (previous_workspace and not previous_blocked
                 and Path(previous_workspace).resolve() != workspace.resolve()):
@@ -281,9 +279,7 @@ class App(tk.Tk):
                 self.workspace_var.set("")
             finally:
                 self._suppress_settings_trace = False
-            self.log_text.configure(state="normal")
-            self.log_text.delete("1.0", "end")
-            self.log_text.configure(state="disabled")
+            self._clear_log()
             self._restore_processing_job()
             self._workspace_user_custom = False
             return True
@@ -466,7 +462,9 @@ class App(tk.Tk):
         self.continue_button.pack(side="left", padx=(0, 8))
         self.contact_button = ttk.Button(controls, text="打开联系表目录", command=self._open_contact_dir)
         self.contact_button.pack(side="left", padx=(0, 8))
-        self.clear_log_button = ttk.Button(controls, text="清空工作区", command=self._clear_workspace)
+        self.clear_workspace_button = ttk.Button(controls, text="清空工作区", command=self._clear_workspace)
+        self.clear_workspace_button.pack(side="left", padx=(0, 8))
+        self.clear_log_button = ttk.Button(controls, text="清空日志", command=self._clear_log)
         self.clear_log_button.pack(side="left")
         row += 1
         lr_frame = ttk.Frame(frame)
@@ -726,7 +724,7 @@ class App(tk.Tk):
         self._display_progress(f"{self._mode_label()}进度：", self._scan_progress)
 
     def _set_update_busy(self, busy):
-        controls = (self.scan_button, self.continue_button, self.update_button, self.clear_log_button)
+        controls = (self.scan_button, self.continue_button, self.update_button)
         if busy:
             self._update_disabled_widgets = [(widget, str(widget.cget("state"))) for widget in controls]
             for widget, _ in self._update_disabled_widgets:
@@ -743,7 +741,7 @@ class App(tk.Tk):
             self._disabled_widgets = []
             def walk(parent):
                 for widget in parent.winfo_children():
-                    if widget is self.stop_button:
+                    if widget in (self.stop_button, self.clear_workspace_button, self.clear_log_button):
                         continue
                     if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Spinbox, ttk.Checkbutton)):
                         self._disabled_widgets.append((widget, str(widget.cget("state"))))
@@ -1071,11 +1069,17 @@ class App(tk.Tk):
         self._start_processing(mode="rescan", regroup=regroup)
 
     def _clear_workspace(self):
-        if self._processing_busy or self.updates.busy or any(
+        if self._processing_busy:
+            messagebox.showinfo("暂不能清理", "当前任务尚未结束。请先停止处理，等待当前请求和后台图片准备收尾后再清空工作区。", parent=self)
+            return
+        if self.updates.busy:
+            messagebox.showinfo("暂不能清理", "正在检查或安装更新，请等待更新结束后再清空工作区。", parent=self)
+            return
+        if any(
             isinstance(child, tk.Toplevel) and child.winfo_exists()
             for child in self.winfo_children()
         ):
-            messagebox.showinfo("暂不能清理", "请等待当前扫描、更新或窗口中的任务结束。", parent=self)
+            messagebox.showinfo("暂不能清理", "请先关闭编辑选片组、人脸框、AI 选片等子窗口，再清空工作区。", parent=self)
             return
         if not self.input_var.get().strip() or not self.workspace_var.get().strip():
             messagebox.showinfo("暂不能清理", "请先选择照片文件夹。", parent=self)
@@ -1177,8 +1181,12 @@ class App(tk.Tk):
         self.next_step_var.set("推荐下一步：扫描图片")
 
     def _clear_log(self):
-        """Compatibility alias for integrations written before v1.2."""
-        self._clear_workspace()
+        """Clear only this window, also discarding queued old display messages."""
+        with self._log_lock:
+            self._log_epoch += 1
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", "end")
+            self.log_text.configure(state="disabled")
 
     def _open_contact_dir(self) -> None:
         if not self._sync_selected_workspace():

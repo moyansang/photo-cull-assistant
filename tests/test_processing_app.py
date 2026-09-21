@@ -16,6 +16,78 @@ def make_app(tmp_path):
     return app
 
 
+def test_clear_display_log_preserves_disk_and_drops_queued_messages(tmp_path):
+    from ai_cull_assistant.workspace_layout import workspace_path
+    app = make_app(tmp_path)
+    try:
+        app._log('old queued message')
+        logfile = workspace_path(Path(app.workspace_var.get()), 'session.log')
+        before = logfile.read_bytes()
+        app.clear_log_button.invoke()
+        app.update()
+        assert not app.log_text.get('1.0', 'end').strip()
+        assert logfile.read_bytes() == before
+        app._log('new message')
+        app.update()
+        assert app.log_text.get('1.0', 'end').strip() == 'new message'
+        assert 'old queued message' in logfile.read_text('utf-8')
+    finally:
+        app._close()
+
+
+def test_clear_workspace_button_explains_busy_update_and_open_window(tmp_path, monkeypatch):
+    app = make_app(tmp_path)
+    messages = []
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.showinfo', lambda *a, **kw: messages.append(a[1]))
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('must not delete')))
+    try:
+        app._set_processing_busy(True)
+        app.clear_workspace_button.invoke()
+        assert '后台图片准备' in messages[-1]
+        app._set_processing_busy(False)
+        app.updates.busy = True
+        app._set_update_busy(True)
+        app.clear_workspace_button.invoke()
+        assert '更新' in messages[-1]
+        app._set_update_busy(False)
+        app.updates.busy = False
+        child = tk.Toplevel(app)
+        app.clear_workspace_button.invoke()
+        assert '子窗口' in messages[-1]
+        child.destroy()
+    finally:
+        app.updates.busy = False
+        app._set_processing_busy(False)
+        app._close()
+
+
+def test_workspace_activation_clears_old_log_without_reloading_history(tmp_path, monkeypatch):
+    from ai_cull_assistant.workspace_layout import workspace_path
+    app = make_app(tmp_path)
+    source = tmp_path / 'new-photos'; source.mkdir()
+    workspace = tmp_path / 'new-workspace'; workspace.mkdir()
+    logfile = workspace_path(workspace, 'session.log')
+    logfile.parent.mkdir(parents=True, exist_ok=True)
+    logfile.write_text('previous session history\n', encoding='utf-8')
+    monkeypatch.setattr(app, '_compact_completed_workspace', lambda *_: None)
+    try:
+        app._log('old workspace queued message')
+        app.input_var.set(str(source))
+        app._activate_workspace(str(source), workspace)
+        app.update()
+        text = app.log_text.get('1.0', 'end')
+        assert 'old workspace queued message' not in text
+        assert 'previous session history' not in text
+        assert 'previous session history' in logfile.read_text('utf-8')
+        # Relocation reactivates the same workspace; old display must clear too.
+        app._log('before relocation')
+        app._activate_workspace(str(source), workspace)
+        app.update()
+        assert 'before relocation' not in app.log_text.get('1.0', 'end')
+    finally:
+        app._close()
+
+
 def test_clear_workspace_removes_all_project_state(tmp_path, monkeypatch):
     app=make_app(tmp_path)
     workspace=Path(app.workspace_var.get()); workspace.mkdir(parents=True, exist_ok=True)
@@ -77,7 +149,8 @@ def test_busy_controls_and_stop(tmp_path):
     try:
         app._set_processing_busy(True)
         assert str(app.stop_button.cget('state'))=='normal'
-        assert str(app.clear_log_button.cget('state'))=='disabled'
+        assert str(app.clear_log_button.cget('state'))=='normal'
+        assert str(app.clear_workspace_button.cget('state'))=='normal'
         assert str(app.continue_button.cget('state'))=='disabled'
         app._stop_processing()
         assert app._stop_event.is_set()
