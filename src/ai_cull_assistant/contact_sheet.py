@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .models import PhotoAsset
-from .subject import features, face_crop, detail_features, detail_features_list
+from .subject import face_crop, detail_features, detail_features_list
 from .crop_settings import CropSettings
 
 PAGE_BG = "white"

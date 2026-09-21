@@ -748,10 +748,6 @@ class ReviewDialog(tk.Toplevel):
 
     # ---- manual and API submission ------------------------------------
 
-    def _batch_images(self, task: dict[str, Any], batch: dict[str, Any]) -> list[Path]:
-        return [Path(path) for path in self.project.batch_images(task, batch)]
-
-
     def _show_raw_responses(self) -> None:
         batch = self._selected_batch()
         if not batch:

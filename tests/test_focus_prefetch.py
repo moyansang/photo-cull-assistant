@@ -46,12 +46,38 @@ def test_background_prepares_only_following_evidence_and_stops(tmp_path, monkeyp
 
 
 def test_optional_worker_failure_does_not_fail_review(tmp_path, monkeypatch):
-    worker = FocusPrefetch(Event(), tmp_path, tmp_path, CropSettings())
+    from ai_cull_assistant.workspace_layout import workspace_path
+    from ai_cull_assistant.workspace_log import visible_log
+    worker = FocusPrefetch(Event(), tmp_path, tmp_path, CropSettings(), workspace=tmp_path)
     monkeypatch.setattr(worker, '_prepare', lambda *_: (_ for _ in ()).throw(OSError('disk unavailable')))
     try:
         worker.schedule(None, None)
         worker.wait()
         assert worker.future is None
+        saved = workspace_path(tmp_path, 'session.log').read_text('utf-8')
+        assert 'disk unavailable' in saved and visible_log(saved) == ''
+    finally:
+        worker.close()
+
+
+def test_prefetch_item_errors_persist_but_log_failure_is_optional(tmp_path, monkeypatch):
+    import ai_cull_assistant.preview as preview
+    import ai_cull_assistant.sheet_thumbnail as sheet
+    import ai_cull_assistant.workspace_log as log
+    from ai_cull_assistant.workspace_layout import workspace_path
+    image = tmp_path / 'photo.jpg'
+    image.write_bytes(b'not needed')
+    asset = SimpleNamespace(primary_path=image, preview_path=image)
+    monkeypatch.setattr(preview, 'ensure_preview', lambda *_: (_ for _ in ()).throw(OSError('preview\nfailed')))
+    monkeypatch.setattr(sheet, 'prepare_thumbnails', lambda *_: (_ for _ in ()).throw(OSError('thumb failed')))
+    worker = FocusPrefetch(Event(), tmp_path, tmp_path, CropSettings(), workspace=tmp_path)
+    try:
+        worker.executor.submit(worker._prepare, asset, None, [asset]).result()
+        saved = workspace_path(tmp_path, 'session.log').read_text('utf-8')
+        assert 'focus_prefetch_error' in saved and 'sheet_prefetch_error' in saved
+        assert 'photo.jpg' in saved and log.visible_log(saved) == ''
+        monkeypatch.setattr(log, 'append_log', lambda *_: (_ for _ in ()).throw(OSError('readonly')))
+        worker.executor.submit(worker._prepare, asset, None, [asset]).result()
     finally:
         worker.close()
 

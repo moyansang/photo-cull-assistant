@@ -85,7 +85,6 @@ class App(tk.Tk):
         self._workspace_user_custom = False
         self._workspace_cleared = False
         self._suppress_settings_trace = False
-        self._loaded_grouping = GROUPING_LABELS.get(self.saved_options.get("grouping"), "standard")
         self._processing_busy = False
         self._processing_job = None
         self._processing_mode = "scan"
@@ -224,7 +223,6 @@ class App(tk.Tk):
         self.crop_settings = CropSettings.from_dict(values.get("face_crop", {}))
         self.saved_options = dict(options)
         self.saved_options["no_auto_updates"] = self.no_updates_var.get()
-        self._loaded_grouping = GROUPING_LABELS.get(self.saved_options.get("grouping"), "standard")
         self._suppress_settings_trace = True
         try:
             self.workspace_var.set(str(workspace))
@@ -754,7 +752,7 @@ class App(tk.Tk):
             self.continue_button.configure(state="normal" if self._processing_job else "disabled")
         self.stop_button.configure(state="normal" if busy else "disabled")
 
-    def _start_processing(self, resume=False, mode="scan", regroup=False, regenerate=False, focus_errors_skipped=False):
+    def _start_processing(self, resume=False, mode="scan", regroup=False, focus_errors_skipped=False):
         if self._processing_busy or self.updates.busy:
             return
         if not self._sync_selected_workspace():
@@ -771,8 +769,6 @@ class App(tk.Tk):
             return
         input_dir, workspace = self.input_var.get(), self.workspace_var.get()
         crops = copy.deepcopy(self.crop_settings)
-        if regenerate:  # compatibility with callers from pre-1.2 tests/plugins
-            mode = "rescan"
         if resume:
             try:
                 from .processing_job import load_job
@@ -1047,26 +1043,6 @@ class App(tk.Tk):
             self.next_step_var.set("推荐下一步：AI 复核")
 
         GroupEditor(self, self.scan_result.assets, save_changes)
-
-    def _regenerate_contacts(self):
-        self._ensure_selected_session()
-        if not self.scan_result:
-            messagebox.showinfo("提示", "请先扫描照片。", parent=self)
-            return
-        settings_path = self.scan_result.workspace_dir / 'processing-settings.json'
-        try:
-            previous = json.loads(settings_path.read_text('utf-8')).get('grouping_preset')
-        except (OSError, ValueError):
-            previous = self._loaded_grouping
-        regroup = previous != GROUPING_LABELS[self.preset_var.get()]
-        if regroup:
-            try:
-                manual = json.loads(self.scan_result.group_store_path.read_text('utf-8')).get('source') == 'manual'
-            except (OSError, ValueError):
-                manual = self.scan_result.groups_loaded_from_store
-            if manual and not messagebox.askyesno("覆盖人工分组", "分组灵敏度已改变，重新分组会覆盖人工拆分／合并。是否继续？", parent=self):
-                return
-        self._start_processing(mode="rescan", regroup=regroup)
 
     def _clear_workspace(self):
         if self._processing_busy:

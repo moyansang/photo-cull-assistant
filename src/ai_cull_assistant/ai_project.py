@@ -453,10 +453,6 @@ class ReviewProject:
         if state is not None:return state=='clear'
         return getattr(asset,'screening_reason',None) in {'subject_not_obviously_blurred','ai_focus_clear'}
 
-    def _task_photos_are_admitted(self,task):
-        return all(self._photo_is_admitted(self.data['photos'].get(pid,{}))
-                   for batch in task.get('batches',[]) for pid in batch.get('photo_ids',[]))
-
     def _validate_ai_photos(self,photo_ids,context):
         for pid in photo_ids:
             photo=self.data['photos'].get(pid)

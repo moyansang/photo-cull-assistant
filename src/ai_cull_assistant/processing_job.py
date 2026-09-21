@@ -471,7 +471,7 @@ class ProcessingJob:
             settings = crops if isinstance(crops, CropSettings) else CropSettings.from_dict(crops or {})
             self._focus_prefetch = FocusPrefetch(
                 stop_event, resolve_workspace_path(self.workspace, '.analysis-cache'),
-                self.workspace / 'previews', settings, self.assets)
+                self.workspace / 'previews', settings, self.assets, workspace=self.workspace)
             try:
                 return self._run(options, crops, stop_event, progress,
                                  focus_profile=focus_profile, on_log=on_log)

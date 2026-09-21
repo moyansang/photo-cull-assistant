@@ -202,25 +202,15 @@ def test_saving_face_settings_rescans_only_changed_photos(tmp_path,monkeypatch):
         app._close()
 
 
-def test_regroup_confirmation_and_layout_only(tmp_path,monkeypatch):
-    import json
-    from types import SimpleNamespace
-    app=make_app(tmp_path)
-    workspace=tmp_path/'workspace';workspace.mkdir(exist_ok=True)
-    groupfile=workspace/'groups.json'
-    groupfile.write_text(json.dumps(dict(source='manual')))
-    (workspace/'processing-settings.json').write_text(json.dumps(dict(grouping_preset='standard')))
-    app.scan_result=SimpleNamespace(workspace_dir=workspace,group_store_path=groupfile,input_dir=tmp_path/"photos")
-    started=[]
-    monkeypatch.setattr(app,'_start_processing',lambda **kw:started.append(kw))
-    monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno',lambda *a,**kw:False)
+def test_sheet_button_uses_current_staged_workflow(tmp_path, monkeypatch):
+    app = make_app(tmp_path)
+    started = []
+    monkeypatch.setattr(app, '_start_processing', lambda **kw: started.append(kw))
     try:
-        app.preset_var.set('严格');app._regenerate_contacts()
-        assert not started
-        app.preset_var.set('标准');app.per_page_var.set(24);app._regenerate_contacts()
-        assert started==[dict(mode='rescan',regroup=False)]
+        app.sheets_button.invoke()
+        assert started == [dict(mode='sheets')]
     finally:
-        app.scan_result=None;app._close()
+        app._close()
 
 
 def test_continue_from_saved_job_updates_main_window(tmp_path):

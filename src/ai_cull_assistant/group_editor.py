@@ -4,7 +4,6 @@ from collections import OrderedDict
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from itertools import count
-from pathlib import Path
 from queue import Empty, SimpleQueue
 from threading import Lock
 import tkinter as tk

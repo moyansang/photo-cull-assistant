@@ -30,20 +30,6 @@ class ResourceSnapshot:
     available_memory_bytes: int | None
     process_rss_bytes: int | None
 
-    # Short aliases make the object convenient for callers without making the
-    # units ambiguous in its stored fields.
-    @property
-    def total_bytes(self) -> int | None:
-        return self.total_memory_bytes
-
-    @property
-    def available_bytes(self) -> int | None:
-        return self.available_memory_bytes
-
-    @property
-    def rss_bytes(self) -> int | None:
-        return self.process_rss_bytes
-
 
 def _positive(value: object) -> int | None:
     try:
