@@ -96,6 +96,8 @@ class ApiConfigDialog(tk.Toplevel):
         else:
             self._apply_new_preset(remembered_preset)
         self._sync_advanced()
+        # Keep geometry stable during native mouse press/release dispatch.
+        fit_window(self, (680, 590), minimum_size=(440, 320), parent=self.master)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._poll_token = self.after(100, self._poll_events)
         # The editor is an owned, modeless window. A hidden child must never
@@ -291,29 +293,15 @@ class ApiConfigDialog(tk.Toplevel):
         return str(PRESETS[preset_id].get("note", ""))
 
     def _toggle_advanced(self) -> None:
-        if self._preset_id() == _CUSTOM_PRESET_ID:
-            self.advanced_var.set(True)
         self._sync_advanced()
         self._remember_ui_state()
 
     def _sync_advanced(self) -> None:
-        visible = self.advanced_var.get() or self._preset_id() == _CUSTOM_PRESET_ID
+        visible = self.advanced_var.get()
         if visible:
             self.advanced_frame.grid()
         else:
             self.advanced_frame.grid_remove()
-        previous = getattr(self, "_advanced_visible", None)
-        self._advanced_visible = visible
-        if previous is visible:
-            # Avoid update_idletasks/geometry re-entry while a native combobox
-            # popdown is completing a selection that does not change the layout.
-            return
-        fit_window(
-            self,
-            (680, 590 if visible else 420),
-            minimum_size=(440, 320),
-            parent=self.master,
-        )
 
     def _remember_ui_state(self) -> None:
         try:

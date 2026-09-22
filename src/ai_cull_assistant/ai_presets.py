@@ -1,23 +1,23 @@
-"""Official vision presets, verified against provider documentation on 2026-09-11."""
+"""Official vision presets, verified against provider documentation on 2026-09-22."""
 from copy import deepcopy
 
 PRESETS = {
     'qwen-vl-plus': dict(
-        name='阿里百炼·北京 / Qwen3-VL-Plus',
-        base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
-        model='qwen3-vl-plus', timeout=300, max_tokens=8192,
-        credential_group='dashscope-beijing',
-        note='使用阿里百炼北京地域 API Key。Plus 与 Flash 可复用已保存的同地域密钥。',
+        name='千问 / Qwen3.8-Max',
+        base_url='https://maas.qianwenaiapi.com/compatible-mode/v1',
+        model='qwen3.8-max', timeout=300, max_tokens=8192,
+        credential_group='qianwen-maas',
+        note='使用千问AI平台 API Key。Max 与 Flash 可复用此接口已保存的密钥；旧百炼配置保持原样。',
         request_options={'enable_thinking': False},
-        source='https://help.aliyun.com/zh/model-studio/vision'),
+        source='https://www.qianwenai.com/models/qwen3.8-max'),
     'qwen-vl-flash': dict(
-        name='阿里百炼·北京 / Qwen3-VL-Flash',
-        base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
-        model='qwen3-vl-flash', timeout=300, max_tokens=8192,
-        credential_group='dashscope-beijing',
-        note='使用阿里百炼北京地域 API Key。Plus 与 Flash 可复用已保存的同地域密钥。',
+        name='千问 / Qwen3.8-Flash',
+        base_url='https://maas.qianwenaiapi.com/compatible-mode/v1',
+        model='qwen3.8-flash', timeout=300, max_tokens=8192,
+        credential_group='qianwen-maas',
+        note='使用千问AI平台 API Key。Max 与 Flash 可复用此接口已保存的密钥；旧百炼配置保持原样。',
         request_options={'enable_thinking': False},
-        source='https://help.aliyun.com/zh/model-studio/vision'),
+        source='https://www.qianwenai.com/models/qwen3.8-flash'),
     'glm-vision-flash': dict(
         name='智谱 / GLM-4.6V-Flash',
         base_url='https://open.bigmodel.cn/api/paas/v4',

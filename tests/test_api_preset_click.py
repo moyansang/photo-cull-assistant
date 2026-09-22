@@ -71,3 +71,28 @@ def test_deepseek_combobox_click_keeps_dialog_open_and_does_not_refit(tmp_path, 
     finally:
         if dialog.winfo_exists():
             dialog.destroy()
+
+
+def test_custom_and_advanced_mouse_clicks_keep_window_and_geometry(tmp_path, tk_root):
+    dialog = ApiConfigDialog(tk_root, tmp_path)
+    dialog.update()
+    geometry = dialog.geometry()
+    try:
+        _click_preset(dialog, 'custom')
+        assert dialog.winfo_exists() and not dialog._closed
+        assert dialog.geometry() == geometry
+        assert dialog.advanced_frame.winfo_manager() == 'grid'
+        for _ in range(4):
+            button = dialog.advanced_button
+            before = dialog.advanced_var.get()
+            for event in ('<Enter>', '<ButtonPress-1>', '<ButtonRelease-1>'):
+                button.event_generate(event, x=8, y=button.winfo_height() // 2)
+                dialog.update()
+            assert dialog.winfo_exists() and not dialog._closed
+            assert dialog.geometry() == geometry
+            assert dialog.advanced_var.get() != before
+        dialog.key_var.set('test-only')
+        assert dialog.key_var.get() == 'test-only'
+    finally:
+        if dialog.winfo_exists():
+            dialog.destroy()

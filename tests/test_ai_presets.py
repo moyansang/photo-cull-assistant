@@ -5,6 +5,23 @@ from ai_cull_assistant.ai_presets import PRESETS, preset_profile, matching_prese
 from test_ai_api import response
 
 
+def test_qwen38_models_and_old_profile_are_not_silently_migrated(tmp_path):
+    assert PRESETS['qwen-vl-plus']['model'] == 'qwen3.8-max'
+    assert PRESETS['qwen-vl-flash']['model'] == 'qwen3.8-flash'
+    for key in ('qwen-vl-plus', 'qwen-vl-flash'):
+        assert PRESETS[key]['base_url'] == 'https://maas.qianwenaiapi.com/compatible-mode/v1'
+    old = dict(id='old', name='旧百炼', preset_id='qwen-vl-plus',
+               base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
+               model='qwen3-vl-plus', timeout=300, max_tokens=8192)
+    path = tmp_path / ai_api.PROFILE_FILE
+    path.write_text(json.dumps(dict(version=1, profiles=[old])), encoding='utf-8')
+    before = path.read_bytes()
+    loaded = ai_api.load_profiles(tmp_path)[0]
+    assert loaded['base_url'] == old['base_url'] and loaded['model'] == old['model']
+    assert matching_preset(loaded) is None
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize('preset_id',list(PRESETS))
 def test_preset_request_uses_expected_endpoint_model_and_parameters(tmp_path,monkeypatch,preset_id):
     preset=PRESETS[preset_id]
