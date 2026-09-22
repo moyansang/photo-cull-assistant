@@ -13,9 +13,47 @@ from tkinter import ttk, messagebox
 from PIL import Image, ImageDraw, ImageOps, ImageTk
 
 from .crop_settings import CropSettings, crop_bounds, face_box_key
+from .group_face_assist import (AssistImage, collect_targets, reference_box_from_entry,
+                                asset_signature, normalized_box_ok)
+from .group_face_assist_dialog import GroupFaceAssistDialog
 from .subject import face_crop, detail_features, detail_features_list
 from .preview import ensure_preview
 from .window_layout import fit_window, scrollable_body
+
+
+def same_face_box(first, second):
+    try:
+        ax, ay, aw, ah = map(float, first)
+        bx, by, bw, bh = map(float, second)
+    except (TypeError, ValueError):
+        return False
+    left, top = max(ax, bx), max(ay, by)
+    right, bottom = min(ax + aw, bx + bw), min(ay + ah, by + bh)
+    intersection = max(0.0, right - left) * max(0.0, bottom - top)
+    union = aw * ah + bw * bh - intersection
+    return intersection / max(union, 1e-9) >= .45
+
+
+def apply_face_box(entry, selected_boxes, box, preview_version):
+    """Single write path for a user-confirmed face box.
+
+    Shared by the manual pointer-drawing route and the group assist accept so
+    both keep the long-standing field format: an untouched photo stores the
+    legacy ``manual_face``, any photo that already tracks participants appends
+    to ``selected_faces``, and both stamp ``preview_version`` from the live
+    preview.
+    """
+    if not selected_boxes and 'selected_faces' not in entry:
+        entry['manual_face'] = [float(value) for value in box]
+    else:
+        faces = [tuple(value) for value in selected_boxes]
+        if not any(same_face_box(current, box) for current in faces):
+            faces.append(tuple(box))
+        entry['selected_faces'] = [list(current) for current in faces]
+        entry.pop('manual_face', None)
+    if preview_version:
+        entry['preview_version'] = preview_version
+    entry.pop('hidden', None)
 
 
 class CropDialog(tk.Toplevel):
@@ -25,6 +63,9 @@ class CropDialog(tk.Toplevel):
         self.transient(parent)
         self.assets = [a for a in assets if a.preview_path or a.primary_path]
         self.edits = deepcopy(settings.photos)
+        self._original_photos = deepcopy(settings.photos)
+        self._original_confidence = settings.detection_confidence
+        self._assist_dialog = None
         self._loading = False
         self._drag = None
         self._image_rect = None
@@ -69,7 +110,8 @@ class CropDialog(tk.Toplevel):
         body = scrollable_body(self, padding=16)
         ttk.Label(
             body,
-            text="点击蓝框加入人物，重新点击其绿色或橙色检测框可移除；拖拽可补框漏检人脸。点击裁切框空白处后可移动，滚轮可细调范围。",
+            text="点击蓝框加入人物，重新点击其绿色或橙色检测框可移除；拖拽可补框漏检人脸。点击裁切框空白处后可移动，滚轮可细调范围。"
+            "手动框好一张漏检照片后，可用“补齐本组人脸”在同组内查找相似位置。",
             wraplength=460,
         ).pack(fill="x", anchor="w")
         row = ttk.Frame(body)
@@ -130,6 +172,7 @@ class CropDialog(tk.Toplevel):
         ttk.Button(navigation, text="下一张", command=lambda: self.navigate(1)).pack(side="left", padx=6)
         ttk.Button(navigation, text="下一张未标记", command=self.next_unmarked).pack(side="left", padx=6)
         ttk.Button(navigation, text="重置当前裁切", command=self.reset).pack(side="left", padx=6)
+        ttk.Button(body, text="补齐本组人脸", command=self.assist_group_faces).pack(anchor="w", pady=4)
         for variable in (self.scale, self.shift, self.offset_x, self.ratio):
             variable.trace_add("write", self.schedule_crop_preview)
         self.confidence.trace_add("write", self.schedule_preview)
@@ -380,6 +423,103 @@ class CropDialog(tk.Toplevel):
                 self.caption.configure(text=f"{index+1}/{len(self.assets)}  ·  {asset.stem}  ·  待补选人脸")
                 return
         self.caption.configure(text="没有待补选的人脸：已标记和手动隐藏的照片会自动跳过。")
+
+    def assist_group_faces(self):
+        """Open the same-group assist window using the current photo as reference."""
+        if self._assist_dialog is not None and self._assist_dialog.winfo_exists():
+            self._assist_dialog.lift()
+            return
+        if self._loading:
+            return
+        if not self.assets:
+            messagebox.showinfo("补齐本组人脸", "请先扫描照片。", parent=self)
+            return
+        self.store_current()
+        settings = self.global_settings()
+        asset = self.assets[self.index]
+        key = settings.key(asset)
+        entry = self.edits.get(key, {})
+        box, state = reference_box_from_entry(entry)
+        if state == 'multiple':
+            messagebox.showinfo("补齐本组人脸", "第一版仅支持以单人照片作为参考。", parent=self)
+            return
+        if box is None:
+            messagebox.showinfo("补齐本组人脸", "请先在当前照片上画好或确认一个人脸框，再补齐本组。", parent=self)
+            return
+        if not asset.preview_path or not Path(asset.preview_path).is_file():
+            messagebox.showinfo("补齐本组人脸", "参考照片的预览不可读，无法进行同组匹配。", parent=self)
+            return
+        siblings = [a for a in self.assets if a.group_id == asset.group_id]
+        targets = collect_targets(asset, siblings, self.edits, settings.key)
+        if not targets:
+            messagebox.showinfo("补齐本组人脸", "本组没有需要补齐的人脸。", parent=self)
+            return
+        self._assist_assets = {settings.key(a): a for a in siblings}
+        self._assist_signatures = {k: asset_signature(a) for k, a in self._assist_assets.items()}
+        self._assist_reference_entry = deepcopy(entry)
+        reference = AssistImage(
+            key=key, stem=asset.stem, preview_path=str(asset.preview_path))
+        # The crop dialog owns an application-wide grab; hand it to the child
+        # window and take it back when that window closes.
+        self.grab_release()
+        self._assist_dialog = GroupFaceAssistDialog(
+            self, reference, tuple(box), targets,
+            apply_items=self.apply_assist_proposals,
+            on_close=self._assist_dialog_closed,
+            group_id=asset.group_id,
+            detection_confidence=settings.detection_confidence,
+        )
+
+    def _assist_dialog_closed(self):
+        self._assist_dialog = None
+        if not self._closed and self.winfo_exists():
+            self.grab_set()
+
+    def apply_assist_proposals(self, reference_key, reference_box, items):
+        """Adopt confirmed candidates after re-checking the start snapshots."""
+        current_box, state = reference_box_from_entry(self.edits.get(reference_key, {}))
+        try:
+            unchanged = state == 'ok' and [float(v) for v in current_box] == [
+                float(v) for v in reference_box]
+        except (TypeError, ValueError):
+            unchanged = False
+        reference_asset = self._assist_assets.get(reference_key)
+        unchanged = (unchanged and reference_asset is not None
+                     and asset_signature(reference_asset) == self._assist_signatures.get(reference_key)
+                     and self.edits.get(reference_key, {}) == self._assist_reference_entry)
+        if not unchanged:
+            messagebox.showwarning(
+                "补齐本组人脸",
+                "参考照片的人脸框已修改，本轮候选全部作废，未写入任何结果。",
+                parent=self,
+            )
+            return 0, []
+        applied = 0
+        skipped = []
+        for item in items:
+            key = item['target_key']
+            entry = self.edits.get(key, {})
+            if json.dumps(entry, sort_keys=True, default=str) != item['snapshot']:
+                skipped.append((item['stem'], "候选生成后该照片已被修改"))
+                continue
+            asset = getattr(self, '_assist_assets', {}).get(key)
+            if asset is None:
+                skipped.append((item['stem'], "未找到对应照片"))
+                continue
+            if (asset_signature(asset) != self._assist_signatures.get(key)
+                    or asset.group_id != reference_asset.group_id):
+                skipped.append((item['stem'], "照片、预览或分组已改变"))
+                continue
+            if not normalized_box_ok(item['box']):
+                skipped.append((item['stem'], "候选框无效"))
+                continue
+            apply_face_box(self.edits.setdefault(key, {}), [], item['box'],
+                           self._preview_version(asset))
+            applied += 1
+        if applied:
+            self.load_current()
+            self.render()
+        return applied, skipped
 
     def reset(self):
         self._crop_selected = False
@@ -697,37 +837,17 @@ class CropDialog(tk.Toplevel):
         if box:
             self.store_current()
             entry = self.current_entry()
-            if not self._selected_boxes and 'selected_faces' not in entry:
-                # Preserve the long-standing single-manual-face representation
-                # when this is the only participant in an untouched photo.
-                entry['manual_face'] = box
-            else:
-                selected = list(self._selected_boxes)
-                if not any(self._same_face(current, box) for current in selected):
-                    selected.append(tuple(box))
-                entry['selected_faces'] = [list(current) for current in selected]
-                entry.pop('manual_face', None)
+            apply_face_box(entry, self._selected_boxes, box,
+                           self._preview_version(self.assets[self.index]))
+            if 'selected_faces' in entry:
                 self._active_face_key = face_box_key(box)
                 self._person_dirty = False
-            preview_version = self._preview_version(self.assets[self.index])
-            if preview_version:
-                entry['preview_version'] = preview_version
-            entry.pop('hidden', None)
             self.load_current()
             self.render()
 
     @staticmethod
     def _same_face(first, second):
-        try:
-            ax, ay, aw, ah = map(float, first)
-            bx, by, bw, bh = map(float, second)
-        except (TypeError, ValueError):
-            return False
-        left, top = max(ax, bx), max(ay, by)
-        right, bottom = min(ax + aw, bx + bw), min(ay + ah, by + bh)
-        intersection = max(0.0, right - left) * max(0.0, bottom - top)
-        union = aw * ah + bw * bh - intersection
-        return intersection / max(union, 1e-9) >= .45
+        return same_face_box(first, second)
 
     def _candidate_at(self, event_x, event_y):
         if not self._image_rect:
@@ -803,10 +923,35 @@ class CropDialog(tk.Toplevel):
         self.scale.set(max(.6, min(2.0, round(self.scale.get() + step, 3))))
         return "break"
 
+    @staticmethod
+    def _meaningful_entry(entry):
+        # Same filter the app uses to decide whether a photo really changed,
+        # so neutral defaults never count as a face modification.
+        return {k: v for k, v in entry.items()
+                if (k != 'offset_x_factor' or v != 0) and (k != 'preview_version' or v != 'v04')}
+
+    def _changed_face_assets(self, settings):
+        return [
+            asset for asset in self.assets
+            if self._meaningful_entry(self._original_photos.get(settings.key(asset), {}))
+            != self._meaningful_entry(settings.photos.get(settings.key(asset), {}))
+            or settings.detection_confidence != self._original_confidence
+        ]
+
     def save(self):
         try:
             self.store_current()
-            self.on_save(self.global_settings())
+            settings = self.global_settings()
+            changed = self._changed_face_assets(settings)
+            reviewed = sum(1 for asset in changed if getattr(asset, 'ai_focus_result', None) is not None)
+            if reviewed and not messagebox.askyesno(
+                "保存人脸修改",
+                f"将保存 {len(changed)} 张照片的人脸修改，其中 {reviewed} 张已有 AI 清晰度复核结论。"
+                "保存后这些照片需重新复核；本次不会自动调用 API。确定保存？",
+                parent=self,
+            ):
+                return
+            self.on_save(settings)
         except Exception as exc:
             messagebox.showerror("保存失败", str(exc), parent=self)
             return
@@ -814,6 +959,8 @@ class CropDialog(tk.Toplevel):
 
     def destroy(self):
         self._closed = True
+        if self._assist_dialog is not None:
+            self._assist_dialog.destroy()
         if self._poll_token:
             self.after_cancel(self._poll_token)
             self._poll_token = None

@@ -78,3 +78,20 @@ def test_quarter_turn_fallback_maps_box_and_real_landmarks(monkeypatch):
     assert len(found) == 1
     assert found[0].box == (130, 30, 50, 40)
     assert found[0].landmarks[0] == (162, 40)
+
+
+def test_rotate_rescue_false_skips_extra_orientation_passes(monkeypatch):
+    sizes = []
+
+    class Model:
+        def setScoreThreshold(self, _score): pass
+        def setInputSize(self, size): sizes.append(size)
+        def detect(self, _image): return 1, None
+
+    monkeypatch.setattr(yunet, 'detector', lambda: Model())
+    assert yunet.detect(np.zeros((100, 200, 3), np.uint8), .9, rotate_rescue=False) == []
+    assert len(sizes) == 1
+    sizes.clear()
+    # Default behaviour is unchanged: the empty first pass still rescues.
+    assert yunet.detect(np.zeros((100, 200, 3), np.uint8), .9) == []
+    assert len(sizes) == 4

@@ -101,7 +101,11 @@ def _deduplicate(candidates: list[FaceDetection]) -> list[FaceDetection]:
     return selected
 
 
-def detect(image: np.ndarray, score_threshold: float = .9) -> list[FaceDetection]:
+def detect(
+    image: np.ndarray,
+    score_threshold: float = .9,
+    rotate_rescue: bool = True,
+) -> list[FaceDetection]:
     from .scan_diagnostics import operation
     h, w = image.shape[:2]
     if not h or not w:
@@ -130,12 +134,13 @@ def detect(image: np.ndarray, score_threshold: float = .9) -> list[FaceDetection
     # without orientation metadata.  Only pay for the extra passes when the
     # first pass has no reasonably prominent face; a tiny logo-like candidate
     # must not prevent the orientation rescue.
-    prominent_area = rw * rh * .002
-    if not any(face.box[2] * face.box[3] >= prominent_area for face in results):
-        run(1)
-        run(3)
+    if rotate_rescue:
+        prominent_area = rw * rh * .002
         if not any(face.box[2] * face.box[3] >= prominent_area for face in results):
-            run(2)
+            run(1)
+            run(3)
+            if not any(face.box[2] * face.box[3] >= prominent_area for face in results):
+                run(2)
 
     sx, sy = w / rw, h / rh
     scaled = [
