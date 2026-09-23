@@ -208,11 +208,13 @@ class ReviewProject:
         with self._state_lock:
             atomic_json(self.path,self.data)
 
-    def refresh(self,assets,crop_settings):
+    def refresh(self,assets,crop_settings,*,stop_event=None):
         self._assets=list(assets);self._crops=crop_settings
         active={}
         group_fingerprints={}
         for asset in self._assets:
+            if stop_event is not None and stop_event.is_set():
+                raise InterruptedError("已取消任务准备")
             group_fingerprints.setdefault(asset.group_id,[]).append((photo_id(asset),fingerprint(asset,crop_settings)))
         for asset in self._assets:
             pid=photo_id(asset)
@@ -357,7 +359,7 @@ class ReviewProject:
         self.save()
         return True
 
-    def create_task(self,assets,crop_settings,preferences,kind='initial',photo_ids=None,replace_current=False,home_signature=None):
+    def create_task(self,assets,crop_settings,preferences,kind='initial',photo_ids=None,replace_current=False,home_signature=None,stop_event=None):
         self.refresh(assets,crop_settings)
         scoped=[a for a in assets if photo_ids is None or photo_id(a) in photo_ids]
         chosen=[a for a in scoped if self._photo_is_admitted(self.data['photos'][photo_id(a)])]
@@ -377,9 +379,11 @@ class ReviewProject:
         task_root=self.workspace/'ai_tasks'/task['id']
         try:
             for i,chunk in enumerate(chunks,1):
+                if stop_event is not None and stop_event.is_set():
+                    raise InterruptedError("已取消联系表准备")
                 bid=f'B{i:03d}';folder=task_root/bid
                 labeled=[replace(a,stem=photo_id(a)) for a in chunk]
-                images=generate_contact_sheets(labeled,folder,photos_per_page=12,columns=3,crop_settings=crop_settings)
+                images=generate_contact_sheets(labeled,folder,photos_per_page=12,columns=3,crop_settings=crop_settings, **({"stop_event": stop_event} if stop_event is not None else {}))
                 ids=[photo_id(a) for a in chunk]
                 manifest='\n'.join(f"{photo_id(a)} | 文件名：{a.primary_path.name} | G{a.group_id:03d}" for a in chunk)
                 prompt=PROMPT.format(kind='跨组比较候选，减少重复并统一优先级' if kind=='refine' else '组内初选',
@@ -391,8 +395,10 @@ class ReviewProject:
                     fingerprints={pid:self.data['photos'][pid]['fingerprint'] for pid in ids},error='',raw_responses=[])
                 (folder/'prompt.txt').write_text(prompt,encoding='utf-8')
                 task['batches'].append(batch)
+            if stop_event is not None and stop_event.is_set():
+                raise InterruptedError('已取消联系表准备')
         except Exception:
-            if replace_current:self._remove_task_folder(task['id'])
+            self._remove_task_folder(task['id'])
             raise
 
         previous=copy.deepcopy(self.data)

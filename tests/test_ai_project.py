@@ -746,3 +746,51 @@ def test_legacy_text_focus_request_becomes_pending_but_clear_text_does_not(tmp_p
     assert project.ingest(task,batch,json.dumps(payload,ensure_ascii=False))==[]
     assert project.data['photos'][photo_id(assets[0])]['focus_review'] is True
     assert project.data['photos'][photo_id(assets[1])].get('selection_focus_concern') is None
+
+
+def test_cancel_preparation_preserves_existing_answers(tmp_path, monkeypatch):
+    project, assets, task, batch = setup_project(tmp_path)
+    project.ingest(task, batch, answer(task, batch))
+    saved = json.loads(project.path.read_text('utf-8'))
+    stop = threading.Event()
+    stop.set()
+    with pytest.raises(InterruptedError):
+        project.create_task(assets, CropSettings(), {}, replace_current=True, stop_event=stop)
+    restored = ReviewProject(project.workspace)
+    assert restored.data['tasks'] == saved['tasks']
+    assert restored.data['photos'] == saved['photos']
+    assert restored.current_task()['batches'][0]['status'] == 'complete'
+    assert len(list((project.workspace / 'ai_tasks').iterdir())) == 1
+
+
+def test_reopen_after_preview_cleanup_keeps_completed_task(tmp_path):
+    project, assets, task, batch = setup_project(tmp_path)
+    project.ingest(task, batch, answer(task, batch))
+    for asset in assets:
+        asset.preview_path = tmp_path / 'removed-preview.jpg'
+    restored = ReviewProject(project.workspace)
+    restored.refresh(assets, CropSettings())
+    assert restored.can_reuse_task(restored.home_sheet_signature(assets, CropSettings()))
+    assert restored.current_task()['id'] == task['id']
+    assert restored.current_task()['batches'][0]['status'] == 'complete'
+    assert not restored.photos_needing_review()
+
+
+def test_cancel_after_render_rolls_back_new_task(tmp_path, monkeypatch):
+    from ai_cull_assistant import ai_project
+    project, assets, task, batch = setup_project(tmp_path)
+    project.ingest(task, batch, answer(task, batch))
+    stop = threading.Event()
+    render = ai_project.generate_contact_sheets
+    def cancel_after_render(*args, **kwargs):
+        paths = render(*args, **kwargs)
+        stop.set()
+        return paths
+    monkeypatch.setattr(ai_project, 'generate_contact_sheets', cancel_after_render)
+    with pytest.raises(InterruptedError):
+        project.create_task(assets, CropSettings(), {}, stop_event=stop)
+    restored = ReviewProject(project.workspace)
+    assert restored.current_task()['id'] == task['id']
+    assert restored.current_task()['batches'][0]['status'] == 'complete'
+    assert len(restored.data['tasks']) == 1
+    assert len(list((project.workspace / 'ai_tasks').iterdir())) == 1

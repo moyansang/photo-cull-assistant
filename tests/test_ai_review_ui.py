@@ -377,3 +377,15 @@ def test_refine_creates_new_task_and_requests_api_submission(ui, monkeypatch):
     assert not errors and current['kind'] == 'refine' and current['id'] != task['id']
     assert submitted == [current['id']]
     assert [p for b in current['batches'] for p in b['photo_ids']] == [pid]
+
+
+def test_close_during_preparation_cancels_without_refresh(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    dialog._set_preparing(True)
+    monkeypatch.setattr(dialog, '_refresh_tasks', lambda *a, **k: pytest.fail('closing must not rebuild trees'))
+    closed = []
+    monkeypatch.setattr(dialog, '_destroy_now', lambda: closed.append(True))
+    dialog._close()
+    assert dialog._prepare_stop.is_set()
+    dialog._handle_api_event(('prepared', task, False))
+    assert closed and not dialog._preparing_task

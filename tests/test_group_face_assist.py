@@ -600,3 +600,46 @@ def test_changed_preview_is_not_overwritten(monkeypatch, tmp_path):
     finally:
         dialog.destroy()
         root.destroy()
+
+
+def test_explicit_cross_group_scope_includes_other_group():
+    reference = asset('ref', group_id=1)
+    targets = collect_targets(reference, [reference, asset('other', group_id=2)], {},
+                              lambda a: a.stem, allow_cross_group=True)
+    assert len(targets) == 1 and targets[0].cross_group
+
+
+def test_cross_group_candidate_never_auto_accepts_identity(monkeypatch, tmp_path):
+    import numpy as np
+    from dataclasses import replace
+    path = tmp_path / 'face.jpg'
+    Image.new('RGB', (100, 100), 'white').save(path)
+    target = group_face_assist.AssistTarget(key='other', stem='other', preview_path=str(path), cross_group=True)
+    monkeypatch.setattr(group_face_assist, '_match_peaks', lambda *a: [(0.99, 20, 20, 20, 20)])
+    monkeypatch.setattr(group_face_assist, '_verify_with_detector', lambda *a: ((20, 20, 20, 20), .99))
+    template = np.ones((20, 20), dtype=np.uint8)
+    result = group_face_assist._propose_for_target(template, template, target, (.2,.2,.2,.2),
+                                                  'ref', threading.Event(), .8)
+    assert result.level == 'review'
+    assert '同一人物' in result.reason
+
+
+def test_cross_group_confirm_merges_into_draft(monkeypatch, tmp_path):
+    root, dialog, assets, saved, ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
+    key = dialog.global_settings().key
+    assets[1].group_id = 2
+    target_key = key(assets[1])
+    monkeypatch.setattr(group_face_assist, 'propose_group_faces', fake_propose({target_key: (.25,.3,.12,.15)}))
+    try:
+        dialog.assist_group_faces({1, 2})
+        assist = dialog._assist_dialog
+        pump(root, lambda: assist._finished)
+        assist.tree.selection_set(target_key)
+        assist.confirm_current()
+        assist.accept_selected()
+        pump(root, lambda: dialog._assist_dialog is None)
+        assert 'manual_face' in dialog.edits[target_key]
+        assert not saved
+    finally:
+        dialog.destroy()
+        root.destroy()

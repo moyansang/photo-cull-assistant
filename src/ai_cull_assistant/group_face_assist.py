@@ -51,6 +51,7 @@ class AssistImage:
 
 @dataclass(frozen=True)
 class AssistTarget(AssistImage):
+    cross_group: bool = False
     snapshot: str = ''  # JSON of the per-photo entry when the task started
 
 
@@ -127,7 +128,7 @@ def _entry_located(entry: dict, asset) -> bool:
     return bool(subject and (getattr(subject, 'head', None) or getattr(subject, 'face', None)))
 
 
-def collect_targets(reference_asset, group_assets, edits, key_for) -> list[AssistTarget]:
+def collect_targets(reference_asset, group_assets, edits, key_for, *, allow_cross_group=False) -> list[AssistTarget]:
     """Photos in the same group that still need a face, nearest shots first.
 
     ``group_assets`` must be in capture order; the reference is excluded and
@@ -139,7 +140,7 @@ def collect_targets(reference_asset, group_assets, edits, key_for) -> list[Assis
     reference_position = positions.get(reference_key, 0)
     targets: list[AssistTarget] = []
     for asset in group_assets:
-        if asset.group_id != reference_asset.group_id:
+        if not allow_cross_group and asset.group_id != reference_asset.group_id:
             continue
         key = key_for(asset)
         if key == reference_key:
@@ -153,6 +154,7 @@ def collect_targets(reference_asset, group_assets, edits, key_for) -> list[Assis
             stem=getattr(asset, 'stem', Path(str(preview or key)).stem),
             preview_path=str(preview) if preview else None,
             snapshot=json.dumps(entry, sort_keys=True, default=str),
+            cross_group=asset.group_id != reference_asset.group_id,
         ))
     # Neighbouring frames in capture order first; ties keep the earlier shot.
     targets.sort(key=lambda target: (abs(positions.get(target.key, 0) - reference_position),
@@ -281,7 +283,7 @@ def _propose_for_target(template_gray, template_edge, target, expected_box,
     edge = _gradient(gray)
     if stop_event.is_set():
         return missing('已停止')
-    roi = _search_region((height, width), expected_box)
+    roi = (0, 0, width, height) if target.cross_group else _search_region((height, width), expected_box)
     tw = max(8, round(expected_box[2] * width))
     th = max(8, round(expected_box[3] * height))
     scaled_template = cv2.resize(template_gray, (tw, th), interpolation=cv2.INTER_AREA)
@@ -306,6 +308,10 @@ def _propose_for_target(template_gray, template_edge, target, expected_box,
     if not normalized_box_ok(box) or box[2] * box[3] < 1e-5:
         return missing('匹配结果尺寸无效')
     unique = bool(peaks) and (not ambiguous)
+    if target.cross_group:
+        return FaceProposal(target.key, source_key, box, 'review', round(best[0], 3),
+                            round(detector_score, 3) if detector_score is not None else None,
+                            '跨组外观匹配，请确认是同一人物；不自动认定身份')
     if best[0] >= RELIABLE_MATCH and unique and detection is not None:
         return FaceProposal(target.key, source_key, box, 'reliable', round(best[0], 3),
                             round(detector_score, 3), '匹配唯一且通过人脸检测')

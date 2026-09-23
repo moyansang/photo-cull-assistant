@@ -25,7 +25,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
     def __init__(self, parent, reference, reference_box, targets, apply_items, on_close=None,
                  group_id=None, detection_confidence=.8):
         super().__init__(parent)
-        self.title(f"补齐本组人脸 · 组 {group_id if group_id is not None else reference.stem}")
+        self.title(f"补齐人脸 · 参考组 {group_id if group_id is not None else reference.stem}")
         self.transient(parent)
         self.reference = reference
         self.detection_confidence = detection_confidence
@@ -185,7 +185,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
             self._finished = True
             self.stop_button.configure(state='disabled')
             if not self._closed:
-                messagebox.showerror('补齐本组人脸', f"匹配未完成：{message[1]}", parent=self)
+                messagebox.showerror('补齐人脸', f"匹配未完成：{message[1]}", parent=self)
             if self._awaiting_done:
                 self._awaiting_done = False
                 self.destroy()
@@ -313,7 +313,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
             return
         row = self.rows[key]
         if row['box'] is None:
-            messagebox.showinfo('补齐本组人脸', '本张还没有可用候选框，请先手动调整画出范围。', parent=self)
+            messagebox.showinfo('补齐人脸', '本张还没有可用候选框，请先手动调整画出范围。', parent=self)
             return
         row['accepted'] = True
         self._update_row(key)
@@ -451,7 +451,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
                 items.append((key, row['box'], row['target'].snapshot, row['stem'],
                               row['proposal'].source_key if row['proposal'] else self.reference.key))
         if not items:
-            messagebox.showinfo('补齐本组人脸', '请先勾选或逐张确认要采用的候选。', parent=self)
+            messagebox.showinfo('补齐人脸', '请先勾选或逐张确认要采用的候选。', parent=self)
             return
         if self._finished:
             self._finish_accept(items)

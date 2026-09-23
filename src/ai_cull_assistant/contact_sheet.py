@@ -150,6 +150,7 @@ def generate_contact_sheets(
     *,
     review_mode: bool = False,
     crop_settings: CropSettings = CropSettings(),
+    stop_event=None,
 ) -> list[Path]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -214,6 +215,8 @@ def generate_contact_sheets(
             group_assets_all = [a for a in assets if a.group_id == group_id]
             index_map = {id(a): i + 1 for i, a in enumerate(group_assets_all)}
             for idx, asset in enumerate(group_assets):
+                if stop_event is not None and stop_event.is_set():
+                    raise InterruptedError("已取消联系表准备")
                 row = idx // columns
                 col = idx % columns
                 x0 = MARGIN + col * CELL_W

@@ -111,7 +111,7 @@ class CropDialog(tk.Toplevel):
         ttk.Label(
             body,
             text="点击蓝框加入人物，重新点击其绿色或橙色检测框可移除；拖拽可补框漏检人脸。点击裁切框空白处后可移动，滚轮可细调范围。"
-            "手动框好一张漏检照片后，可用“补齐本组人脸”在同组内查找相似位置。",
+            "手动框好参考照片后，可用“补齐人脸（可跨组）”选择同一人物的组。",
             wraplength=460,
         ).pack(fill="x", anchor="w")
         row = ttk.Frame(body)
@@ -172,7 +172,7 @@ class CropDialog(tk.Toplevel):
         ttk.Button(navigation, text="下一张", command=lambda: self.navigate(1)).pack(side="left", padx=6)
         ttk.Button(navigation, text="下一张未标记", command=self.next_unmarked).pack(side="left", padx=6)
         ttk.Button(navigation, text="重置当前裁切", command=self.reset).pack(side="left", padx=6)
-        ttk.Button(body, text="补齐本组人脸", command=self.assist_group_faces).pack(anchor="w", pady=4)
+        ttk.Button(navigation, text="补齐人脸（可跨组）", command=self.choose_assist_groups).pack(side="left", padx=6)
         for variable in (self.scale, self.shift, self.offset_x, self.ratio):
             variable.trace_add("write", self.schedule_crop_preview)
         self.confidence.trace_add("write", self.schedule_preview)
@@ -424,7 +424,42 @@ class CropDialog(tk.Toplevel):
                 return
         self.caption.configure(text="没有待补选的人脸：已标记和手动隐藏的照片会自动跳过。")
 
-    def assist_group_faces(self):
+    def choose_assist_groups(self):
+        if self._loading or not self.assets:
+            return
+        current = self.assets[self.index].group_id
+        groups = sorted({a.group_id for a in self.assets})
+        chooser = tk.Toplevel(self)
+        chooser.title("选择同一人物所在的组")
+        chooser.transient(self)
+        ttk.Label(chooser, text="可多选。同一人物的不同组可一起查找，跨组候选需逐张确认。",
+                  wraplength=420).pack(padx=12, pady=10)
+        listing = tk.Listbox(chooser, selectmode="multiple", exportselection=False, height=14)
+        listing.pack(fill="both", expand=True, padx=12)
+        counts = {}
+        for a in self.assets:
+            counts[a.group_id] = counts.get(a.group_id, 0) + 1
+        for i, group in enumerate(groups):
+            count = counts[group]
+            listing.insert("end", f"G{group:03d} · {count} 张")
+            if group == current:
+                listing.selection_set(i)
+                listing.see(i)
+        def close():
+            chooser.destroy()
+            self.grab_set()
+        def start():
+            selected = {groups[i] for i in listing.curselection()}
+            if not selected:
+                return
+            close()
+            self.assist_group_faces(selected)
+        ttk.Button(chooser, text="开始查找", command=start).pack(pady=10)
+        chooser.protocol("WM_DELETE_WINDOW", close)
+        fit_window(chooser, (480, 460), minimum_size=(360, 300), parent=self)
+        chooser.grab_set()
+
+    def assist_group_faces(self, group_ids=None):
         """Open the same-group assist window using the current photo as reference."""
         if self._assist_dialog is not None and self._assist_dialog.winfo_exists():
             self._assist_dialog.lift()
@@ -432,7 +467,7 @@ class CropDialog(tk.Toplevel):
         if self._loading:
             return
         if not self.assets:
-            messagebox.showinfo("补齐本组人脸", "请先扫描照片。", parent=self)
+            messagebox.showinfo("补齐人脸", "请先扫描照片。", parent=self)
             return
         self.store_current()
         settings = self.global_settings()
@@ -441,18 +476,19 @@ class CropDialog(tk.Toplevel):
         entry = self.edits.get(key, {})
         box, state = reference_box_from_entry(entry)
         if state == 'multiple':
-            messagebox.showinfo("补齐本组人脸", "第一版仅支持以单人照片作为参考。", parent=self)
+            messagebox.showinfo("补齐人脸", "第一版仅支持以单人照片作为参考。", parent=self)
             return
         if box is None:
-            messagebox.showinfo("补齐本组人脸", "请先在当前照片上画好或确认一个人脸框，再补齐本组。", parent=self)
+            messagebox.showinfo("补齐人脸", "请先在当前照片上画好或确认一个人脸框，再查找候选。", parent=self)
             return
         if not asset.preview_path or not Path(asset.preview_path).is_file():
-            messagebox.showinfo("补齐本组人脸", "参考照片的预览不可读，无法进行同组匹配。", parent=self)
+            messagebox.showinfo("补齐人脸", "参考照片的预览不可读，无法进行匹配。", parent=self)
             return
-        siblings = [a for a in self.assets if a.group_id == asset.group_id]
-        targets = collect_targets(asset, siblings, self.edits, settings.key)
+        chosen_groups = set(group_ids) if group_ids is not None else {asset.group_id}
+        siblings = [a for a in self.assets if a.group_id in chosen_groups or a is asset]
+        targets = collect_targets(asset, siblings, self.edits, settings.key, allow_cross_group=True)
         if not targets:
-            messagebox.showinfo("补齐本组人脸", "本组没有需要补齐的人脸。", parent=self)
+            messagebox.showinfo("补齐人脸", "所选组没有需要补齐的人脸。", parent=self)
             return
         self._assist_assets = {settings.key(a): a for a in siblings}
         self._assist_signatures = {k: asset_signature(a) for k, a in self._assist_assets.items()}
@@ -489,7 +525,7 @@ class CropDialog(tk.Toplevel):
                      and self.edits.get(reference_key, {}) == self._assist_reference_entry)
         if not unchanged:
             messagebox.showwarning(
-                "补齐本组人脸",
+                "补齐人脸",
                 "参考照片的人脸框已修改，本轮候选全部作废，未写入任何结果。",
                 parent=self,
             )
@@ -507,7 +543,7 @@ class CropDialog(tk.Toplevel):
                 skipped.append((item['stem'], "未找到对应照片"))
                 continue
             if (asset_signature(asset) != self._assist_signatures.get(key)
-                    or asset.group_id != reference_asset.group_id):
+                    or asset.group_id != self._assist_signatures[key][0]):
                 skipped.append((item['stem'], "照片、预览或分组已改变"))
                 continue
             if not normalized_box_ok(item['box']):

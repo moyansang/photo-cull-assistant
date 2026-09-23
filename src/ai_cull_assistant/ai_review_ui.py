@@ -190,6 +190,7 @@ class ReviewDialog(tk.Toplevel):
         self._api_pending: list[dict[str, Any]] = []
         self._api_active = False
         self._preparing_task = False
+        self._prepare_stop = threading.Event()
         self._pause_requested = False
         self._closing_requested = False
         self._poll_token: str | None = None
@@ -645,13 +646,17 @@ class ReviewDialog(tk.Toplevel):
             self.status_var.set("没有可提交 AI 的照片；初筛弃置结果仍可导出到 LR。")
             return
         preferences = self._preferences()
+        self._prepare_stop.clear()
         self._set_preparing(True)
         self.status_var.set("正在准备本轮联系表，请稍候…")
         def work():
             try:
                 # File fingerprint refresh can stat every source photo.  Keep it
                 # off the Tk thread even when the current task is reusable.
-                self.project.refresh(self.assets, self.crop_settings)
+                self.project.refresh(self.assets, self.crop_settings, stop_event=self._prepare_stop)
+                if self._prepare_stop.is_set():
+                    self._api_queue.put(("prepare_cancelled",))
+                    return
                 signature = self.project.home_sheet_signature(self.assets, self.crop_settings, self.home_pages)
                 if reuse_unchanged:
                     if self.project.can_reuse_task(signature):
@@ -672,12 +677,13 @@ class ReviewDialog(tk.Toplevel):
                     task = self.project.create_task(
                         self.assets, self.crop_settings, preferences, kind=kind,
                         photo_ids=changed, replace_current=False, home_signature=signature,
+                        stop_event=self._prepare_stop,
                     )
                     self._api_queue.put(("prepared", task, submit_after))
                     return
                 task = self.project.create_task(self.assets, self.crop_settings, preferences,
                     kind=kind, photo_ids=photo_ids, replace_current=(kind == "initial" and photo_ids is None),
-                    home_signature=signature)
+                    home_signature=signature, stop_event=self._prepare_stop)
                 self._api_queue.put(("prepared", task, submit_after))
             except Exception as exc:
                 self._api_queue.put(("prepare_error", str(exc)))
@@ -896,8 +902,12 @@ class ReviewDialog(tk.Toplevel):
                 self.status_var.set("准备失败：" + event[1])
                 messagebox.showerror("准备失败", event[1], parent=self)
             return
-        if event[0] in ("prepared", "prepare_error", "prepared_empty"):
+        if event[0] in ("prepared", "prepare_error", "prepared_empty", "prepare_cancelled"):
             self._set_preparing(False)
+            if self._closing_requested:
+                self._save_ui_settings()
+                self._destroy_now()
+                return
             if event[0] == "prepared_empty":
                 self._refresh_tasks()
                 self._review_dirty = True
@@ -1214,7 +1224,8 @@ class ReviewDialog(tk.Toplevel):
     def _close(self) -> None:
         if self._preparing_task:
             self._closing_requested = True
-            self.status_var.set("正在保存本轮任务，完成后关闭…")
+            self._prepare_stop.set()
+            self.status_var.set("正在取消准备，当前图片处理完后关闭；已有结果保留…")
             return
         if self._api_active:
             self._pause_requested = True
