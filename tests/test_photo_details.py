@@ -40,7 +40,7 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
         assert detail_features(assets[0],d.global_settings()).face is not None
         d.navigate(1)
         assert d.scale.get()==1 and d.shift.get()==0 and d.ratio.get()=='124:150'
-        d.hide_face(); d.confidence.set(.95)
+        d.clear_face_selection(); d.confidence.set(.95)
         d.navigate(-1)
         assert d.scale.get()==1.4 and d.shift.get()==.1
         assert d.offset_x.get()==.2

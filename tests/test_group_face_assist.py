@@ -643,3 +643,43 @@ def test_cross_group_confirm_merges_into_draft(monkeypatch, tmp_path):
     finally:
         dialog.destroy()
         root.destroy()
+
+
+def test_confirmation_label_and_direct_drawing(monkeypatch, tmp_path):
+    root, dialog, assets, saved, ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
+    key = dialog.global_settings().key(assets[1])
+    monkeypatch.setattr(group_face_assist, 'propose_group_faces', fake_propose({key: (.25,.3,.12,.15)}))
+    try:
+        dialog.assist_group_faces()
+        assist = dialog._assist_dialog
+        pump(root, lambda: assist._finished)
+        assist.tree.selection_set(key)
+        assist.show_current()
+        assist.confirm_current()
+        assert assist.tree.item(key, 'values')[2] == '已确认'
+        x,y,w,h,_,_ = assist._image_rect
+        assist.pointer_down(SimpleNamespace(x=x+w*.6,y=y+h*.6))
+        assist.pointer_up(SimpleNamespace(x=x+w*.8,y=y+h*.8))
+        assert not assist.rows[key]['accepted']
+        assert assist.tree.item(key, 'values')[2] == '手动调整'
+        assert assist._selected_box_key is None
+        assist.pointer_down(SimpleNamespace(x=x+w*.7,y=y+h*.7))
+        assert assist._selected_box_key == key
+    finally:
+        dialog.destroy()
+        root.destroy()
+
+
+def test_clear_selected_faces_and_previous_unmarked(monkeypatch, tmp_path):
+    root, dialog, assets, saved, ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
+    try:
+        key = dialog.global_settings().key(assets[0])
+        dialog.clear_face_selection()
+        assert dialog.edits[key]['selected_faces'] == []
+        assert 'manual_face' not in dialog.edits[key]
+        dialog.index = 1
+        dialog.previous_unmarked()
+        assert dialog.index == 0
+    finally:
+        dialog.destroy()
+        root.destroy()

@@ -40,7 +40,6 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self._worker = None
         self._awaiting_done = False
         self._finished = False
-        self._draw_mode = False
         self._drag_start = None
         self._drag_box = None
         self._drag_key = None
@@ -70,8 +69,6 @@ class GroupFaceAssistDialog(tk.Toplevel):
         buttons = ttk.Frame(footer)
         buttons.pack(fill='x', pady=(6, 0))
         ttk.Button(buttons, text='确认此框', command=self.confirm_current).pack(side='left', padx=(0, 6))
-        self.adjust_button = ttk.Button(buttons, text='手动调整', command=self.toggle_draw_mode)
-        self.adjust_button.pack(side='left', padx=6)
         ttk.Button(buttons, text='跳过', command=self.skip_current).pack(side='left', padx=6)
         ttk.Button(buttons, text='取消', command=self.destroy).pack(side='right', padx=(6, 0))
         self.accept_button = ttk.Button(buttons, text='采用选中候选', command=self.accept_selected)
@@ -194,7 +191,9 @@ class GroupFaceAssistDialog(tk.Toplevel):
         row = self.rows[key]
         proposal = row['proposal']
         status = row['status']
-        if status not in ('手动调整', '跳过') and proposal is not None:
+        if row['accepted']:
+            status = '已确认'
+        elif status not in ('手动调整', '跳过') and proposal is not None:
             status = LEVEL_LABELS.get(proposal.level, proposal.level)
         mark = '☑' if row['accepted'] else '☐'
         self.tree.item(key, values=(mark, row['stem'], status))
@@ -229,8 +228,10 @@ class GroupFaceAssistDialog(tk.Toplevel):
         target = row['target']
         proposal = row['proposal']
         reason = proposal.reason if proposal else '尚未计算'
-        if row['status'] == '手动调整':
-            reason = '在右侧预览上按住拖动画出人脸框'
+        if row['accepted']:
+            reason = '已确认；点击采用选中候选后写入人脸编辑草稿'
+        elif row['status'] == '手动调整':
+            reason = '人脸框已修改，请确认；点击框后可拖动，滚轮缩放'
         elif row['status'] == '跳过':
             reason = '已跳过本张'
         self.reason_label.configure(text=f"原因：{reason}")
@@ -261,7 +262,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
                       left + (x + w) * shown.width, top + (y + h) * shown.height)
             if self._selected_box_key == key:
                 self.preview.create_rectangle(*bounds, outline='#e6ae00', width=3)
-            elif row['accepted']:
+            elif row['accepted'] or row['status'] == '手动调整':
                 self.preview.create_rectangle(*bounds, outline='#00aa66', width=3)
             else:
                 self.preview.create_rectangle(*bounds, outline='#3399ff', width=2, dash=(6, 4))
@@ -313,9 +314,10 @@ class GroupFaceAssistDialog(tk.Toplevel):
             return
         row = self.rows[key]
         if row['box'] is None:
-            messagebox.showinfo('补齐人脸', '本张还没有可用候选框，请先手动调整画出范围。', parent=self)
+            messagebox.showinfo('补齐人脸', '本张还没有可用候选框，请直接在图片上拖拽画框。', parent=self)
             return
         row['accepted'] = True
+        self._selected_box_key = None
         self._update_row(key)
         self.show_current()
 
@@ -335,12 +337,6 @@ class GroupFaceAssistDialog(tk.Toplevel):
             self.tree.selection_set(values[index + 1])
             self.tree.see(values[index + 1])
 
-    def toggle_draw_mode(self):
-        if self._awaiting_done:
-            return
-        self._draw_mode = not self._draw_mode
-        self.adjust_button.configure(text='退出手动调整' if self._draw_mode else '手动调整')
-
     def pointer_down(self, event):
         if not self._image_rect or self._awaiting_done:
             return
@@ -352,13 +348,12 @@ class GroupFaceAssistDialog(tk.Toplevel):
             return
         point = ((event.x - ix) / dw, (event.y - iy) / dh)
         box = self.rows[key]['box']
-        if box and not self._draw_mode and box[0] <= point[0] <= box[0] + box[2] and box[1] <= point[1] <= box[1] + box[3]:
+        if box and box[0] <= point[0] <= box[0] + box[2] and box[1] <= point[1] <= box[1] + box[3]:
             self._drag_box = tuple(box)
             self._selected_box_key = key
-        elif self._draw_mode or box is None:
-            self._drag_box = None
         else:
-            return
+            self._drag_box = None
+            self._selected_box_key = None
         self._drag_key = key
         self._drag_start = point
         self.show_current()
@@ -400,8 +395,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
         box = group_face_assist.clamp_box(
             (min(ax, bx) - ix) / dw, (min(ay, by) - iy) / dh, abs(bx - ax) / dw, abs(by - ay) / dh)
         self._set_manual_box(box)
-        self._draw_mode = False
-        self.adjust_button.configure(text='手动调整')
+        self._selected_box_key = None
+        self.show_current()
 
     def _set_manual_box(self, box):
         key = self._current_key()

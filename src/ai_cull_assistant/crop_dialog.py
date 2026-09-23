@@ -165,11 +165,12 @@ class CropDialog(tk.Toplevel):
         manual = ttk.Frame(body)
         manual.pack(pady=4)
         ttk.Button(manual, text="恢复本张自动选脸", command=self.auto_face).pack(side="left", padx=6)
-        ttk.Button(manual, text="隐藏本张小窗", command=self.hide_face).pack(side="left", padx=6)
+        ttk.Button(manual, text="去除所有框选", command=self.clear_face_selection).pack(side="left", padx=6)
         navigation = ttk.Frame(body)
         navigation.pack(pady=8)
         ttk.Button(navigation, text="上一张", command=lambda: self.navigate(-1)).pack(side="left", padx=6)
         ttk.Button(navigation, text="下一张", command=lambda: self.navigate(1)).pack(side="left", padx=6)
+        ttk.Button(navigation, text="上一张未标记", command=self.previous_unmarked).pack(side="left", padx=6)
         ttk.Button(navigation, text="下一张未标记", command=self.next_unmarked).pack(side="left", padx=6)
         ttk.Button(navigation, text="重置当前裁切", command=self.reset).pack(side="left", padx=6)
         ttk.Button(navigation, text="补齐人脸（可跨组）", command=self.choose_assist_groups).pack(side="left", padx=6)
@@ -388,14 +389,17 @@ class CropDialog(tk.Toplevel):
             self.load_current()
             self.render()
 
-    def next_unmarked(self):
+    def previous_unmarked(self):
+        self.next_unmarked(direction=-1)
+
+    def next_unmarked(self, direction=1):
         if not self.assets:
             self.caption.configure(text="请先扫描照片，再查找未标记人脸。")
             return
         self.store_current()
         settings = self.global_settings()
         for step in range(1, len(self.assets) + 1):
-            index = (self.index + step) % len(self.assets)
+            index = (self.index + direction * step) % len(self.assets)
             asset = self.assets[index]
             entry = settings.photos.get(settings.key(asset), {})
             # An explicitly hidden inset is already a user decision.
@@ -780,12 +784,19 @@ class CropDialog(tk.Toplevel):
             self.load_current()
             self.render()
 
-    def hide_face(self):
-        if self.assets:
-            self.store_current()
-            self._crop_selected = False
-            self.current_entry()['hidden'] = True
-            self.render()
+    def clear_face_selection(self):
+        if not self.assets:
+            return
+        self.store_current()
+        entry = self.current_entry()
+        for name in ('manual_face', 'face_crops', 'hidden'):
+            entry.pop(name, None)
+        entry['selected_faces'] = []
+        self._active_face_key = None
+        self._person_dirty = False
+        self._crop_selected = False
+        self.load_current()
+        self.render()
 
     def pointer_down(self, event):
         if not self._image_rect:
