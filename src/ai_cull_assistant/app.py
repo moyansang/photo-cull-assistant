@@ -33,7 +33,7 @@ from .shared_api import (
 )
 from .window_layout import fit_window
 from .ui_help import install_page_chrome, install_control_help
-from .ui_style import apply_page
+from .ui_style import set_button_style, apply_page
 from .workspace_layout import workspace_path
 from .workspace_log import append_log, visible_log
 from dataclasses import asdict
@@ -383,8 +383,10 @@ class App(tk.Tk):
     def _build_ui(self) -> None:
         toolbar = install_page_chrome(self, "home")
         self.update_button = toolbar.buttons["update"]
-        frame = ttk.Frame(self, padding=(16, 12))
+        frame = ttk.Frame(self, padding=(24, 16))
         frame.pack(fill="both", expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(5, weight=1)
 
         self.input_var = tk.StringVar(value=self.saved_paths["input"])
         self.workspace_var = tk.StringVar(value=self.saved_paths["workspace"])
@@ -395,107 +397,97 @@ class App(tk.Tk):
         self.body_screening_var = tk.BooleanVar(value=self.saved_options.get('body_screening') is True)
 
         self.no_updates_var = tk.BooleanVar(value=self.saved_options.get('no_auto_updates') is True)
-        row = 0
-        self._path_row(frame, row, "照片文件夹", self.input_var, self._choose_input)
-        ttk.Button(frame, text="重新定位原照片", command=self._relink_source).grid(row=row, column=6, padx=(4, 0))
-        row += 1
-        self._path_row(frame, row, "工作区", self.workspace_var, self._choose_workspace)
-        row += 1
 
-        ttk.Label(frame, text="分组灵敏度").grid(row=row, column=0, sticky="w", pady=6)
-        ttk.Combobox(frame, textvariable=self.preset_var, values=list(GROUPING_LABELS), state="readonly", width=12).grid(row=row, column=1, sticky="w")
-        ttk.Label(frame, text="每页照片数").grid(row=row, column=2, sticky="e")
-        ttk.Spinbox(frame, from_=8, to=60, textvariable=self.per_page_var, width=8).grid(row=row, column=3, sticky="w")
-        ttk.Label(frame, text="列数").grid(row=row, column=4, sticky="e")
-        ttk.Spinbox(frame, from_=2, to=6, textvariable=self.columns_var, width=8).grid(row=row, column=5, sticky="w")
-        row += 1
+        form = ttk.Frame(frame)
+        form.grid(row=0, column=0, sticky="ew")
+        form.columnconfigure(1, weight=1)
+        self._path_row(form, 0, "照片文件夹", self.input_var, self._choose_input)
+        ttk.Button(form, text="重新定位原照片", command=self._relink_source).grid(row=0, column=3, padx=(8, 0))
+        self._path_row(form, 1, "工作区", self.workspace_var, self._choose_workspace)
 
-        ttk.Checkbutton(
-            frame,
-            text="明显虚焦／严重抖动弃置",
-            variable=self.screening_var,
-        ).grid(row=row, column=0, columnspan=6, sticky="w", pady=(2, 8))
-        row += 1
-
-        ttk.Checkbutton(frame, text="身体清晰度检查（实验）",
-                        variable=self.body_screening_var).grid(row=row, column=0, columnspan=6, sticky='w', pady=(0, 6))
-        row += 1
-
-        ttk.Label(frame, text="AI 服务").grid(row=row, column=0, sticky="w", pady=6)
+        options = ttk.Frame(form)
+        options.grid(row=2, column=0, columnspan=4, sticky="w", pady=(14, 8))
+        ttk.Label(options, text="分组灵敏度").pack(side="left", padx=(0, 12))
+        ttk.Combobox(options, textvariable=self.preset_var, values=list(GROUPING_LABELS), state="readonly", width=10).pack(side="left")
+        ttk.Label(options, text="每页照片数").pack(side="left", padx=(28, 12))
+        ttk.Spinbox(options, from_=8, to=60, textvariable=self.per_page_var, width=5).pack(side="left")
+        ttk.Label(options, text="列数").pack(side="left", padx=(28, 12))
+        ttk.Spinbox(options, from_=2, to=6, textvariable=self.columns_var, width=5).pack(side="left")
+        checks = ttk.Frame(form)
+        checks.grid(row=3, column=0, columnspan=4, sticky="w", pady=(0, 10))
+        ttk.Checkbutton(checks, text="明显虚焦／严重抖动弃置", variable=self.screening_var).pack(side="left", padx=(0, 24))
+        ttk.Checkbutton(checks, text="身体清晰度检查（实验）", variable=self.body_screening_var).pack(side="left")
+        ttk.Label(form, text="AI 服务").grid(row=4, column=0, sticky="w", padx=(0, 16))
         self.api_profile_var = tk.StringVar(value=NO_API_LABEL)
-        self.api_profile_combo = ttk.Combobox(
-            frame,
-            textvariable=self.api_profile_var,
-            values=(NO_API_LABEL,),
-            state="readonly",
-            width=36,
-        )
-        self.api_profile_combo.grid(row=row, column=1, columnspan=5, sticky="ew", padx=(0, 8))
+        self.api_profile_combo = ttk.Combobox(form, textvariable=self.api_profile_var, values=(NO_API_LABEL,), state="readonly", width=36)
+        self.api_profile_combo.grid(row=4, column=1, sticky="ew")
         self.api_profile_combo.bind("<<ComboboxSelected>>", self._api_selection_changed)
         self._api_profile_ids = {}
         self._refresh_api_profiles()
-        row += 1
 
         first = ttk.Frame(frame)
-        first.grid(row=row, column=0, columnspan=7, sticky="w", pady=(8, 4))
-        self.scan_button = ttk.Button(first, text="扫描图片", command=self._run_scan_thread)
-        self.scan_button.pack(side="left", padx=(0, 8))
-        self.group_button = ttk.Button(first, text="编辑选片组", command=self._open_group_editor)
-        self.group_button.pack(side="left", padx=(0, 8))
-        self.crop_button = ttk.Button(first, text="检测/调整人脸框", command=self._open_crop_settings)
-        self.crop_button.pack(side="left", padx=(0, 8))
-        second = first
-        self.focus_button = ttk.Button(second, text="AI 复核", command=self._run_focus_review)
-        self.focus_button.pack(side="left", padx=(0, 8))
-        self.sheets_button = ttk.Button(second, text="生成联系表", command=self._generate_contact_sheets)
-        self.sheets_button.pack(side="left", padx=(0, 8))
-        self.review_button = ttk.Button(second, text="AI 选片与导出", command=self._open_ai_review)
-        self.review_button.pack(side="left")
-        row += 1
+        first.grid(row=1, column=0, sticky="ew", pady=(24, 10))
+        workflow = [("scan_button", "扫描图片", self._run_scan_thread),
+                    ("group_button", "编辑选片组", self._open_group_editor),
+                    ("crop_button", "检测/调整人脸框", self._open_crop_settings),
+                    ("focus_button", "AI 复核", self._run_focus_review),
+                    ("sheets_button", "生成联系表", self._generate_contact_sheets),
+                    ("review_button", "AI 选片与导出", self._open_ai_review)]
+        for col, (name, label, callback) in enumerate(workflow):
+            button = ttk.Button(first, text=label, command=callback)
+            button.grid(row=0, column=col, sticky="ew", padx=(0, 6 if col<5 else 0))
+            first.columnconfigure(col, weight=1)
+            setattr(self, name, button)
+
         controls = ttk.Frame(frame)
-        controls.grid(row=row, column=0, columnspan=6, sticky="w", pady=4)
+        controls.grid(row=2, column=0, sticky="ew", pady=(0, 16))
         self.stop_button = ttk.Button(controls, text="停止处理", command=self._stop_processing, state="disabled")
         self.stop_button.pack(side="left", padx=(0, 8))
         self.continue_button = ttk.Button(controls, text="继续处理", command=self._continue_processing, state="disabled")
-        self.continue_button.pack(side="left", padx=(0, 8))
+        self.continue_button.pack(side="left", padx=(0, 16))
         self.contact_button = ttk.Button(controls, text="打开联系表目录", command=self._open_contact_dir)
-        self.contact_button.pack(side="left", padx=(0, 8))
+        self.contact_button.pack(side="left")
         self.clear_workspace_button = ttk.Button(controls, text="清空工作区", command=self._clear_workspace)
-        self.clear_workspace_button.pack(side="left", padx=(0, 8))
+        self.clear_workspace_button.pack(side="right")
         self.clear_log_button = ttk.Button(controls, text="清空日志", command=self._clear_log)
-        self.clear_log_button.pack(side="left")
-        row += 1
+        self.clear_log_button.pack(side="right", padx=(0, 8))
+
+        status = ttk.Frame(frame)
+        status.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         self.next_step_var = tk.StringVar(value="推荐下一步：扫描图片")
-        ttk.Label(frame, textvariable=self.next_step_var).grid(row=row, column=0, columnspan=6, sticky="w", pady=(4, 6))
-        row += 1
+        self.next_step_label = ttk.Label(status, textvariable=self.next_step_var)
+        self.next_step_label.pack(side="left")
+        progress = ttk.Frame(frame)
+        progress.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+        progress.columnconfigure(1, weight=1)
         self.progress_var = tk.DoubleVar(value=0)
         self.progress_label = tk.StringVar(value="扫描图片进度：")
         self.progress_text = tk.StringVar(value="0%")
-        ttk.Label(frame, textvariable=self.progress_label).grid(row=row, column=0, sticky="w")
-        ttk.Progressbar(frame, variable=self.progress_var, maximum=100).grid(row=row, column=1, columnspan=4, sticky="ew", padx=(0, 8))
-        ttk.Label(frame, textvariable=self.progress_text).grid(row=row, column=5, sticky="e")
-        row += 1
-        ttk.Label(frame, text="日志：").grid(row=row, column=0, columnspan=6, sticky="w", pady=(4, 0))
-        row += 1
+        ttk.Label(progress, textvariable=self.progress_label).grid(row=0, column=0, sticky="w", padx=(0, 16))
+        ttk.Progressbar(progress, variable=self.progress_var, maximum=100).grid(row=0, column=1, sticky="ew")
+        ttk.Label(progress, textvariable=self.progress_text, width=5, anchor="e").grid(row=0, column=2, padx=(12, 0))
+
         log_frame = ttk.Frame(frame)
-        log_frame.grid(row=row, column=0, columnspan=7, sticky="nsew")
-        self.log_text = tk.Text(log_frame, height=4, wrap="word", state="disabled")
-        scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        log_frame.grid(row=5, column=0, sticky="nsew")
+        ttk.Label(log_frame, text="日志").pack(anchor="w", pady=(0, 8))
+        log_body = ttk.Frame(log_frame)
+        log_body.pack(fill="both", expand=True)
+        self.log_text = tk.Text(log_body, height=4, wrap="word", state="disabled")
+        scrollbar = ttk.Scrollbar(log_body, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self.log_text.pack(side="left", fill="both", expand=True)
-
-        for col in range(6):
-            frame.columnconfigure(col, weight=1)
-        frame.rowconfigure(row, weight=1)
         install_control_help(self, "home")
         apply_page(self)
-        self.clear_workspace_button.configure(style="Danger.Cull.TButton")
+        self.next_step_label.configure(style="Muted.TLabel")
+        for button in (self.stop_button, self.continue_button, self.contact_button, self.clear_log_button):
+            button.configure(style="secondary.Link.TButton")
+        set_button_style(self.clear_workspace_button, "danger-link")
 
     def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: tk.StringVar, command) -> None:
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=6)
-        ttk.Entry(parent, textvariable=variable).grid(row=row, column=1, columnspan=4, sticky="ew", padx=(0, 8))
-        ttk.Button(parent, text="选择", command=command).grid(row=row, column=5, sticky="e")
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5, padx=(0, 16))
+        ttk.Entry(parent, textvariable=variable).grid(row=row, column=1, sticky="ew")
+        ttk.Button(parent, text="选择", command=command).grid(row=row, column=2, padx=(8, 0))
 
     def _choose_input(self) -> None:
         path = filedialog.askdirectory(title="选择照片文件夹")

@@ -16,7 +16,7 @@ from .ai_api import DEFAULT_TIMEOUT, call_model, load_profiles, save_profile
 from .ai_presets import PRESETS, matching_preset, preset_profile
 from .settings import read_values, save_values
 from .ui_help import install_control_help, install_page_chrome
-from .ui_style import apply_page
+from .ui_style import set_button_style, apply_page
 from .window_layout import fit_window
 
 
@@ -99,7 +99,7 @@ class ApiConfigDialog(tk.Toplevel):
             self._apply_new_preset(remembered_preset)
         self._sync_advanced()
         # Keep geometry stable during native mouse press/release dispatch.
-        fit_window(self, (740, 560), minimum_size=(640, 480), parent=self.master)
+        fit_window(self, (740, 460), minimum_size=(640, 420), parent=self.master)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._poll_token = self.after(100, self._poll_events)
         # The editor is an owned, modeless window. A hidden child must never
@@ -185,7 +185,7 @@ class ApiConfigDialog(tk.Toplevel):
             self.advanced_entries.append(entry)
         install_control_help(self, "api")
         apply_page(self)
-        self.save_button.configure(style="Primary.Cull.TButton")
+        set_button_style(self.save_button, "primary")
 
         self._mutable_widgets = [
             (self.profile_box, "readonly"),

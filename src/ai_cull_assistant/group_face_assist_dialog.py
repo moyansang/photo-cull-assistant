@@ -20,7 +20,7 @@ from PIL import Image, ImageOps, ImageTk
 
 from . import group_face_assist
 from .ui_help import install_control_help, install_page_chrome
-from .ui_style import apply_page, COLORS
+from .ui_style import set_button_style, apply_page, COLORS
 from .window_layout import fit_window
 
 LEVEL_LABELS = {'reliable': '可靠', 'review': '待确认', 'missing': '未找到'}
@@ -151,7 +151,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self._schedule_visible_thumbnails()
         install_control_help(self, "assist")
         apply_page(self)
-        self.accept_button.configure(style="Primary.Cull.TButton")
+        set_button_style(self.accept_button, "primary")
         from .ui_help import ToolTip
         self.reference_label._filename_tip = ToolTip(self.reference_label, reference.stem)
         self.tree._filename_tip = ToolTip(self.tree, "")

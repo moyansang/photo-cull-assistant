@@ -50,6 +50,7 @@ pyinstaller `
     --add-data "src/ai_cull_assistant/data;ai_cull_assistant/data" `
     --add-data "build/body_models;ai_cull_assistant/data/body_models" `
     --add-data "body_models;ai_cull_assistant/data/body_model_sources" `
+    --collect-data ttkbootstrap `
     --collect-data cv2 `
     --collect-binaries cv2 `
     --collect-binaries rawpy `

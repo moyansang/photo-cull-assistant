@@ -19,6 +19,7 @@ from .group_face_assist_dialog import GroupFaceAssistDialog
 from .subject import face_crop, detail_features, detail_features_list
 from .preview import ensure_preview
 from .ui_help import install_control_help, install_page_chrome
+from .ui_style import apply_page, set_button_style, COLORS
 from .window_layout import fit_window
 
 
@@ -143,7 +144,7 @@ class CropDialog(tk.Toplevel):
         self.ratio_picker.pack(side="left", padx=(6, 0))
         self.caption = ttk.Label(body)
         self.caption.grid(row=1, column=0, sticky="ew", pady=(2, 4))
-        self.canvas = tk.Canvas(body, width=1, height=400, background="#eeeeee", highlightthickness=0)
+        self.canvas = tk.Canvas(body, width=1, height=400, background=COLORS["photo"], highlightthickness=0)
         self.canvas.grid(row=2, column=0, sticky="nsew")
         self.canvas.bind("<Configure>", self.schedule_preview)
         self.canvas.bind('<ButtonPress-1>', self.pointer_down)
@@ -164,9 +165,9 @@ class CropDialog(tk.Toplevel):
         for column, (label, command) in enumerate((
             ("上一张", lambda: self.navigate(-1)),
             ("下一张", lambda: self.navigate(1)),
+            ("重置当前裁切", self.reset),
             ("上一张未标记", self.previous_unmarked),
             ("下一张未标记", self.next_unmarked),
-            ("重置当前裁切", self.reset),
             ("补齐人脸", self.choose_assist_groups),
         )):
             ttk.Button(navigation, text=label, command=command).grid(
@@ -179,6 +180,7 @@ class CropDialog(tk.Toplevel):
         self.load_current()
         self.render()
         install_control_help(self, "faces")
+        apply_page(self)
         self.grab_set()
 
     def settings(self):
@@ -703,9 +705,9 @@ class CropDialog(tk.Toplevel):
                 self.photos.append(ImageTk.PhotoImage(tile, master=self))
                 self.canvas.create_image(final_x, canvas_height / 2, image=self.photos[-1])
                 inset_label = "最终小窗 · 124×150" if getattr(subject, 'face', None) else "头部定位，清晰度待确认"
-                self.canvas.create_text(final_x, max(10, (canvas_height - tile.height) / 2 - 12), text=inset_label)
+                self.canvas.create_text(final_x, max(10, (canvas_height - tile.height) / 2 - 12), text=inset_label, fill=COLORS['photo_text'])
             else:
-                self.canvas.create_text(final_x, canvas_height / 2, text="未检测到可靠人脸\n本张不显示小窗", justify="center")
+                self.canvas.create_text(final_x, canvas_height / 2, text="未检测到可靠人脸\n本张不显示小窗", justify="center", fill=COLORS['photo_text'])
             selected_count = len(self._selected_boxes)
             if 'selected_faces' in entry:
                 current_person = f"人物 {selected_keys.index(self._active_face_key) + 1}" if self._active_face_key in selected_keys else "未选择人物"
@@ -734,7 +736,7 @@ class CropDialog(tk.Toplevel):
                     tags="crop-outline",
                 )
         except (OSError, ValueError) as exc:
-            self.canvas.create_text(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, text=f"预览不可用：{exc}")
+            self.canvas.create_text(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, text=f"预览不可用：{exc}", fill=COLORS['photo_text'])
 
     def global_settings(self):
         return CropSettings(detection_confidence=round(self._confidence_value(), 2), photos=deepcopy(self.edits))

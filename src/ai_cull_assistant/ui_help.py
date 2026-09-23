@@ -175,7 +175,7 @@ def install_control_help(container, page_id='home'):
                 label = str(child.cget('text'))
                 text = CONTROL_HELP.get(label, '')
                 if not text and label:
-                    text = f'{label}。更多使用方法见右上角帮助。'
+                    text = f'{label}。更多使用方法见顶部帮助。'
             elif isinstance(child, (ttk.Entry, ttk.Spinbox, ttk.Combobox)):
                 label = ''
                 try:
@@ -269,12 +269,7 @@ def install_page_chrome(window, page_id):
     bar = ttk.Frame(window, padding=(4, 1))
     bar.pack(side='top', fill='x')
     window._page_chrome = bar
-    style = ttk.Style(window)
-    base = font.nametofont('TkDefaultFont')
-    tiny = base.copy()
-    tiny.configure(size=max(7, abs(int(base.cget('size'))) - 2))
-    bar._shortcut_font = tiny
-    style.configure('PageNav.TButton', padding=(5, 1))
+    from .ui_style import style_page_chrome
     def go(action):
         if action in buttons and buttons[action].instate(['disabled']):
             return
@@ -293,22 +288,20 @@ def install_page_chrome(window, page_id):
             callback()
     buttons = {}
     for name, action, shortcut in [('主页面', 'home', 'Alt+1'), ('配置 API', 'api', 'Alt+2'), ('检查更新', 'update', 'Alt+3'), ('LR 插件', 'lr', 'Alt+4')]:
-        item = ttk.Frame(bar)
-        item.pack(side='left', padx=(0, 6))
-        button = ttk.Button(item, text=name, style='PageNav.TButton', command=lambda a=action: go(a))
-        button.pack(side='left')
-        ttk.Label(item, text=shortcut, font=tiny).pack(side='left')
+        button = ttk.Button(bar, text=name, command=lambda a=action: go(a))
+        button.pack(side='left', padx=(0, 4))
+        button._control_tooltip = ToolTip(button, f'{name}（{shortcut}）')
         if action == 'home':
             button._always_available = True
         buttons[action] = button
         window.bind('<Alt-Key-' + shortcut[-1] + '>', lambda _e, a=action: (go(a), 'break')[1], add='+')
-    help_frame = ttk.Frame(bar)
-    help_frame.pack(side='right')
-    help_button = ttk.Button(help_frame, text='帮助', style='PageNav.TButton', command=lambda: show_page_help(window, page_id))
+    help_button = ttk.Button(bar, text='帮助', command=lambda: show_page_help(window, page_id))
     help_button._always_available = True
     help_button.pack(side='left')
-    ttk.Label(help_frame, text='F1', font=tiny).pack(side='left', padx=(0, 5))
+    help_button._control_tooltip = ToolTip(help_button, '当前页面使用帮助（F1）')
+    bar.help_button = help_button
     window.bind('<F1>', lambda _e: (show_page_help(window, page_id), 'break')[1], add='+')
     bar.buttons = buttons
+    style_page_chrome(window)
     window.after_idle(lambda: install_control_help(window, page_id) if window.winfo_exists() else None)
     return bar

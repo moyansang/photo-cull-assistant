@@ -12,6 +12,7 @@ from typing import Any, Callable, Iterable
 
 from PIL import Image, ImageOps, ImageTk
 from .ui_help import install_control_help, install_page_chrome
+from .ui_style import apply_page, set_button_style, COLORS
 from .window_layout import fit_window
 
 
@@ -262,6 +263,9 @@ class ReviewDialog(tk.Toplevel):
         self._build_web_tab()
         self._build_review_tab()
         install_control_help(self, "review")
+        apply_page(self)
+        set_button_style(self.run_button, "primary")
+        set_button_style(self.export_button, "primary")
 
     def _tab_changed(self, _event=None):
         # Keep the preference panel in place across tabs so returning never
@@ -292,15 +296,15 @@ class ReviewDialog(tk.Toplevel):
         ttk.Label(prefs, text="目标数量").grid(row=1, column=2, sticky="w", pady=(5, 0))
         ttk.Entry(prefs, textvariable=self.preference_vars["target"]).grid(row=1, column=3, sticky="ew", pady=(5, 0))
         ttk.Label(prefs, text="补充要求").grid(row=2, column=0, sticky="w", pady=(5, 0))
-        ttk.Entry(prefs, textvariable=self.preference_vars["extra"]).grid(row=2, column=1, columnspan=3, sticky="ew", pady=(5, 0))
+        ttk.Entry(prefs, textvariable=self.preference_vars["extra"]).grid(row=2, column=1, columnspan=2, sticky="ew", pady=(5, 0), padx=(0, 10))
         for col in (1, 3):
             prefs.columnconfigure(col, weight=1)
         create = ttk.Frame(prefs)
-        create.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        create.grid(row=2, column=3, sticky="e", pady=(5, 0))
         self.refine_button = ttk.Button(create, text="精选照片再选一轮", command=self._create_refine)
         self.refine_button.pack(side="left", padx=(0, 8))
 
-        api = ttk.LabelFrame(tab, text="API 自动提交", padding=8)
+        api = ttk.Frame(tab, padding=8)
         api.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         ttk.Label(api, text="主页面 API").grid(row=0, column=0, sticky="w")
         ttk.Label(api, textvariable=self.profile_var).grid(row=0, column=1, sticky="w", padx=8)
@@ -312,11 +316,11 @@ class ReviewDialog(tk.Toplevel):
         self.resubmit_button = ttk.Button(actions, text="重新提交", command=self._resubmit_api)
         self.resubmit_button.grid(row=0, column=1, sticky="w")
         self.pause_button = ttk.Button(actions, text="完成当前批后暂停", command=self._pause_api, state="disabled")
-        self.pause_button.grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(5, 0))
+        self.pause_button.grid(row=0, column=2, sticky="w", padx=(8, 8))
         self.split_button = ttk.Button(actions, text="拆分所选批次重试", command=self._split_selected_batch)
-        self.split_button.grid(row=1, column=1, sticky="w", pady=(5, 0))
+        self.split_button.grid(row=0, column=3, sticky="w")
 
-        batches = ttk.LabelFrame(tab, text="批次", padding=8)
+        batches = ttk.Frame(tab, padding=8)
         batches.grid(row=1, column=0, sticky="nsew")
         columns = ("status", "photos", "images", "error")
         self.batch_tree = ttk.Treeview(batches, columns=columns, show="tree headings", height=7, selectmode="browse")

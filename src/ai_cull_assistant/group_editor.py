@@ -15,6 +15,7 @@ from PIL import Image, ImageOps, ImageTk
 from .grouping import merge_adjacent_groups, split_group_at
 from .models import PhotoAsset
 from .ui_help import install_control_help, install_page_chrome
+from .ui_style import apply_page, set_button_style, COLORS
 from .window_layout import fit_window
 
 
@@ -210,6 +211,7 @@ class GroupEditor(tk.Toplevel):
         self._redraw_rows()
         self._redraw_detail()
         install_control_help(self, "groups")
+        apply_page(self)
 
     def _build_ui(self) -> None:
         header = ttk.Frame(self, padding=(10, 6, 10, 4))
@@ -235,7 +237,7 @@ class GroupEditor(tk.Toplevel):
 
         upper = ttk.Frame(self, padding=(10, 0, 10, 6))
         upper.pack(side="top", fill="both", expand=True)
-        self.rows_canvas = tk.Canvas(upper, highlightthickness=0, background="#f4f4f4")
+        self.rows_canvas = tk.Canvas(upper, highlightthickness=0, background=COLORS["bg"])
         ybar = ttk.Scrollbar(upper, orient="vertical", command=self._scroll_rows)
         self.rows_canvas.configure(yscrollcommand=ybar.set)
         self.rows_canvas.pack(side="left", fill="both", expand=True)
@@ -298,11 +300,11 @@ class GroupEditor(tk.Toplevel):
             group_id, members = self._groups[row_index]
             y0 = row_index * self.ROW_H
             selected = group_id == self.selected_group_id
-            fill = "#e9f2ff" if selected else "white"
-            outline = "#4b7bec" if selected else "#d0d0d0"
+            fill = COLORS['selection'] if selected else COLORS['surface']
+            outline = COLORS['accent'] if selected else COLORS['border']
             tag = f"group:{group_id}"
             self.rows_canvas.create_rectangle(5, y0 + 4, width - 8, y0 + self.ROW_H - 4, fill=fill, outline=outline, width=2 if selected else 1, tags=(tag,))
-            self.rows_canvas.create_text(18, y0 + 20, anchor="nw", text=f"G{group_id:03d}\n{len(members)} 张", font=("Segoe UI", 12, "bold"), tags=(tag,))
+            self.rows_canvas.create_text(18, y0 + 20, anchor="nw", text=f"G{group_id:03d}\n{len(members)} 张", font=("Microsoft YaHei UI", 11, "bold"), tags=(tag,))
 
             x = 105
             max_preview = 8
@@ -311,10 +313,10 @@ class GroupEditor(tk.Toplevel):
                 if photo is not None:
                     self._row_images.append(photo)
                     self.rows_canvas.create_image(x, y0 + 10, anchor="nw", image=photo, tags=(tag, f"asset:{asset.stem}"))
-                self.rows_canvas.create_text(x, y0 + 119, anchor="nw", text=asset.stem, font=("Segoe UI", 9), tags=(tag, f"asset:{asset.stem}"))
+                self.rows_canvas.create_text(x, y0 + 119, anchor="nw", text=asset.stem, font=("Microsoft YaHei UI", 9), tags=(tag, f"asset:{asset.stem}"))
                 x += 118
             if len(members) > max_preview:
-                self.rows_canvas.create_text(x + 6, y0 + 54, anchor="nw", text=f"+{len(members) - max_preview}\n更多", font=("Segoe UI", 11, "bold"), tags=(tag,))
+                self.rows_canvas.create_text(x + 6, y0 + 54, anchor="nw", text=f"+{len(members) - max_preview}\n更多", font=("Microsoft YaHei UI", 10, "bold"), tags=(tag,))
 
             self.rows_canvas.tag_bind(tag, "<Button-1>", lambda e, gid=group_id: self._select_group(gid))
 
@@ -341,13 +343,13 @@ class GroupEditor(tk.Toplevel):
             x = 10 + index * 170
             selected = asset.stem == self.selected_stem
             if selected:
-                self.detail_canvas.create_rectangle(x - 4, 5, x + 158, 158, outline="#4b7bec", width=3)
+                self.detail_canvas.create_rectangle(x - 4, 5, x + 158, 158, outline=COLORS['accent'], width=3)
             photo = self._cached_photo(asset, self.DETAIL_THUMB)
             if photo is not None:
                 self._detail_images.append(photo)
                 item = self.detail_canvas.create_image(x, 10, anchor="nw", image=photo, tags=(f"detail:{asset.stem}",))
                 self.detail_canvas.tag_bind(item, "<Button-1>", lambda e, stem=asset.stem: self._select_asset(stem))
-            text = self.detail_canvas.create_text(x, 140, anchor="nw", text=asset.stem, font=("Segoe UI", 9), tags=(f"detail:{asset.stem}",))
+            text = self.detail_canvas.create_text(x, 140, anchor="nw", text=asset.stem, font=("Microsoft YaHei UI", 9), tags=(f"detail:{asset.stem}",))
             self.detail_canvas.tag_bind(text, "<Button-1>", lambda e, stem=asset.stem: self._select_asset(stem))
 
     def _select_group(self, group_id: int) -> None:
