@@ -31,7 +31,8 @@ from .shared_api import (
     selected_api_profile,
     selected_profile_id,
 )
-from .window_layout import fit_window, scrollable_body
+from .window_layout import fit_window
+from .ui_help import install_page_chrome, install_control_help
 from .workspace_layout import workspace_path
 from .workspace_log import append_log, visible_log
 from dataclasses import asdict
@@ -99,7 +100,7 @@ class App(tk.Tk):
         self._settings_pending = None
         self._build_ui()
         self._api_selection_changed()
-        fit_window(self, (980, 780), minimum_size=(640, 520))
+        fit_window(self, (1100, 720), minimum_size=(820, 520))
         if not self._workspace_blocked:
             self._restore_session()
         self.input_var.trace_add("write", self._input_path_changed)
@@ -326,7 +327,7 @@ class App(tk.Tk):
 
     def _close(self) -> None:
         for child in self.winfo_children():
-            if getattr(child, '_api_active', False):
+            if getattr(child, '_api_active', False) or getattr(child, '_preparing_task', False):
                 child._close()
                 return
         if self._settings_pending:
@@ -379,7 +380,10 @@ class App(tk.Tk):
         )
 
     def _build_ui(self) -> None:
-        frame = scrollable_body(self, padding=12)
+        toolbar = install_page_chrome(self, "home")
+        self.update_button = toolbar.buttons["update"]
+        frame = ttk.Frame(self, padding=(12, 8))
+        frame.pack(fill="both", expand=True)
 
         self.input_var = tk.StringVar(value=self.saved_paths["input"])
         self.workspace_var = tk.StringVar(value=self.saved_paths["workspace"])
@@ -407,12 +411,12 @@ class App(tk.Tk):
 
         ttk.Checkbutton(
             frame,
-            text="人物主体明显虚焦/严重抖动 → 建议弃置（导入 LR 后生效）",
+            text="明显虚焦／严重抖动弃置",
             variable=self.screening_var,
         ).grid(row=row, column=0, columnspan=6, sticky="w", pady=(2, 8))
         row += 1
 
-        ttk.Checkbutton(frame, text="身体清晰度检查（实验）· 随本地检查启用，可能增加待确认照片",
+        ttk.Checkbutton(frame, text="身体清晰度检查（实验）",
                         variable=self.body_screening_var).grid(row=row, column=0, columnspan=6, sticky='w', pady=(0, 6))
         row += 1
 
@@ -425,26 +429,21 @@ class App(tk.Tk):
             state="readonly",
             width=36,
         )
-        self.api_profile_combo.grid(row=row, column=1, columnspan=3, sticky="ew", padx=(0, 8))
+        self.api_profile_combo.grid(row=row, column=1, columnspan=5, sticky="ew", padx=(0, 8))
         self.api_profile_combo.bind("<<ComboboxSelected>>", self._api_selection_changed)
-        ttk.Button(frame, text="配置 API", command=self._open_api_config).grid(
-            row=row, column=4, columnspan=2, sticky="w"
-        )
         self._api_profile_ids = {}
         self._refresh_api_profiles()
         row += 1
 
         first = ttk.Frame(frame)
-        first.grid(row=row, column=0, columnspan=6, sticky="w", pady=(10, 4))
+        first.grid(row=row, column=0, columnspan=7, sticky="w", pady=(8, 4))
         self.scan_button = ttk.Button(first, text="扫描图片", command=self._run_scan_thread)
         self.scan_button.pack(side="left", padx=(0, 8))
         self.group_button = ttk.Button(first, text="编辑选片组", command=self._open_group_editor)
         self.group_button.pack(side="left", padx=(0, 8))
         self.crop_button = ttk.Button(first, text="检测/调整人脸框", command=self._open_crop_settings)
-        self.crop_button.pack(side="left")
-        row += 1
-        second = ttk.Frame(frame)
-        second.grid(row=row, column=0, columnspan=6, sticky="w", pady=4)
+        self.crop_button.pack(side="left", padx=(0, 8))
+        second = first
         self.focus_button = ttk.Button(second, text="AI 复核", command=self._run_focus_review)
         self.focus_button.pack(side="left", padx=(0, 8))
         self.sheets_button = ttk.Button(second, text="生成联系表", command=self._generate_contact_sheets)
@@ -465,13 +464,6 @@ class App(tk.Tk):
         self.clear_log_button = ttk.Button(controls, text="清空日志", command=self._clear_log)
         self.clear_log_button.pack(side="left")
         row += 1
-        lr_frame = ttk.Frame(frame)
-        lr_frame.grid(row=row, column=0, columnspan=6, sticky="w", pady=(0, 10))
-        ttk.Button(lr_frame, text="LR 插件", command=self._open_lr_plugin).pack(side="left")
-        self.update_button = ttk.Button(lr_frame, text="检查更新", command=lambda: self.updates.check(True))
-        self.update_button.pack(side="left", padx=12)
-        ttk.Checkbutton(lr_frame, text="不再自动检查更新", variable=self.no_updates_var, command=self._save_preferences).pack(side="left")
-        row += 1
         self.next_step_var = tk.StringVar(value="推荐下一步：扫描图片")
         ttk.Label(frame, textvariable=self.next_step_var).grid(row=row, column=0, columnspan=6, sticky="w", pady=(4, 6))
         row += 1
@@ -484,12 +476,18 @@ class App(tk.Tk):
         row += 1
         ttk.Label(frame, text="日志：").grid(row=row, column=0, columnspan=6, sticky="w", pady=(4, 0))
         row += 1
-        self.log_text = tk.Text(frame, height=12, wrap="word", state="disabled")
-        self.log_text.grid(row=row, column=0, columnspan=6, sticky="nsew")
+        log_frame = ttk.Frame(frame)
+        log_frame.grid(row=row, column=0, columnspan=7, sticky="nsew")
+        self.log_text = tk.Text(log_frame, height=4, wrap="word", state="disabled")
+        scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        self.log_text.pack(side="left", fill="both", expand=True)
 
         for col in range(6):
             frame.columnconfigure(col, weight=1)
         frame.rowconfigure(row, weight=1)
+        install_control_help(self, "home")
 
     def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: tk.StringVar, command) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=6)
@@ -739,7 +737,7 @@ class App(tk.Tk):
             self._disabled_widgets = []
             def walk(parent):
                 for widget in parent.winfo_children():
-                    if widget in (self.stop_button, self.clear_workspace_button, self.clear_log_button):
+                    if widget in (self.stop_button, self.clear_workspace_button, self.clear_log_button) or getattr(widget, "_always_available", False):
                         continue
                     if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Spinbox, ttk.Checkbutton)):
                         self._disabled_widgets.append((widget, str(widget.cget("state"))))
@@ -1208,6 +1206,59 @@ class App(tk.Tk):
                 home_pages=list(self.scan_result.main_pages or []) + list(self.scan_result.rejected_pages or []))
         except Exception as exc:
             messagebox.showerror("AI 选片",str(exc),parent=self)
+
+    def _setup_aux_page(self, page):
+        page._previous_grab = self.grab_current()
+        def closed(event):
+            if event.widget is not page:
+                return
+            previous = page._previous_grab
+            if previous is not None and previous.winfo_exists() and self.grab_current() is None:
+                previous.grab_set()
+        page.bind('<Destroy>', closed, add='+')
+        page.grab_set()
+
+    def _open_update_page(self):
+        old = getattr(self, '_update_page', None)
+        if old is not None and old.winfo_exists():
+            old.lift()
+            return
+        page = self._update_page = tk.Toplevel(self)
+        page.title('更新与版本')
+        page.transient(self)
+        self._setup_aux_page(page)
+        install_page_chrome(page, 'update')
+        body = ttk.Frame(page, padding=18)
+        body.pack(fill='both', expand=True)
+        ttk.Label(body, text=f'当前版本：v{VERSION} · 构建 {BUILD}').pack(anchor='w', pady=8)
+        ttk.Checkbutton(body, text='不再自动检查更新', variable=self.no_updates_var,
+                        command=self._save_preferences).pack(anchor='w', pady=12)
+        def check():
+            page.destroy()
+            self.updates.check(True)
+        ttk.Button(body, text='立即检查', command=check).pack(anchor='w', pady=12)
+        ttk.Label(body, text='下载进度显示在主页面共用进度条。').pack(anchor='w')
+        ttk.Button(body, text='关闭', command=page.destroy).pack(side='bottom', anchor='e')
+        fit_window(page, (700, 310), minimum_size=(640, 260), parent=self)
+        install_control_help(page, 'update')
+
+    def _open_lr_page(self):
+        old = getattr(self, '_lr_page', None)
+        if old is not None and old.winfo_exists():
+            old.lift()
+            return
+        page = self._lr_page = tk.Toplevel(self)
+        page.title('Lightroom 插件')
+        page.transient(self)
+        self._setup_aux_page(page)
+        install_page_chrome(page, 'lr')
+        body = ttk.Frame(page, padding=18)
+        body.pack(fill='both', expand=True)
+        ttk.Label(body, text='1. 在 Lightroom 增效工具管理器中添加插件。\n\n2. 从 AI 选片与导出页导出结果。\n\n3. 在 Lightroom 插件中导入结果文件。').pack(anchor='w', pady=12)
+        ttk.Button(body, text='打开插件目录', command=self._open_lr_plugin).pack(anchor='w', pady=8)
+        ttk.Button(body, text='关闭', command=page.destroy).pack(side='bottom', anchor='e')
+        fit_window(page, (700, 340), minimum_size=(640, 280), parent=self)
+        install_control_help(page, 'lr')
 
     def _open_lr_plugin(self):
         import os

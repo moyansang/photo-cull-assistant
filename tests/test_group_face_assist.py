@@ -395,11 +395,103 @@ def fake_propose(proposals_by_key):
     return propose
 
 
+def test_workspace_assist_uses_active_person_without_group_chooser(monkeypatch, tmp_path):
+    assets = make_assets(tmp_path)
+    assets[1].group_id = 2
+    assets[2].group_id = 3
+    root = tk.Tk()
+    root.withdraw()
+    captured = {}
+
+    class DummyAssist:
+        def __init__(self, parent, reference, reference_box, targets, **kwargs):
+            captured.update(reference=reference, reference_box=reference_box,
+                            targets=list(targets), kwargs=kwargs)
+
+        def winfo_exists(self):
+            return True
+
+    monkeypatch.setattr(crop_dialog_module, 'GroupFaceAssistDialog', DummyAssist)
+    dialog = CropDialog(root, assets, CropSettings(), lambda _settings: None)
+    try:
+        wait_preview(dialog)
+        settings = dialog.global_settings()
+        reference_key = settings.key(assets[0])
+        first = [.10, .12, .16, .18]
+        active = [.58, .15, .14, .17]
+        dialog.edits[reference_key] = {'selected_faces': [first, active]}
+        dialog._active_face_key = crop_dialog_module.face_box_key(active)
+        dialog.load_current()
+        dialog.assist_group_faces()
+        assert captured['reference_box'] == tuple(active)
+        assert {target.key for target in captured['targets']} == {
+            settings.key(assets[1]), settings.key(assets[2])}
+        assert all(target.cross_group for target in captured['targets'])
+        assert dialog._assist_reference_face_key == crop_dialog_module.face_box_key(active)
+    finally:
+        dialog._assist_dialog = None
+        dialog.destroy()
+        root.destroy()
+
+
+def test_multi_person_reference_remains_valid_after_other_person_changes(tmp_path, monkeypatch):
+    assets = make_assets(tmp_path, count=2)
+    warnings = []
+    monkeypatch.setattr(crop_dialog_module.messagebox, 'showwarning',
+                        lambda *args, **kwargs: warnings.append(args))
+    dialog = object.__new__(CropDialog)
+    settings = CropSettings()
+    reference_key = settings.key(assets[0])
+    target_key = settings.key(assets[1])
+    active = [.58, .15, .14, .17]
+    dialog.edits = {reference_key: {
+        'selected_faces': [[.10, .12, .16, .18], active]}}
+    dialog._assist_reference_face_key = crop_dialog_module.face_box_key(active)
+    dialog._assist_assets = {reference_key: assets[0], target_key: assets[1]}
+    dialog._assist_signatures = {
+        reference_key: group_face_assist.asset_signature(assets[0]),
+        target_key: group_face_assist.asset_signature(assets[1]),
+    }
+    dialog.load_current = lambda: None
+    dialog.render = lambda: None
+    # Editing or reordering another participant does not invalidate the
+    # reference person while the selected face itself still exists.
+    dialog.edits[reference_key]['selected_faces'] = [[.2, .2, .1, .1], active]
+    applied, skipped = dialog.apply_assist_proposals(reference_key, active, [{
+        'target_key': target_key,
+        'box': [.25, .30, .12, .15],
+        'snapshot': '{}',
+        'stem': assets[1].stem,
+    }])
+    assert applied == 1 and skipped == [] and warnings == []
+    assert dialog.edits[target_key]['manual_face'] == [.25, .30, .12, .15]
+
+
+def test_worker_built_preview_refreshes_guarded_target_signature(tmp_path):
+    assets = make_assets(tmp_path, count=1)
+    asset = assets[0]
+    missing = tmp_path / 'v05' / 'missing.jpg'
+    asset.preview_path = missing
+    key = CropSettings().key(asset)
+    dialog = object.__new__(CropDialog)
+    dialog._assist_assets = {key: asset}
+    before = group_face_assist.asset_signature(asset)
+    dialog._assist_signatures = {key: before}
+    dialog._assist_preview_cache_dir = tmp_path
+    Image.new('RGB', (100, 140), 'gray').save(missing)
+
+    dialog._assist_target_prepared(key, str(missing))
+
+    assert asset.preview_path == missing.resolve()
+    assert dialog._assist_signatures[key] == group_face_assist.asset_signature(asset)
+    assert dialog._assist_signatures[key] != before
+
+
 def test_assist_dialog_adopts_into_parent_edits(monkeypatch, tmp_path):
     root, dialog, assets, saved, _ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
     key = dialog.global_settings().key
     proposals = {key(assets[1]): (.25, .30, .12, .15), key(assets[2]): (.25, .30, .12, .15)}
-    monkeypatch.setattr(group_face_assist, 'propose_group_faces', fake_propose(proposals))
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces', fake_propose(proposals))
     dialog_ui = Recorder()
     dialog_ui.install(monkeypatch, group_face_assist_dialog)
     try:
@@ -408,6 +500,9 @@ def test_assist_dialog_adopts_into_parent_edits(monkeypatch, tmp_path):
         assert assist is not None
         pump(assist, lambda: all(row['proposal'] is not None for row in assist.rows.values()))
         target_key = key(assets[1])
+        pump(assist, lambda: target_key in assist._thumbnail_cache)
+        assert assist._reference_photos
+        assert assist.tree.item(target_key, 'image')
         assist.tree.selection_set(target_key)
         assist.confirm_current()
         assist.accept_selected()
@@ -422,10 +517,47 @@ def test_assist_dialog_adopts_into_parent_edits(monkeypatch, tmp_path):
         root.destroy()
 
 
+def test_assist_fixed_actions_visible_on_short_desktop(monkeypatch, tmp_path):
+    from ai_cull_assistant import window_layout
+    monkeypatch.setattr(window_layout, 'work_area_for',
+                        lambda _widget: window_layout.WorkArea(0, 0, 900, 600))
+    root, dialog, assets, _saved, _ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
+    root.deiconify()
+    dialog.deiconify()
+    root.update()
+    key = dialog.global_settings().key
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces', fake_propose({
+        key(assets[1]): (.25, .3, .12, .15),
+    }))
+    try:
+        dialog.assist_group_faces()
+        assist = dialog._assist_dialog
+        pump(assist, lambda: assist._finished)
+        wanted = {'停止查找', '确认此框', '不是这个人', '暂时跳过', '取消', '采用选中候选'}
+        buttons = []
+
+        def walk(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, tk.ttk.Button) and child.cget('text') in wanted:
+                    buttons.append(child)
+                walk(child)
+
+        walk(assist)
+        assert {button.cget('text') for button in buttons} == wanted
+        for button in buttons:
+            assert button.winfo_viewable()
+            assert button.winfo_rooty() + button.winfo_height() <= assist.winfo_rooty() + assist.winfo_height()
+        assert assist.reference_preview.winfo_viewable()
+        assert assist.preview.winfo_height() >= 80
+    finally:
+        dialog.destroy()
+        root.destroy()
+
+
 def test_assist_dialog_cancel_writes_nothing(monkeypatch, tmp_path):
     root, dialog, assets, saved, _ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
     key = dialog.global_settings().key
-    monkeypatch.setattr(group_face_assist, 'propose_group_faces',
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces',
                         fake_propose({key(assets[1]): (.25, .3, .12, .15)}))
     try:
         dialog.assist_group_faces()
@@ -444,7 +576,7 @@ def test_assist_dialog_cancel_writes_nothing(monkeypatch, tmp_path):
 def test_accept_skips_targets_changed_after_snapshot(monkeypatch, tmp_path):
     root, dialog, assets, _saved, _ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
     key = dialog.global_settings().key
-    monkeypatch.setattr(group_face_assist, 'propose_group_faces', fake_propose({
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces', fake_propose({
         key(assets[1]): (.25, .3, .12, .15), key(assets[2]): (.25, .3, .12, .15)}))
     dialog_ui = Recorder()
     dialog_ui.install(monkeypatch, group_face_assist_dialog)
@@ -470,7 +602,7 @@ def test_accept_voids_round_when_reference_box_changed(monkeypatch, tmp_path):
     root, dialog, assets, _saved, ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
     key = dialog.global_settings().key
     reference_key = key(assets[0])
-    monkeypatch.setattr(group_face_assist, 'propose_group_faces',
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces',
                         fake_propose({key(assets[1]): (.25, .3, .12, .15)}))
     try:
         dialog.assist_group_faces()
@@ -520,7 +652,7 @@ def test_candidate_drag_wheel_and_close_do_not_apply(monkeypatch, tmp_path):
     root, dialog, assets, saved, ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
     key = dialog.global_settings().key
     target_key = key(assets[1])
-    monkeypatch.setattr(group_face_assist, 'propose_group_faces',
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces',
                         fake_propose({target_key: (.25, .3, .12, .15)}))
     try:
         dialog.assist_group_faces()
@@ -560,7 +692,7 @@ def test_stopping_waits_for_worker_before_accept(monkeypatch, tmp_path):
                     (.25,.3,.12,.15), 'review', .8, None, '待确认'))
         release.wait(5)
         return []
-    monkeypatch.setattr(group_face_assist, 'propose_group_faces', blocked)
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces', blocked)
     try:
         dialog.assist_group_faces()
         assist = dialog._assist_dialog
@@ -585,7 +717,7 @@ def test_changed_preview_is_not_overwritten(monkeypatch, tmp_path):
     root, dialog, assets, saved, ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
     key = dialog.global_settings().key
     target_key = key(assets[1])
-    monkeypatch.setattr(group_face_assist, 'propose_group_faces',
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces',
                         fake_propose({target_key: (.25,.3,.12,.15)}))
     try:
         dialog.assist_group_faces()
@@ -629,7 +761,7 @@ def test_cross_group_confirm_merges_into_draft(monkeypatch, tmp_path):
     key = dialog.global_settings().key
     assets[1].group_id = 2
     target_key = key(assets[1])
-    monkeypatch.setattr(group_face_assist, 'propose_group_faces', fake_propose({target_key: (.25,.3,.12,.15)}))
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces', fake_propose({target_key: (.25,.3,.12,.15)}))
     try:
         dialog.assist_group_faces({1, 2})
         assist = dialog._assist_dialog
@@ -648,7 +780,7 @@ def test_cross_group_confirm_merges_into_draft(monkeypatch, tmp_path):
 def test_confirmation_label_and_direct_drawing(monkeypatch, tmp_path):
     root, dialog, assets, saved, ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
     key = dialog.global_settings().key(assets[1])
-    monkeypatch.setattr(group_face_assist, 'propose_group_faces', fake_propose({key: (.25,.3,.12,.15)}))
+    monkeypatch.setattr(group_face_assist, 'propose_person_faces', fake_propose({key: (.25,.3,.12,.15)}))
     try:
         dialog.assist_group_faces()
         assist = dialog._assist_dialog

@@ -279,10 +279,10 @@ def test_homepage_staged_button_layout(tmp_path):
     app=make_app(tmp_path)
     try:
         expected = [
+            '主页面','配置 API','检查更新','LR 插件','帮助',
             '扫描图片','编辑选片组','检测/调整人脸框',
             'AI 复核','生成联系表','AI 选片与导出',
             '停止处理','继续处理','打开联系表目录','清空工作区',
-            'LR 插件','检查更新',
         ]
         found=[]
         def walk(widget):
@@ -298,7 +298,11 @@ def test_homepage_staged_button_layout(tmp_path):
                 if isinstance(child,tk.ttk.Checkbutton):checks.append(child.cget('text'))
                 collect_checks(child)
         collect_checks(app)
+        assert '不再自动检查更新' not in checks
+        app._open_update_page()
+        collect_checks(app._update_page)
         assert '不再自动检查更新' in checks
+        app._update_page.destroy()
     finally:app._close()
 
 

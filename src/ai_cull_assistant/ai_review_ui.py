@@ -11,7 +11,8 @@ from tkinter import messagebox, ttk
 from typing import Any, Callable, Iterable
 
 from PIL import Image, ImageOps, ImageTk
-from .window_layout import fit_window, ScrollableFrame
+from .ui_help import install_control_help, install_page_chrome
+from .window_layout import fit_window
 
 
 DONE_STATUSES = {"completed", "complete", "done", "已完成"}
@@ -83,23 +84,24 @@ class PasteResponseDialog(tk.Toplevel):
         self.title(title)
         self.transient(parent)
         self.on_submit = on_submit
-        viewport = ScrollableFrame(self, padding=12)
-        viewport.pack(fill="both", expand=True)
-        body = viewport.content
-        ttk.Label(body, text=instruction).pack(anchor="w")
+        install_page_chrome(self, "paste")
+        footer = ttk.Frame(self, padding=(12, 0, 12, 10))
+        footer.pack(side="bottom", fill="x")
+        ttk.Button(footer, text="取消", command=self.destroy).pack(side="right")
+        ttk.Button(footer, text=submit_text, command=self._submit).pack(side="right", padx=(0, 8))
+        body = ttk.Frame(self, padding=(12, 10))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text=instruction).pack(anchor="w", pady=(0, 6))
         text_frame = ttk.Frame(body)
-        text_frame.pack(fill="both", expand=True, pady=(6, 10))
+        text_frame.pack(fill="both", expand=True)
         self.text = tk.Text(text_frame, wrap="word", undo=True)
         scroll = ttk.Scrollbar(text_frame, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=scroll.set)
         self.text.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
-        row = ttk.Frame(body)
-        row.pack(fill="x")
-        ttk.Button(row, text="取消", command=self.destroy).pack(side="right")
-        ttk.Button(row, text=submit_text, command=self._submit).pack(side="right", padx=(0, 8))
+        install_control_help(self, "paste")
         self.protocol("WM_DELETE_WINDOW", self.destroy)
-        fit_window(self, (760, 560), minimum_size=(480, 360), parent=parent)
+        fit_window(self, (760, 560), minimum_size=(640, 360), parent=parent)
         self.grab_set()
         self.text.focus_set()
 
@@ -118,29 +120,40 @@ class RawResponsesDialog(tk.Toplevel):
         self.title("原始回答")
         self.transient(parent)
         self.responses = list(responses)
-        viewport = ScrollableFrame(self, padding=12)
-        viewport.pack(fill="both", expand=True)
-        body = viewport.content
+        install_page_chrome(self, "raw")
+        footer = ttk.Frame(self, padding=(12, 0, 12, 10))
+        footer.pack(side="bottom", fill="x")
+        ttk.Button(footer, text="关闭", command=self.destroy).pack(side="right")
+        body = ttk.Frame(self, padding=(12, 10))
+        body.pack(fill="both", expand=True)
         left = ttk.Frame(body)
         left.pack(side="left", fill="y", padx=(0, 10))
         self.listbox = tk.Listbox(left, width=26, exportselection=False)
-        self.listbox.pack(fill="both", expand=True)
+        list_scroll = ttk.Scrollbar(left, orient="vertical", command=self.listbox.yview)
+        self.listbox.configure(yscrollcommand=list_scroll.set)
+        self.listbox.pack(side="left", fill="both", expand=True)
+        list_scroll.pack(side="right", fill="y")
         for index, response in enumerate(self.responses, 1):
             source = None
             if isinstance(response, dict):
                 profile = response.get("api_profile") or {}
                 source = response.get("format") or profile.get("model")
             self.listbox.insert("end", f"第 {index} 次{f' · {source}' if source else ''}")
-        self.text = tk.Text(body, wrap="word", state="disabled")
+        text_frame = ttk.Frame(body)
+        text_frame.pack(side="left", fill="both", expand=True)
+        self.text = tk.Text(text_frame, wrap="word", state="disabled")
+        text_scroll = ttk.Scrollbar(text_frame, orient="vertical", command=self.text.yview)
+        self.text.configure(yscrollcommand=text_scroll.set)
         self.text.pack(side="left", fill="both", expand=True)
+        text_scroll.pack(side="right", fill="y")
         self.listbox.bind("<<ListboxSelect>>", self._select)
         if self.responses:
             self.listbox.selection_set(0)
             self._select()
         else:
             self._show("本批尚无保存的原始回答。")
-        ttk.Button(self, text="关闭", command=self.destroy).pack(pady=(0, 10))
-        fit_window(self, (900, 620), minimum_size=(520, 360), parent=parent)
+        install_control_help(self, "raw")
+        fit_window(self, (900, 620), minimum_size=(640, 360), parent=parent)
         self.grab_set()
 
     def _select(self, _event: Any = None) -> None:
@@ -225,9 +238,15 @@ class ReviewDialog(tk.Toplevel):
 
     # ---- layout ---------------------------------------------------------
     def _build_ui(self) -> None:
-        viewport = ScrollableFrame(self, padding=12)
-        viewport.pack(fill="both", expand=True)
-        outer = viewport.content
+        install_page_chrome(self, "review")
+        footer = ttk.Frame(self, padding=(10, 6, 10, 10))
+        footer.pack(side="bottom", fill="x")
+        ttk.Label(footer, textvariable=self.status_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
+        self.export_button = ttk.Button(footer, text="导出到 LR", command=self._export_ai_ratings)
+        self.export_button.pack(side="right", padx=8)
+        outer = ttk.Frame(self, padding=(10, 6, 10, 0))
+        outer.pack(fill="both", expand=True)
         self.common_tasks = ttk.Frame(outer)
         self.common_tasks.pack(fill="x")
         notebook = self.notebook = ttk.Notebook(outer)
@@ -242,12 +261,7 @@ class ReviewDialog(tk.Toplevel):
         self._build_task_tab()
         self._build_web_tab()
         self._build_review_tab()
-        footer = ttk.Frame(outer)
-        footer.pack(fill="x", pady=(8, 0))
-        ttk.Label(footer, textvariable=self.status_var).pack(side="left")
-        ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
-        self.export_button = ttk.Button(footer, text="导出到 LR", command=self._export_ai_ratings)
-        self.export_button.pack(side="right", padx=8)
+        install_control_help(self, "review")
 
     def _tab_changed(self, _event=None):
         # Keep the preference panel in place across tabs so returning never
@@ -260,31 +274,50 @@ class ReviewDialog(tk.Toplevel):
 
     def _build_task_tab(self) -> None:
         tab = self.task_tab
-        prefs = ttk.LabelFrame(self.common_tasks, text="本轮选片偏好", padding=10)
-        prefs.pack(fill="x", pady=10)
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+        prefs = ttk.LabelFrame(self.common_tasks, text="本轮选片偏好", padding=(8, 6))
+        prefs.pack(fill="x", pady=(0, 6))
         fields = (
-            ("选片力度", "intensity", ("少量精选", "均衡保留", "多留备选")),
-            ("同组策略", "strategy", ("通常保留一张", "允许保留多个不同动作")),
-            ("评价重点", "focus", ("表情优先", "动作优先", "综合判断")),
+            (0, 0, "选片力度", "intensity", ("少量精选", "均衡保留", "多留备选")),
+            (0, 2, "同组策略", "strategy", ("通常保留一张", "允许保留多个不同动作")),
+            (1, 0, "评价重点", "focus", ("表情优先", "动作优先", "综合判断")),
         )
-        for col, (label, key, values) in enumerate(fields):
-            ttk.Label(prefs, text=label).grid(row=0, column=col * 2, sticky="w", padx=(0, 4))
-            ttk.Combobox(prefs, textvariable=self.preference_vars[key], values=values, state="readonly", width=20).grid(
-                row=0, column=col * 2 + 1, sticky="ew", padx=(0, 12)
+        for row, col, label, key, values in fields:
+            pady = (5, 0) if row else 0
+            ttk.Label(prefs, text=label).grid(row=row, column=col, sticky="w", padx=(0, 4), pady=pady)
+            ttk.Combobox(prefs, textvariable=self.preference_vars[key], values=values, state="readonly", width=18).grid(
+                row=row, column=col + 1, sticky="ew", padx=(0, 10), pady=pady
             )
-        ttk.Label(prefs, text="目标数量").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(prefs, textvariable=self.preference_vars["target"], width=22).grid(row=1, column=1, sticky="ew", padx=(0, 12), pady=(8, 0))
-        ttk.Label(prefs, text="补充要求").grid(row=1, column=2, sticky="w", pady=(8, 0))
-        ttk.Entry(prefs, textvariable=self.preference_vars["extra"]).grid(row=1, column=3, columnspan=3, sticky="ew", pady=(8, 0))
-        for col in (1, 3, 5):
+        ttk.Label(prefs, text="目标数量").grid(row=1, column=2, sticky="w", pady=(5, 0))
+        ttk.Entry(prefs, textvariable=self.preference_vars["target"]).grid(row=1, column=3, sticky="ew", pady=(5, 0))
+        ttk.Label(prefs, text="补充要求").grid(row=2, column=0, sticky="w", pady=(5, 0))
+        ttk.Entry(prefs, textvariable=self.preference_vars["extra"]).grid(row=2, column=1, columnspan=3, sticky="ew", pady=(5, 0))
+        for col in (1, 3):
             prefs.columnconfigure(col, weight=1)
         create = ttk.Frame(prefs)
-        create.grid(row=2, column=0, columnspan=6, sticky="w", pady=(10, 0))
+        create.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
         self.refine_button = ttk.Button(create, text="精选照片再选一轮", command=self._create_refine)
         self.refine_button.pack(side="left", padx=(0, 8))
 
+        api = ttk.LabelFrame(tab, text="API 自动提交", padding=8)
+        api.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(api, text="主页面 API").grid(row=0, column=0, sticky="w")
+        ttk.Label(api, textvariable=self.profile_var).grid(row=0, column=1, sticky="w", padx=8)
+        api.columnconfigure(1, weight=1)
+        actions = ttk.Frame(api)
+        actions.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self.run_button = ttk.Button(actions, text="开始 / 继续未完成批次", command=self._start_api)
+        self.run_button.grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.resubmit_button = ttk.Button(actions, text="重新提交", command=self._resubmit_api)
+        self.resubmit_button.grid(row=0, column=1, sticky="w")
+        self.pause_button = ttk.Button(actions, text="完成当前批后暂停", command=self._pause_api, state="disabled")
+        self.pause_button.grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(5, 0))
+        self.split_button = ttk.Button(actions, text="拆分所选批次重试", command=self._split_selected_batch)
+        self.split_button.grid(row=1, column=1, sticky="w", pady=(5, 0))
+
         batches = ttk.LabelFrame(tab, text="批次", padding=8)
-        batches.pack(fill="both", expand=True)
+        batches.grid(row=1, column=0, sticky="nsew")
         columns = ("status", "photos", "images", "error")
         self.batch_tree = ttk.Treeview(batches, columns=columns, show="tree headings", height=7, selectmode="browse")
         self.batch_tree.heading("#0", text="批次")
@@ -302,35 +335,26 @@ class ReviewDialog(tk.Toplevel):
         self.batch_tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
-        api = ttk.LabelFrame(tab, text="API 自动提交", padding=8)
-        api.pack(fill="x", pady=(10, 0))
-        ttk.Label(api, text="主页面 API").grid(row=0, column=0, sticky="w")
-        ttk.Label(api, textvariable=self.profile_var).grid(row=0, column=1, sticky="w", padx=8)
-        api.columnconfigure(1, weight=1)
-        actions = ttk.Frame(api)
-        actions.grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
-        self.run_button = ttk.Button(actions, text="开始 / 继续未完成批次", command=self._start_api)
-        self.run_button.pack(side="left", padx=(0, 8))
-        self.resubmit_button = ttk.Button(actions, text="重新提交", command=self._resubmit_api)
-        self.resubmit_button.pack(side="left", padx=(0, 8))
-        self.pause_button = ttk.Button(actions, text="完成当前批后暂停", command=self._pause_api, state="disabled")
-        self.pause_button.pack(side="left")
-        self.split_button = ttk.Button(actions, text="拆分所选批次重试", command=self._split_selected_batch)
-        self.split_button.pack(side="left", padx=(8, 0))
-        ttk.Button(tab, text="查看所选批次原始回答", command=self._show_raw_responses).pack(anchor="w", pady=(8, 0))
+        ttk.Button(tab, text="查看所选批次原始回答", command=self._show_raw_responses).grid(
+            row=2, column=0, sticky="w", pady=(8, 0)
+        )
 
     def _build_web_tab(self) -> None:
         tab = self.web_tab
-        ttk.Label(tab, text="选择多个批次合并提交：一次上传多张联系表，使用一份完整提示词，整份回答一次导入。\n照片分组保持不变；按 Ctrl / Shift 多选，也可全选未完成批次。").pack(anchor="w")
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(2, weight=1)
+        ttk.Label(tab, text="勾选批次，准备网页提示词与联系表；Ctrl / Shift 可多选。", foreground="#555555").grid(
+            row=0, column=0, sticky="w"
+        )
         actions = ttk.Frame(tab)
-        actions.pack(fill="x", pady=8)
+        actions.grid(row=1, column=0, sticky="ew", pady=8)
         ttk.Button(actions, text="全选未完成批次", command=self._web_select_pending).pack(side="left")
         ttk.Button(actions, text="全选", command=lambda: self.web_tree.selection_set(self.web_tree.get_children())).pack(side="left", padx=8)
         ttk.Button(actions, text="合并准备所选批次", command=self._prepare_web).pack(side="left")
         self.web_summary = tk.StringVar()
         ttk.Label(actions, textvariable=self.web_summary).pack(side="left", padx=12)
         frame = ttk.Frame(tab)
-        frame.pack(fill="both", expand=True)
+        frame.grid(row=2, column=0, sticky="nsew")
         self.web_tree = ttk.Treeview(frame, columns=("status", "photos", "images"), show="tree headings", selectmode="extended", height=7)
         for key, title in (("#0", "可合并批次"), ("status", "状态"), ("photos", "照片数"), ("images", "联系表数")):
             self.web_tree.heading(key, text=title)
@@ -341,7 +365,7 @@ class ReviewDialog(tk.Toplevel):
         scrollbar.pack(side="right", fill="y")
         self.web_tree.bind("<<TreeviewSelect>>", lambda _e: self._web_selection_summary())
         history = ttk.LabelFrame(tab, text="已准备的网页提交（关闭后可继续）", padding=8)
-        history.pack(fill="x", pady=(10, 0))
+        history.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         self.web_history_var = tk.StringVar()
         self.web_history = ttk.Combobox(history, textvariable=self.web_history_var, state="readonly")
         self.web_history.pack(fill="x")
@@ -487,15 +511,18 @@ class ReviewDialog(tk.Toplevel):
             RawResponsesDialog(self, submission.get("raw_responses", []))
 
     def _build_review_tab(self) -> None:
+        self.review_tab.columnconfigure(0, weight=1)
+        self.review_tab.rowconfigure(1, weight=3)
+        self.review_tab.rowconfigure(2, weight=2)
         bar = ttk.Frame(self.review_tab)
-        bar.pack(fill="x", pady=(0, 8))
+        bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         ttk.Label(bar, text="筛选").pack(side="left")
         combo = ttk.Combobox(bar, textvariable=self.filter_var, values=("全部", "清晰度待确认", "待复核", "AI 建议弃置", "4～5 星", "回答缺失或异常"), state="readonly", width=18)
         combo.pack(side="left", padx=8)
         combo.bind("<<ComboboxSelected>>", lambda _e: (self._refresh_review(), self._save_ui_settings()))
         ttk.Label(bar, textvariable=self.export_status_var).pack(side="right")
         table = ttk.Frame(self.review_tab)
-        table.pack(fill="both", expand=True)
+        table.grid(row=1, column=0, sticky="nsew")
         columns = ("name", "group", "ai", "flag", "reason", "clarity")
         self.review_tree = ttk.Treeview(table, columns=columns, show="headings", selectmode="browse", height=8)
         for key, label, width in (("name", "照片", 145), ("group", "分组", 55), ("ai", "星级", 60), ("flag", "是否弃置", 120), ("reason", "对应 AI 回复", 400), ("clarity", "清晰度", 150)):
@@ -511,7 +538,7 @@ class ReviewDialog(tk.Toplevel):
         self.review_tree.bind("<<TreeviewSelect>>", self._show_selected_photo)
         self.review_tree.bind("<Double-1>", lambda _e: self._open_original())
         detail = ttk.Frame(self.review_tab)
-        detail.pack(fill="both", expand=True, pady=(8, 0))
+        detail.grid(row=2, column=0, sticky="nsew", pady=(8, 0))
         preview_frame = ttk.Frame(detail, width=300, height=200)
         preview_frame.pack(side="left", fill="both", expand=True)
         preview_frame.pack_propagate(False)

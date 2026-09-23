@@ -135,7 +135,7 @@ def test_typed_input_switch_saves_old_project_and_loads_registered_project(tmp_p
         assert app.body_screening_var.get() is False
         assert app.scan_result is None
         assert app.review_project is None
-        assert "second project log" in app.log_text.get("1.0", "end")
+        assert "second project log" not in app.log_text.get("1.0", "end")
 
         first_values = json.loads((first_workspace / "workspace-settings.json").read_text("utf-8"))
         assert first_values["face_crop"]["scale_factor"] == 1.3

@@ -29,6 +29,7 @@ DETECT_IOU = .3
 ROI_PAD = .4          # search window padding around the expected position
 TEMPLATE_SCALES = (.8, .9, 1.0, 1.15, 1.35)
 MIN_TEMPLATE_PIXELS = 16
+MAX_FULL_IMAGE_EDGE = 1200
 
 
 @dataclass
@@ -278,6 +279,18 @@ def _propose_for_target(template_gray, template_edge, target, expected_box,
         image_rgb = load_rgb(target.preview_path)
     except Exception as exc:  # noqa: BLE001 - report per-photo, keep going
         return missing(f'预览不可读：{exc}')
+    # A cross-group scan searches the full frame.  Bound that legacy path just
+    # like the appearance matcher so a large preview cannot make each template
+    # scale allocate a full-resolution response map.  Normalized output remains
+    # unchanged after resizing.
+    if target.cross_group and max(image_rgb.shape[:2]) > MAX_FULL_IMAGE_EDGE:
+        scale = MAX_FULL_IMAGE_EDGE / max(image_rgb.shape[:2])
+        image_rgb = cv2.resize(
+            image_rgb,
+            (max(1, round(image_rgb.shape[1] * scale)),
+             max(1, round(image_rgb.shape[0] * scale))),
+            interpolation=cv2.INTER_AREA,
+        )
     height, width = image_rgb.shape[:2]
     gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
     edge = _gradient(gray)
@@ -361,6 +374,85 @@ def propose_group_faces(
         except Exception as exc:
             proposal = FaceProposal(target.key, reference.key, None, 'missing',
                                     None, None, f'本张检查失败：{exc}')
+        if stop_event.is_set():
+            break
+        proposals.append(proposal)
+        if on_progress is not None:
+            on_progress(done, total, proposal)
+    return proposals
+
+
+def propose_person_faces(
+    reference: AssistImage,
+    reference_box,
+    targets,
+    stop_event: threading.Event,
+    on_progress=None,
+    detection_confidence=DETECT_MIN_SCORE,
+) -> list[FaceProposal]:
+    """Find appearance-similar person locations across preview images.
+
+    This is a bounded, offline review aid rather than identity recognition.
+    Every candidate remains ``review`` even when detector and appearance
+    evidence are strong.  The signature intentionally matches
+    :func:`propose_group_faces` so UI workers can switch modes without a
+    separate lifecycle.
+    """
+    from .person_match import build_reference, rank_candidates
+
+    if not reference.preview_path or not Path(reference.preview_path).is_file():
+        raise ValueError('参考照片预览不可读，无法查找人物')
+    if not normalized_box_ok(reference_box):
+        raise ValueError('参考人物框无效')
+    reference_rgb = load_rgb(reference.preview_path)
+    try:
+        appearance_reference = build_reference(reference_rgb, reference_box, stop_event)
+    except InterruptedError:
+        return []
+    proposals: list[FaceProposal] = []
+    total = len(targets)
+    for done, target in enumerate(targets, 1):
+        if stop_event.is_set():
+            break
+
+        def missing(reason):
+            return FaceProposal(target.key, reference.key, None, 'missing', None, None, reason)
+
+        if not target.preview_path or not Path(target.preview_path).is_file():
+            proposal = missing('预览缺失或不可读')
+        else:
+            try:
+                image_rgb = load_rgb(target.preview_path)
+                candidates = rank_candidates(
+                    image_rgb,
+                    appearance_reference,
+                    stop_event,
+                    detection_confidence=detection_confidence,
+                )
+                if stop_event.is_set():
+                    break
+                if not candidates:
+                    proposal = missing('未找到足够强的外观相似候选')
+                else:
+                    best = candidates[0]
+                    source_text = {
+                        'face': '人脸检测',
+                        'head': '头部检测',
+                        'template': '局部模板',
+                    }.get(best.source, '候选检测')
+                    ambiguity = '；有分数接近的其他候选' if best.ambiguous else ''
+                    proposal = FaceProposal(
+                        target.key,
+                        reference.key,
+                        best.box,
+                        'review',
+                        round(best.score, 3),
+                        round(best.detector_score, 3) if best.detector_score is not None else None,
+                        f'{source_text}结合脸/头部/上身颜色与纹理排序{ambiguity}；'
+                        '请人工确认，不代表身份识别',
+                    )
+            except Exception as exc:  # noqa: BLE001 - one damaged preview must not stop the batch
+                proposal = missing(f'本张检查失败：{exc}')
         if stop_event.is_set():
             break
         proposals.append(proposal)

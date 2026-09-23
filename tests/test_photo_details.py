@@ -279,17 +279,45 @@ def test_crop_title_and_footer_visible_on_small_screen(tmp_path, monkeypatch):
         wait_preview(d)
         root.update()
         assert d.title()=='检测/调整人脸框'
+        expected = {
+            '取消', '重新扫描修改过的图片', '恢复本张自动选脸', '去除所有框选',
+            '上一张', '下一张', '上一张未标记', '下一张未标记', '重置当前裁切', '补齐人脸',
+        }
         buttons=[]
         def walk(w):
             for c in w.winfo_children():
-                if isinstance(c,tk.ttk.Button) and c.cget('text') in ('取消','重新扫描修改过的图片'):buttons.append(c)
+                if isinstance(c,tk.ttk.Button) and c.cget('text') in expected:buttons.append(c)
                 walk(c)
         walk(d)
-        assert len(buttons)==2
+        assert {button.cget('text') for button in buttons} == expected
         for b in buttons:
             assert b.winfo_viewable()
             assert b.winfo_rooty()+b.winfo_height()<=d.winfo_rooty()+d.winfo_height()
     finally:
+        root.destroy()
+
+
+def test_confidence_spinbox_tolerates_transient_invalid_text(tmp_path, monkeypatch):
+    from ai_cull_assistant import crop_dialog as module
+    monkeypatch.setattr(module, 'detect', lambda *_args, **_kwargs: [])
+    root = tk.Tk()
+    root.withdraw()
+    path = tmp_path / 'sample.jpg'
+    Image.new('RGB', (160, 240), 'gray').save(path)
+    asset = PhotoAsset('sample', path, path, None, path, datetime.now(), '.jpg', preview_path=path)
+    dialog = CropDialog(root, [asset], CropSettings(detection_confidence=.82), lambda _settings: None)
+    try:
+        wait_preview(dialog)
+        for typed in ('', '.', 'not-a-number'):
+            dialog.confidence.set(typed)
+            dialog.render()
+            assert dialog.global_settings().detection_confidence == .82
+        dialog.confidence.set('9')
+        dialog._commit_confidence()
+        assert dialog.confidence.get() == '0.95'
+        assert dialog.global_settings().detection_confidence == .95
+    finally:
+        dialog.destroy()
         root.destroy()
 
 

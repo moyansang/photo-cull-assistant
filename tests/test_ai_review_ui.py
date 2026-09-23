@@ -1,10 +1,16 @@
 import json
 import time
 import tkinter as tk
+from tkinter import ttk
 from pathlib import Path
 import pytest
 from PIL import Image
-from ai_cull_assistant.ai_review_ui import ReviewDialog, _api_request_stubs
+from ai_cull_assistant.ai_review_ui import (
+    PasteResponseDialog,
+    RawResponsesDialog,
+    ReviewDialog,
+    _api_request_stubs,
+)
 from ai_cull_assistant import ai_api
 from ai_cull_assistant.crop_settings import CropSettings
 from test_ai_project import setup_project, answer
@@ -108,6 +114,39 @@ def test_web_tabs_prepare_and_restore(ui, monkeypatch):
     dialog._refresh_web()
     assert dialog._current_web()[1]['id'] == submission['id']
     assert project.data['ui_settings']['submission_tab'] == 1
+
+
+def test_review_layout_has_fixed_footer_and_no_outer_scroll_surface(ui):
+    _root, dialog, _project, _task, _batch, _errors = ui
+    assert dialog._page_id == 'review'
+    assert dialog.export_button.master.pack_info()['side'] == 'bottom'
+    assert dialog.notebook.pack_info()['expand'] == 1
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    assert not any(isinstance(widget, tk.Canvas) for widget in descendants(dialog))
+
+
+def test_raw_and_paste_dialogs_keep_text_scroll_local(tk_root):
+    paste = PasteResponseDialog(tk_root, lambda _value: True)
+    try:
+        assert paste._page_id == 'paste'
+        assert paste.text.master.pack_info()['expand'] == 1
+        assert not any(isinstance(child, tk.Canvas) for child in paste.winfo_children())
+    finally:
+        paste.destroy()
+
+    raw = RawResponsesDialog(tk_root, [{'text': 'answer'}])
+    try:
+        assert raw._page_id == 'raw'
+        assert raw.text.master.pack_info()['expand'] == 1
+        assert raw.listbox.cget('yscrollcommand')
+        assert raw.text.cget('yscrollcommand')
+    finally:
+        raw.destroy()
 
 
 def test_web_import_dispatch_and_api_guard(ui, monkeypatch):
@@ -228,6 +267,40 @@ def test_tab_round_trip_keeps_api_layout(ui):
     assert dialog.common_tasks.winfo_manager()=='pack'
     dialog.notebook.select(0);root.update()
     assert layout()==before
+    root.withdraw()
+
+
+@pytest.mark.parametrize('size', ['1100x620', '960x600'])
+def test_compact_review_tabs_keep_all_visible_buttons_in_bounds(ui, size):
+    root, dialog, *_rest = ui
+    root.deiconify()
+    dialog.deiconify()
+    dialog.geometry(f'{size}+80+80')
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    for index in range(3):
+        dialog.notebook.select(index)
+        root.update()
+        left = dialog.winfo_rootx()
+        top = dialog.winfo_rooty()
+        right = left + dialog.winfo_width()
+        bottom = top + dialog.winfo_height()
+        visible_buttons = [
+            widget for widget in descendants(dialog)
+            if isinstance(widget, ttk.Button) and widget.winfo_viewable()
+        ]
+        assert visible_buttons
+        assert all(
+            left <= widget.winfo_rootx()
+            and top <= widget.winfo_rooty()
+            and widget.winfo_rootx() + widget.winfo_width() <= right
+            and widget.winfo_rooty() + widget.winfo_height() <= bottom
+            for widget in visible_buttons
+        )
     root.withdraw()
 
 

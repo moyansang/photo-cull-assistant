@@ -217,3 +217,30 @@ def test_successful_connection_saves_and_closes_without_popup(tk_root, tmp_path,
     assert dialog._closed and not dialog.winfo_exists() and refreshed==[True]
     from ai_cull_assistant.shared_api import selected_profile_id
     assert selected_profile_id(tmp_path) == 'connected'
+
+
+def test_compact_layout_uses_basic_and_advanced_tabs_with_fixed_actions(tk_root, tmp_path):
+    dialog = ApiConfigDialog(tk_root, tmp_path)
+    try:
+        assert dialog._page_id == "api"
+        assert [dialog.settings_notebook.tab(tab, "text") for tab in dialog.settings_notebook.tabs()] == [
+            "基本设置",
+            "高级设置",
+        ]
+        assert dialog.profile_box.master is dialog.basic_tab
+        assert dialog.preset_box.master is dialog.basic_tab
+        assert dialog.key_entry.master is dialog.basic_tab
+        assert all(entry.master is dialog.advanced_frame for entry in dialog.advanced_entries)
+        assert dialog.test_button.master is dialog.save_button.master is dialog.close_button.master
+        assert dialog.test_button.master.pack_info()["side"] == "bottom"
+
+        dialog.settings_notebook.select(dialog.advanced_tab)
+        dialog.update()
+        assert dialog.advanced_var.get() is True
+        assert dialog.advanced_frame.winfo_manager() == "grid"
+        dialog.settings_notebook.select(dialog.basic_tab)
+        dialog.update()
+        assert dialog.advanced_var.get() is False
+        assert dialog.advanced_frame.winfo_manager() == ""
+    finally:
+        dialog.destroy()

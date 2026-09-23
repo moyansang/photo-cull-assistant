@@ -14,6 +14,7 @@ from PIL import Image, ImageOps, ImageTk
 
 from .grouping import merge_adjacent_groups, split_group_at
 from .models import PhotoAsset
+from .ui_help import install_control_help, install_page_chrome
 from .window_layout import fit_window
 
 
@@ -203,27 +204,37 @@ class GroupEditor(tk.Toplevel):
         self._members_by_group = {group_id: members for group_id, members in self._groups}
         self._redraw_token: str | None = None
         self._detail_redraw_token: str | None = None
+        install_page_chrome(self, "groups")
         self._build_ui()
-        fit_window(self, (1180, 820), minimum_size=(560, 420), parent=parent)
+        fit_window(self, (1180, 680), minimum_size=(640, 480), parent=parent)
         self._redraw_rows()
         self._redraw_detail()
+        install_control_help(self, "groups")
 
     def _build_ui(self) -> None:
-        toolbar = ttk.Frame(self, padding=(10, 10, 10, 6))
-        toolbar.pack(fill="x")
-        actions = ttk.Frame(toolbar)
-        actions.pack(fill="x")
+        header = ttk.Frame(self, padding=(10, 6, 10, 4))
+        header.pack(side="top", fill="x")
+        ttk.Label(header, text="选片组与照片").pack(side="left")
+        self.status_var = tk.StringVar(value="")
+        ttk.Label(header, textvariable=self.status_var).pack(side="right")
+
+        actions = ttk.Frame(self, padding=(10, 4, 10, 8))
+        actions.pack(side="bottom", fill="x")
         ttk.Button(actions, text="从所选照片拆分", command=self._split_selected).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="与上一组合并", command=lambda: self._merge_neighbor(-1)).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="与下一组合并", command=lambda: self._merge_neighbor(1)).pack(side="left", padx=(0, 8))
-        self.status_var = tk.StringVar(value="")
-        ttk.Label(actions, textvariable=self.status_var).pack(side="right")
-        ttk.Label(toolbar, text="提示：先点组，再在下方点具体照片；人工修改会立即保存。") .pack(
-            fill="x", pady=(6, 0)
-        )
+
+        detail_frame = ttk.LabelFrame(self, text="当前组全部照片（点击照片选择拆分位置）", padding=8)
+        detail_frame.pack(side="bottom", fill="x", padx=10, pady=(0, 4))
+        self.detail_canvas = tk.Canvas(detail_frame, height=175, highlightthickness=0, background="white")
+        xbar = ttk.Scrollbar(detail_frame, orient="horizontal", command=self._scroll_detail)
+        self.detail_canvas.configure(xscrollcommand=xbar.set)
+        self.detail_canvas.pack(fill="x", expand=True)
+        xbar.pack(fill="x")
+        self.detail_canvas.bind("<Configure>", lambda _event: self._schedule_detail_redraw())
 
         upper = ttk.Frame(self, padding=(10, 0, 10, 6))
-        upper.pack(fill="both", expand=True)
+        upper.pack(side="top", fill="both", expand=True)
         self.rows_canvas = tk.Canvas(upper, highlightthickness=0, background="#f4f4f4")
         ybar = ttk.Scrollbar(upper, orient="vertical", command=self._scroll_rows)
         self.rows_canvas.configure(yscrollcommand=ybar.set)
@@ -231,15 +242,6 @@ class GroupEditor(tk.Toplevel):
         ybar.pack(side="right", fill="y")
         self.rows_canvas.bind("<MouseWheel>", self._on_mousewheel)
         self.rows_canvas.bind("<Configure>", lambda _event: self._schedule_rows_redraw())
-
-        detail_frame = ttk.LabelFrame(self, text="当前组全部照片（点击照片选择拆分位置）", padding=8)
-        detail_frame.pack(fill="x", padx=10, pady=(0, 10))
-        self.detail_canvas = tk.Canvas(detail_frame, height=175, highlightthickness=0, background="white")
-        xbar = ttk.Scrollbar(detail_frame, orient="horizontal", command=self._scroll_detail)
-        self.detail_canvas.configure(xscrollcommand=xbar.set)
-        self.detail_canvas.pack(fill="x", expand=True)
-        xbar.pack(fill="x")
-        self.detail_canvas.bind("<Configure>", lambda _event: self._schedule_detail_redraw())
 
     def _on_mousewheel(self, event) -> None:
         self.rows_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")

@@ -15,7 +15,8 @@ from typing import Callable
 from .ai_api import DEFAULT_TIMEOUT, call_model, load_profiles, save_profile
 from .ai_presets import PRESETS, matching_preset, preset_profile
 from .settings import read_values, save_values
-from .window_layout import fit_window, scrollable_body
+from .ui_help import install_control_help, install_page_chrome
+from .window_layout import fit_window
 
 
 def _test_image():
@@ -97,7 +98,7 @@ class ApiConfigDialog(tk.Toplevel):
             self._apply_new_preset(remembered_preset)
         self._sync_advanced()
         # Keep geometry stable during native mouse press/release dispatch.
-        fit_window(self, (680, 590), minimum_size=(440, 320), parent=self.master)
+        fit_window(self, (680, 520), minimum_size=(640, 360), parent=self.master)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._poll_token = self.after(100, self._poll_events)
         # The editor is an owned, modeless window. A hidden child must never
@@ -109,47 +110,62 @@ class ApiConfigDialog(tk.Toplevel):
         self.reveal()
 
     def _build_ui(self) -> None:
-        body = scrollable_body(self, padding=18)
-        body.columnconfigure(1, weight=1)
+        install_page_chrome(self, "api")
+        footer = ttk.Frame(self, padding=(12, 6, 12, 10))
+        footer.pack(side="bottom", fill="x")
+        ttk.Label(footer, textvariable=self.status_var).pack(side="left", fill="x", expand=True)
+        self.close_button = ttk.Button(footer, text="关闭", command=self.destroy)
+        self.close_button.pack(side="right")
+        self.save_button = ttk.Button(footer, text="保存", command=lambda: self._start("save"))
+        self.save_button.pack(side="right", padx=8)
+        self.test_button = ttk.Button(footer, text="测试连接", command=lambda: self._start("test"))
+        self.test_button.pack(side="right")
 
-        ttk.Label(body, text="已保存配置", width=16).grid(row=0, column=0, sticky="w", pady=5)
-        self.profile_box = ttk.Combobox(body, textvariable=self.profile_var, state="readonly", width=42)
-        self.profile_box.grid(row=0, column=1, sticky="ew", pady=5)
+        body = ttk.Frame(self, padding=(12, 8, 12, 0))
+        body.pack(fill="both", expand=True)
+        self.settings_notebook = ttk.Notebook(body)
+        self.settings_notebook.pack(fill="both", expand=True)
+        self.basic_tab = ttk.Frame(self.settings_notebook, padding=14)
+        self.advanced_tab = ttk.Frame(self.settings_notebook, padding=14)
+        self.settings_notebook.add(self.basic_tab, text="基本设置")
+        self.settings_notebook.add(self.advanced_tab, text="高级设置")
+        self.settings_notebook.bind("<<NotebookTabChanged>>", self._settings_tab_changed)
+
+        basic = self.basic_tab
+        basic.columnconfigure(1, weight=1)
+        ttk.Label(basic, text="已保存配置", width=14).grid(row=0, column=0, sticky="w", pady=6)
+        self.profile_box = ttk.Combobox(basic, textvariable=self.profile_var, state="readonly", width=42)
+        self.profile_box.grid(row=0, column=1, sticky="ew", pady=6)
         self.profile_box.bind("<<ComboboxSelected>>", self._select_profile)
-        self.new_button = ttk.Button(body, text="新建", command=self._new_profile)
-        self.new_button.grid(row=0, column=2, padx=(8, 0), pady=5)
+        self.new_button = ttk.Button(basic, text="新建", command=self._new_profile)
+        self.new_button.grid(row=0, column=2, padx=(8, 0), pady=6)
 
-        ttk.Label(body, text="服务预设", width=16).grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Label(basic, text="服务预设", width=14).grid(row=1, column=0, sticky="w", pady=6)
         self.preset_box = ttk.Combobox(
-            body,
+            basic,
             textvariable=self.preset_var,
             values=list(self._preset_names.values()),
             state="readonly",
             width=42,
         )
-        self.preset_box.grid(row=1, column=1, columnspan=2, sticky="ew", pady=5)
+        self.preset_box.grid(row=1, column=1, columnspan=2, sticky="ew", pady=6)
         self.preset_box.bind("<<ComboboxSelected>>", self._select_preset)
 
-        ttk.Label(body, text="API 密钥", width=16).grid(row=2, column=0, sticky="w", pady=5)
-        self.key_entry = ttk.Entry(body, textvariable=self.key_var, show="*")
-        self.key_entry.grid(row=2, column=1, columnspan=2, sticky="ew", pady=5)
-        ttk.Label(body, text="留空会保留当前配置的已保存密钥；配置文件中不会写入密钥。", foreground="#666666").grid(
-            row=3, column=1, columnspan=2, sticky="w"
-        )
-        ttk.Label(body, textvariable=self.note_var, foreground="#666666", wraplength=570).grid(
-            row=4, column=1, columnspan=2, sticky="w", pady=(4, 6)
-        )
+        ttk.Label(basic, text="API 密钥", width=14).grid(row=2, column=0, sticky="w", pady=6)
+        self.key_entry = ttk.Entry(basic, textvariable=self.key_var, show="*")
+        self.key_entry.grid(row=2, column=1, columnspan=2, sticky="ew", pady=6)
 
+        # Compatibility hook for integrations that still call
+        # _toggle_advanced/advanced_button. The visible control is the tab.
         self.advanced_button = ttk.Checkbutton(
             body,
-            text="高级设置",
             variable=self.advanced_var,
             command=self._toggle_advanced,
         )
-        self.advanced_button.grid(row=5, column=0, columnspan=3, sticky="w", pady=(2, 4))
 
-        self.advanced_frame = ttk.Frame(body)
-        self.advanced_frame.grid(row=6, column=0, columnspan=3, sticky="ew")
+        self.advanced_tab.columnconfigure(0, weight=1)
+        self.advanced_frame = ttk.Frame(self.advanced_tab)
+        self.advanced_frame.grid(row=0, column=0, sticky="nsew")
         self.advanced_frame.columnconfigure(1, weight=1)
         fields = (
             ("配置名称", self.name_var),
@@ -160,27 +176,11 @@ class ApiConfigDialog(tk.Toplevel):
         )
         self.advanced_entries: list[ttk.Entry] = []
         for row, (label, variable) in enumerate(fields):
-            ttk.Label(self.advanced_frame, text=label, width=16).grid(row=row, column=0, sticky="w", pady=4)
+            ttk.Label(self.advanced_frame, text=label, width=14).grid(row=row, column=0, sticky="w", pady=6)
             entry = ttk.Entry(self.advanced_frame, textvariable=variable)
-            entry.grid(row=row, column=1, sticky="ew", pady=4)
+            entry.grid(row=row, column=1, sticky="ew", pady=6)
             self.advanced_entries.append(entry)
-        ttk.Label(
-            self.advanced_frame,
-            text="协议：带图片的 Chat Completions。API 地址可填接口前缀或完整端点。",
-            foreground="#666666",
-        ).grid(row=len(fields), column=1, sticky="w", pady=(2, 4))
-
-        ttk.Separator(body).grid(row=7, column=0, columnspan=3, sticky="ew", pady=(8, 10))
-        ttk.Label(body, textvariable=self.status_var, wraplength=630).grid(row=8, column=0, columnspan=3, sticky="w")
-
-        actions = ttk.Frame(body)
-        actions.grid(row=9, column=0, columnspan=3, sticky="e", pady=(16, 0))
-        self.test_button = ttk.Button(actions, text="测试连接", command=lambda: self._start("test"))
-        self.test_button.pack(side="left", padx=5)
-        self.save_button = ttk.Button(actions, text="保存", command=lambda: self._start("save"))
-        self.save_button.pack(side="left", padx=5)
-        self.close_button = ttk.Button(actions, text="关闭", command=self.destroy)
-        self.close_button.pack(side="left", padx=(5, 0))
+        install_control_help(self, "api")
 
         self._mutable_widgets = [
             (self.profile_box, "readonly"),
@@ -190,6 +190,16 @@ class ApiConfigDialog(tk.Toplevel):
             (self.advanced_button, "normal"),
             *((entry, "normal") for entry in self.advanced_entries),
         ]
+
+    def _settings_tab_changed(self, _event=None) -> None:
+        if not hasattr(self, "settings_notebook"):
+            return
+        self.advanced_var.set(self.settings_notebook.select() == str(self.advanced_tab))
+        if self.advanced_var.get():
+            self.advanced_frame.grid()
+        else:
+            self.advanced_frame.grid_remove()
+        self._remember_ui_state()
 
     def _initial_profile(self, remembered_profile_id: str, remembered_preset: str) -> dict | None:
         for profile in self.profiles:
@@ -300,8 +310,10 @@ class ApiConfigDialog(tk.Toplevel):
         visible = self.advanced_var.get()
         if visible:
             self.advanced_frame.grid()
+            self.settings_notebook.select(self.advanced_tab)
         else:
             self.advanced_frame.grid_remove()
+            self.settings_notebook.select(self.basic_tab)
 
     def _remember_ui_state(self) -> None:
         try:

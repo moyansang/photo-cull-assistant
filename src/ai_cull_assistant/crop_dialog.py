@@ -18,7 +18,8 @@ from .group_face_assist import (AssistImage, collect_targets, reference_box_from
 from .group_face_assist_dialog import GroupFaceAssistDialog
 from .subject import face_crop, detail_features, detail_features_list
 from .preview import ensure_preview
-from .window_layout import fit_window, scrollable_body
+from .ui_help import install_control_help, install_page_chrome
+from .window_layout import fit_window
 
 
 def same_face_box(first, second):
@@ -94,11 +95,14 @@ class CropDialog(tk.Toplevel):
         self.scale = tk.DoubleVar(value=settings.scale_factor)
         self.shift = tk.DoubleVar(value=settings.shift_factor)
         self.offset_x = tk.DoubleVar(value=settings.offset_x_factor)
-        self.confidence = tk.DoubleVar(value=settings.detection_confidence)
+        self._last_confidence = max(.7, min(.95, float(settings.detection_confidence)))
+        self.confidence = tk.StringVar(value=f"{self._last_confidence:.2f}")
         self.ratio = tk.StringVar(value=settings.aspect_ratio)
         self.person = tk.StringVar(value="自动主体")
         self._pending = None
-        # Reserve the action footer before allocating the scrollable content.
+        install_page_chrome(self, "faces")
+        # Fixed footer and compact controls leave the preview all remaining
+        # height.  This dialog intentionally has no outer scrolling surface.
         actions = ttk.Frame(self, padding=(16, 8))
         actions.pack(side="bottom", fill="x")
         ttk.Button(actions, text="取消", command=self.destroy).pack(side="right", padx=6)
@@ -107,53 +111,40 @@ class CropDialog(tk.Toplevel):
             text="重新扫描修改过的图片" if self.assets else "保存设置",
             command=self.save,
         ).pack(side="right")
-        body = scrollable_body(self, padding=16)
-        ttk.Label(
-            body,
-            text="点击蓝框加入人物，重新点击其绿色或橙色检测框可移除；拖拽可补框漏检人脸。点击裁切框空白处后可移动，滚轮可细调范围。"
-            "手动框好参考照片后，可用“补齐人脸（可跨组）”选择同一人物的组。",
-            wraplength=460,
-        ).pack(fill="x", anchor="w")
-        row = ttk.Frame(body)
-        row.pack(fill="x", pady=4)
-        ttk.Label(row, text="置信度（全局）", width=12).pack(side="left")
-        ttk.Scale(row, from_=.7, to=.95, variable=self.confidence, length=300).pack(
-            side="left", fill="x", expand=True
+        body = ttk.Frame(self, padding=(12, 6))
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(2, weight=1)
+        controls = ttk.Frame(body)
+        controls.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        ttk.Label(controls, text="全局置信度").pack(side="left")
+        self.confidence_spinbox = ttk.Spinbox(
+            controls, from_=.7, to=.95, increment=.01, textvariable=self.confidence,
+            width=6, format="%.2f",
         )
-        confidence_value = ttk.Label(row, width=8)
-        confidence_value.pack(side="left", padx=12)
-        self.confidence.trace_add(
-            "write",
-            lambda *_, widget=confidence_value: widget.configure(text=f"{self.confidence.get():.2f}"),
-        )
-        confidence_value.configure(text=f"{self.confidence.get():.2f}")
-        ttk.Label(
-            body,
-            text="检测置信度：默认 0.80；降低可减少漏脸，也可能增加错框。与分组灵敏度无关。",
-            wraplength=460,
-        ).pack(fill="x", anchor="w")
-        row = ttk.Frame(body)
-        row.pack(fill="x", pady=4)
-        ttk.Label(row, text="裁切比例", width=12).pack(side="left")
-        ttk.Combobox(row, textvariable=self.ratio, values=("124:150", "1:1", "3:4"), state="readonly", width=16).pack(side="left")
-        ttk.Label(row, text="默认 / 正方形 / 竖向 3:4").pack(side="left", padx=16)
-        person_row = ttk.Frame(body)
-        person_row.pack(fill="x", pady=4)
-        ttk.Label(person_row, text="当前人物", width=12).pack(side="left")
+        self.confidence_spinbox.pack(side="left", padx=(6, 18))
+        self.confidence_spinbox.bind('<FocusOut>', self._commit_confidence)
+        self.confidence_spinbox.bind('<Return>', self._commit_confidence)
+        ttk.Label(controls, text="当前人物").pack(side="left")
         self.person_picker = ttk.Combobox(
-            person_row,
+            controls,
             textvariable=self.person,
             values=("自动主体",),
             state="readonly",
-            width=16,
+            width=13,
         )
-        self.person_picker.pack(side="left")
+        self.person_picker.pack(side="left", padx=(6, 18))
         self.person_picker.bind("<<ComboboxSelected>>", self.select_person)
-        ttk.Label(person_row, text="多人照片可逐人设置范围、位置和比例").pack(side="left", padx=16)
+        ttk.Label(controls, text="裁切比例").pack(side="left")
+        self.ratio_picker = ttk.Combobox(
+            controls, textvariable=self.ratio, values=("124:150", "1:1", "3:4"),
+            state="readonly", width=10,
+        )
+        self.ratio_picker.pack(side="left", padx=(6, 0))
         self.caption = ttk.Label(body)
-        self.caption.pack(pady=(12, 4))
+        self.caption.grid(row=1, column=0, sticky="ew", pady=(2, 4))
         self.canvas = tk.Canvas(body, width=1, height=400, background="#eeeeee", highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True)
+        self.canvas.grid(row=2, column=0, sticky="nsew")
         self.canvas.bind("<Configure>", self.schedule_preview)
         self.canvas.bind('<ButtonPress-1>', self.pointer_down)
         self.canvas.bind('<B1-Motion>', self.pointer_move)
@@ -161,26 +152,33 @@ class CropDialog(tk.Toplevel):
         self.canvas.bind('<MouseWheel>', self.mouse_wheel)
         self.canvas.bind('<Button-4>', self.mouse_wheel)
         self.canvas.bind('<Button-5>', self.mouse_wheel)
-        ttk.Label(body, text="蓝框：候选。绿框：已选人物。橙框：当前人物。裁切框点中后变黄；多人照片的设置彼此独立。").pack()
-        manual = ttk.Frame(body)
-        manual.pack(pady=4)
-        ttk.Button(manual, text="恢复本张自动选脸", command=self.auto_face).pack(side="left", padx=6)
+        lower = ttk.Frame(body)
+        lower.grid(row=3, column=0, sticky="ew", pady=(6, 0))
+        manual = ttk.Frame(lower)
+        manual.pack(fill="x", pady=(0, 4))
+        ttk.Button(manual, text="恢复本张自动选脸", command=self.auto_face).pack(side="left", padx=(0, 6))
         ttk.Button(manual, text="去除所有框选", command=self.clear_face_selection).pack(side="left", padx=6)
-        navigation = ttk.Frame(body)
-        navigation.pack(pady=8)
-        ttk.Button(navigation, text="上一张", command=lambda: self.navigate(-1)).pack(side="left", padx=6)
-        ttk.Button(navigation, text="下一张", command=lambda: self.navigate(1)).pack(side="left", padx=6)
-        ttk.Button(navigation, text="上一张未标记", command=self.previous_unmarked).pack(side="left", padx=6)
-        ttk.Button(navigation, text="下一张未标记", command=self.next_unmarked).pack(side="left", padx=6)
-        ttk.Button(navigation, text="重置当前裁切", command=self.reset).pack(side="left", padx=6)
-        ttk.Button(navigation, text="补齐人脸（可跨组）", command=self.choose_assist_groups).pack(side="left", padx=6)
+        navigation = ttk.Frame(lower)
+        navigation.pack(fill="x")
+        navigation.columnconfigure((0, 1, 2), weight=1, uniform="crop-actions")
+        for column, (label, command) in enumerate((
+            ("上一张", lambda: self.navigate(-1)),
+            ("下一张", lambda: self.navigate(1)),
+            ("上一张未标记", self.previous_unmarked),
+            ("下一张未标记", self.next_unmarked),
+            ("重置当前裁切", self.reset),
+            ("补齐人脸", self.choose_assist_groups),
+        )):
+            ttk.Button(navigation, text=label, command=command).grid(
+                row=column // 3, column=column % 3, sticky="ew", padx=3, pady=2)
         for variable in (self.scale, self.shift, self.offset_x, self.ratio):
             variable.trace_add("write", self.schedule_crop_preview)
         self.confidence.trace_add("write", self.schedule_preview)
-        fit_window(self, (850, 790), minimum_size=(520, 440), parent=parent)
+        fit_window(self, (900, 680), minimum_size=(620, 520), parent=parent)
         self.update_idletasks()
         self.load_current()
         self.render()
+        install_control_help(self, "faces")
         self.grab_set()
 
     def settings(self):
@@ -189,8 +187,23 @@ class CropDialog(tk.Toplevel):
             shift_factor=round(self.shift.get(), 3),
             offset_x_factor=round(self.offset_x.get(), 3),
             aspect_ratio=self.ratio.get(),
-            detection_confidence=round(self.confidence.get(), 2),
+            detection_confidence=round(self._confidence_value(), 2),
         ))
+
+    def _confidence_value(self):
+        try:
+            value = float(self.confidence.get())
+        except (TypeError, ValueError, tk.TclError):
+            return self._last_confidence
+        if not np.isfinite(value):
+            return self._last_confidence
+        value = max(.7, min(.95, value))
+        self._last_confidence = value
+        return value
+
+    def _commit_confidence(self, _event=None):
+        self.confidence.set(f"{self._confidence_value():.2f}")
+        return 'break' if _event is not None and getattr(_event, 'keysym', '') == 'Return' else None
 
     def schedule_preview(self, *_):
         if self._loading:
@@ -429,39 +442,20 @@ class CropDialog(tk.Toplevel):
         self.caption.configure(text="没有待补选的人脸：已标记和手动隐藏的照片会自动跳过。")
 
     def choose_assist_groups(self):
-        if self._loading or not self.assets:
-            return
-        current = self.assets[self.index].group_id
-        groups = sorted({a.group_id for a in self.assets})
-        chooser = tk.Toplevel(self)
-        chooser.title("选择同一人物所在的组")
-        chooser.transient(self)
-        ttk.Label(chooser, text="可多选。同一人物的不同组可一起查找，跨组候选需逐张确认。",
-                  wraplength=420).pack(padx=12, pady=10)
-        listing = tk.Listbox(chooser, selectmode="multiple", exportselection=False, height=14)
-        listing.pack(fill="both", expand=True, padx=12)
-        counts = {}
-        for a in self.assets:
-            counts[a.group_id] = counts.get(a.group_id, 0) + 1
-        for i, group in enumerate(groups):
-            count = counts[group]
-            listing.insert("end", f"G{group:03d} · {count} 张")
-            if group == current:
-                listing.selection_set(i)
-                listing.see(i)
-        def close():
-            chooser.destroy()
-            self.grab_set()
-        def start():
-            selected = {groups[i] for i in listing.curselection()}
-            if not selected:
-                return
-            close()
-            self.assist_group_faces(selected)
-        ttk.Button(chooser, text="开始查找", command=start).pack(pady=10)
-        chooser.protocol("WM_DELETE_WINDOW", close)
-        fit_window(chooser, (480, 460), minimum_size=(360, 300), parent=self)
-        chooser.grab_set()
+        self.assist_group_faces()
+
+    @staticmethod
+    def _reference_box_for_entry(entry, active_face_key=None):
+        selected = entry.get('selected_faces')
+        if isinstance(selected, list) and selected:
+            keyed = [(face_box_key(box), box) for box in selected]
+            if active_face_key:
+                box = next((box for key, box in keyed if key == active_face_key), None)
+                return (box, 'ok') if box is not None else (None, 'missing')
+            if len(keyed) == 1:
+                return keyed[0][1], 'ok'
+            return None, 'multiple'
+        return reference_box_from_entry(entry)
 
     def assist_group_faces(self, group_ids=None):
         """Open the same-group assist window using the current photo as reference."""
@@ -478,9 +472,9 @@ class CropDialog(tk.Toplevel):
         asset = self.assets[self.index]
         key = settings.key(asset)
         entry = self.edits.get(key, {})
-        box, state = reference_box_from_entry(entry)
+        box, state = self._reference_box_for_entry(entry, self._active_face_key)
         if state == 'multiple':
-            messagebox.showinfo("补齐人脸", "第一版仅支持以单人照片作为参考。", parent=self)
+            messagebox.showinfo("补齐人脸", "请先在“当前人物”中选定要查找的人。", parent=self)
             return
         if box is None:
             messagebox.showinfo("补齐人脸", "请先在当前照片上画好或确认一个人脸框，再查找候选。", parent=self)
@@ -488,15 +482,17 @@ class CropDialog(tk.Toplevel):
         if not asset.preview_path or not Path(asset.preview_path).is_file():
             messagebox.showinfo("补齐人脸", "参考照片的预览不可读，无法进行匹配。", parent=self)
             return
-        chosen_groups = set(group_ids) if group_ids is not None else {asset.group_id}
-        siblings = [a for a in self.assets if a.group_id in chosen_groups or a is asset]
+        siblings = list(self.assets)
         targets = collect_targets(asset, siblings, self.edits, settings.key, allow_cross_group=True)
         if not targets:
-            messagebox.showinfo("补齐人脸", "所选组没有需要补齐的人脸。", parent=self)
+            messagebox.showinfo("补齐人脸", "整个工作区没有需要补齐的人脸。", parent=self)
             return
         self._assist_assets = {settings.key(a): a for a in siblings}
         self._assist_signatures = {k: asset_signature(a) for k, a in self._assist_assets.items()}
-        self._assist_reference_entry = deepcopy(entry)
+        self._assist_preview_cache_dir = (Path(asset.preview_path).parent.parent
+                                          if Path(asset.preview_path).parent.name in ('v04', 'v05')
+                                          else Path(asset.preview_path).parent)
+        self._assist_reference_face_key = face_box_key(box)
         reference = AssistImage(
             key=key, stem=asset.stem, preview_path=str(asset.preview_path))
         # The crop dialog owns an application-wide grab; hand it to the child
@@ -506,9 +502,40 @@ class CropDialog(tk.Toplevel):
             self, reference, tuple(box), targets,
             apply_items=self.apply_assist_proposals,
             on_close=self._assist_dialog_closed,
-            group_id=asset.group_id,
             detection_confidence=settings.detection_confidence,
+            target_assets={key: deepcopy(value) for key, value in self._assist_assets.items()},
+            preview_cache_dir=self._assist_preview_cache_dir,
+            on_target_prepared=self._assist_target_prepared,
         )
+
+    def _assist_target_prepared(self, key, preview_path):
+        """Publish a worker-built preview only while its source is unchanged."""
+        asset = getattr(self, '_assist_assets', {}).get(key)
+        expected = getattr(self, '_assist_signatures', {}).get(key)
+        if asset is None or expected is None:
+            return
+        if not preview_path or not Path(preview_path).is_file():
+            return
+        current = asset_signature(asset)
+        if current[:3] != expected[:3]:
+            return
+        resolved = Path(preview_path).resolve()
+        expected_preview = expected[3]
+        expected_missing = len(expected_preview) == 2 and expected_preview[1] is None
+        same_intended_path = expected_missing and expected_preview[0] != 'None' and (
+            Path(expected_preview[0]).resolve() == resolved)
+        cache_dir = getattr(self, '_assist_preview_cache_dir', None)
+        inside_cache = False
+        if expected_missing and expected_preview[0] == 'None' and cache_dir is not None:
+            try:
+                relative = resolved.relative_to(Path(cache_dir).resolve())
+                inside_cache = relative.parts[:1] in (('v04',), ('v05',)) and resolved.stem == asset.stem
+            except ValueError:
+                pass
+        if not (same_intended_path or inside_cache):
+            return
+        asset.preview_path = resolved
+        self._assist_signatures[key] = asset_signature(asset)
 
     def _assist_dialog_closed(self):
         self._assist_dialog = None
@@ -517,7 +544,8 @@ class CropDialog(tk.Toplevel):
 
     def apply_assist_proposals(self, reference_key, reference_box, items):
         """Adopt confirmed candidates after re-checking the start snapshots."""
-        current_box, state = reference_box_from_entry(self.edits.get(reference_key, {}))
+        current_box, state = self._reference_box_for_entry(
+            self.edits.get(reference_key, {}), getattr(self, '_assist_reference_face_key', None))
         try:
             unchanged = state == 'ok' and [float(v) for v in current_box] == [
                 float(v) for v in reference_box]
@@ -525,8 +553,7 @@ class CropDialog(tk.Toplevel):
             unchanged = False
         reference_asset = self._assist_assets.get(reference_key)
         unchanged = (unchanged and reference_asset is not None
-                     and asset_signature(reference_asset) == self._assist_signatures.get(reference_key)
-                     and self.edits.get(reference_key, {}) == self._assist_reference_entry)
+                     and asset_signature(reference_asset) == self._assist_signatures.get(reference_key))
         if not unchanged:
             messagebox.showwarning(
                 "补齐人脸",
@@ -710,7 +737,7 @@ class CropDialog(tk.Toplevel):
             self.canvas.create_text(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, text=f"预览不可用：{exc}")
 
     def global_settings(self):
-        return CropSettings(detection_confidence=round(self.confidence.get(), 2), photos=deepcopy(self.edits))
+        return CropSettings(detection_confidence=round(self._confidence_value(), 2), photos=deepcopy(self.edits))
 
     def store_current(self):
         if not self.assets or self._loading:

@@ -2,10 +2,12 @@ from datetime import datetime
 from pathlib import Path
 from threading import Event, Lock, get_ident
 import time
+import tkinter as tk
+from tkinter import ttk
 
 from PIL import Image
 
-from ai_cull_assistant.group_editor import ThumbnailLoader, grouped_assets, load_thumbnail, visible_group_range
+from ai_cull_assistant.group_editor import GroupEditor, ThumbnailLoader, grouped_assets, load_thumbnail, visible_group_range
 from ai_cull_assistant.models import PhotoAsset
 
 
@@ -40,6 +42,39 @@ def test_large_group_editor_only_renders_rows_near_viewport():
     assert 218 <= indexes.start <= 220
     assert indexes.stop - indexes.start < 10
     assert 220 in indexes
+
+
+def test_group_editor_fixed_actions_remain_visible_at_900_by_600(tmp_path, monkeypatch):
+    from ai_cull_assistant import window_layout
+    monkeypatch.setattr(window_layout, 'work_area_for',
+                        lambda _widget: window_layout.WorkArea(0, 0, 900, 600))
+    path = tmp_path / 'preview.jpg'
+    Image.new('RGB', (160, 120), 'white').save(path)
+    asset = make_asset('A', 1)
+    asset.preview_path = path
+    asset.primary_path = path
+    root = tk.Tk()
+    try:
+        editor = GroupEditor(root, [asset], lambda: None)
+        root.update()
+        wanted = {'从所选照片拆分', '与上一组合并', '与下一组合并'}
+        buttons = []
+
+        def walk(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, ttk.Button) and child.cget('text') in wanted:
+                    buttons.append(child)
+                walk(child)
+
+        walk(editor)
+        assert {button.cget('text') for button in buttons} == wanted
+        for button in buttons:
+            assert button.winfo_viewable()
+            assert button.winfo_rooty() + button.winfo_height() <= editor.winfo_rooty() + editor.winfo_height()
+        assert editor.rows_canvas.winfo_height() >= 80
+        assert editor.detail_canvas.winfo_viewable()
+    finally:
+        root.destroy()
 
 
 def test_thumbnail_decode_returns_detached_bounded_pil_image(tmp_path, monkeypatch):
