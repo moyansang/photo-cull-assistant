@@ -33,6 +33,7 @@ from .shared_api import (
 )
 from .window_layout import fit_window
 from .ui_help import install_page_chrome, install_control_help
+from .ui_style import apply_page
 from .workspace_layout import workspace_path
 from .workspace_log import append_log, visible_log
 from dataclasses import asdict
@@ -382,7 +383,7 @@ class App(tk.Tk):
     def _build_ui(self) -> None:
         toolbar = install_page_chrome(self, "home")
         self.update_button = toolbar.buttons["update"]
-        frame = ttk.Frame(self, padding=(12, 8))
+        frame = ttk.Frame(self, padding=(16, 12))
         frame.pack(fill="both", expand=True)
 
         self.input_var = tk.StringVar(value=self.saved_paths["input"])
@@ -488,6 +489,8 @@ class App(tk.Tk):
             frame.columnconfigure(col, weight=1)
         frame.rowconfigure(row, weight=1)
         install_control_help(self, "home")
+        apply_page(self)
+        self.clear_workspace_button.configure(style="Danger.Cull.TButton")
 
     def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: tk.StringVar, command) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=6)

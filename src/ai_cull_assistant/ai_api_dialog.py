@@ -16,6 +16,7 @@ from .ai_api import DEFAULT_TIMEOUT, call_model, load_profiles, save_profile
 from .ai_presets import PRESETS, matching_preset, preset_profile
 from .settings import read_values, save_values
 from .ui_help import install_control_help, install_page_chrome
+from .ui_style import apply_page
 from .window_layout import fit_window
 
 
@@ -98,7 +99,7 @@ class ApiConfigDialog(tk.Toplevel):
             self._apply_new_preset(remembered_preset)
         self._sync_advanced()
         # Keep geometry stable during native mouse press/release dispatch.
-        fit_window(self, (680, 520), minimum_size=(640, 360), parent=self.master)
+        fit_window(self, (740, 560), minimum_size=(640, 480), parent=self.master)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._poll_token = self.after(100, self._poll_events)
         # The editor is an owned, modeless window. A hidden child must never
@@ -113,7 +114,9 @@ class ApiConfigDialog(tk.Toplevel):
         install_page_chrome(self, "api")
         footer = ttk.Frame(self, padding=(12, 6, 12, 10))
         footer.pack(side="bottom", fill="x")
-        ttk.Label(footer, textvariable=self.status_var).pack(side="left", fill="x", expand=True)
+        status = ttk.Label(footer, textvariable=self.status_var, wraplength=600)
+        status.pack(side="top", fill="x", pady=(0, 8))
+        footer.bind("<Configure>", lambda e: status.configure(wraplength=max(180, e.width - 24)))
         self.close_button = ttk.Button(footer, text="关闭", command=self.destroy)
         self.close_button.pack(side="right")
         self.save_button = ttk.Button(footer, text="保存", command=lambda: self._start("save"))
@@ -181,6 +184,8 @@ class ApiConfigDialog(tk.Toplevel):
             entry.grid(row=row, column=1, sticky="ew", pady=6)
             self.advanced_entries.append(entry)
         install_control_help(self, "api")
+        apply_page(self)
+        self.save_button.configure(style="Primary.Cull.TButton")
 
         self._mutable_widgets = [
             (self.profile_box, "readonly"),

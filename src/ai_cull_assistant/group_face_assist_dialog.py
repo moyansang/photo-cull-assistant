@@ -20,6 +20,7 @@ from PIL import Image, ImageOps, ImageTk
 
 from . import group_face_assist
 from .ui_help import install_control_help, install_page_chrome
+from .ui_style import apply_page, COLORS
 from .window_layout import fit_window
 
 LEVEL_LABELS = {'reliable': '可靠', 'review': '待确认', 'missing': '未找到'}
@@ -68,8 +69,9 @@ class GroupFaceAssistDialog(tk.Toplevel):
         # remains visible on a 720-pixel-high desktop.
         header = ttk.Frame(self, padding=(12, 8, 12, 0))
         header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"参考人物：{reference.stem}    全工作区待检查：{len(self.targets)} 张").pack(side='left')
-        self.progress_label = ttk.Label(header, text=f"0 / {len(self.targets)}")
+        self.reference_label = ttk.Label(header, text=f"参考人物：{reference.stem}", width=30, anchor="w")
+        self.reference_label.pack(side="left", fill="x", expand=True)
+        self.progress_label = ttk.Label(header, text=f"待检查 0 / {len(self.targets)}")
         self.progress_label.pack(side='left', padx=18)
         self.stop_button = ttk.Button(header, text='停止查找', command=self.stop_search)
         self.stop_button.pack(side='right')
@@ -78,6 +80,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         footer.pack(side='bottom', fill='x')
         self.reason_label = ttk.Label(footer, text='', wraplength=560)
         self.reason_label.pack(fill='x')
+        footer.bind('<Configure>', lambda e: self.reason_label.configure(wraplength=max(200, e.width-24)))
         buttons = ttk.Frame(footer)
         buttons.pack(fill='x', pady=(6, 0))
         ttk.Button(buttons, text='确认此框', command=self.confirm_current).pack(side='left', padx=(0, 6))
@@ -95,7 +98,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         reference_frame = ttk.LabelFrame(body, text='当前参考人物', padding=6)
         reference_frame.grid(row=0, column=0, sticky='ns')
         self.reference_preview = tk.Canvas(
-            reference_frame, width=155, height=250, background='#f7f7f7', highlightthickness=0)
+            reference_frame, width=155, height=250, background=COLORS['photo'], highlightthickness=0)
         self.reference_preview.pack(fill='both', expand=True)
         self._reference_photos = []
 
@@ -109,9 +112,10 @@ class GroupFaceAssistDialog(tk.Toplevel):
         )
         self.tree.heading('#0', text='照片')
         self.tree.column('#0', width=58, minwidth=58, stretch=False)
+        ui_scale = max(1.0, float(self.tk.call('tk', 'scaling')) / (96 / 72))
         for column, label, width in (('#1', '采用', 42), ('#2', '文件名', 130), ('#3', '状态', 72)):
             self.tree.heading(column, text=label)
-            self.tree.column(column, width=width, anchor='center' if column != '#2' else 'w')
+            self.tree.column(column, width=round(width * ui_scale), anchor='center' if column != '#2' else 'w')
         self.tree.pack(side='left', fill='y')
         scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self._scroll_tree)
         scrollbar.pack(side='right', fill='y')
@@ -120,7 +124,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.tree.bind('<ButtonRelease-1>', self._tree_click)
         self.tree.bind('<MouseWheel>', self._tree_wheel)
         self.tree.bind('<Configure>', lambda _event: self._schedule_visible_thumbnails())
-        self.preview = tk.Canvas(body, background='#eeeeee', highlightthickness=0)
+        self.preview = tk.Canvas(body, background=COLORS['photo'], highlightthickness=0)
         self.preview.grid(row=0, column=2, sticky='nsew', padx=(8, 8))
         self.preview.bind('<Configure>', lambda _e: self.show_current())
         self.preview.bind('<ButtonPress-1>', self.pointer_down)
@@ -129,10 +133,10 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.preview.bind('<MouseWheel>', self.pointer_wheel)
         inset = ttk.Frame(body)
         inset.grid(row=0, column=3, sticky='ns')
-        self.bind('<Configure>', lambda e: (inset.grid() if e.width >= 1040 else inset.grid_remove())
+        self.bind('<Configure>', lambda e: (inset.grid() if e.width >= round(1040 * ui_scale) else inset.grid_remove())
                   if e.widget is self else None)
         ttk.Label(inset, text='候选人脸').pack()
-        self.inset = tk.Canvas(inset, width=140, height=170, background='#ffffff', highlightthickness=0)
+        self.inset = tk.Canvas(inset, width=140, height=170, background=COLORS['photo'], highlightthickness=0)
         self.inset.pack()
 
         fit_window(self, (1120, 650), minimum_size=(640, 480), parent=parent)
@@ -146,6 +150,13 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self._draw_reference()
         self._schedule_visible_thumbnails()
         install_control_help(self, "assist")
+        apply_page(self)
+        self.accept_button.configure(style="Primary.Cull.TButton")
+        from .ui_help import ToolTip
+        self.reference_label._filename_tip = ToolTip(self.reference_label, reference.stem)
+        self.tree._filename_tip = ToolTip(self.tree, "")
+        if not self.targets:
+            self.preview.create_text(160, 100, text="没有待补齐的照片", fill=COLORS["photo_text"])
         self.grab_set()
         self._start_worker()
 
@@ -355,12 +366,12 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.reference_preview.delete('all')
         self._reference_photos.clear()
         if not self.reference.preview_path:
-            self.reference_preview.create_text(78, 90, text='参考预览不可用', fill='#666666')
+            self.reference_preview.create_text(78, 90, text='参考预览不可用', fill=COLORS['photo_text'])
             return
         try:
             image = self._load_preview(self.reference.preview_path)
         except OSError as exc:
-            self.reference_preview.create_text(78, 90, text=f'参考预览不可用\n{exc}', fill='#666666')
+            self.reference_preview.create_text(78, 90, text=f'参考预览不可用\n{exc}', fill=COLORS['photo_text'])
             return
         width = max(120, self.reference_preview.winfo_width() - 8)
         whole = ImageOps.contain(image, (width, 132))
@@ -373,8 +384,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
         face = ImageOps.contain(crop, (width, 92))
         face_photo = ImageTk.PhotoImage(face, master=self.reference_preview)
         self._reference_photos.append(face_photo)
-        self.reference_preview.create_text((width + 8) / 2, 154, text='参考人脸', fill='#555555')
-        self.reference_preview.create_image((width + 8) / 2, 204, image=face_photo)
+        self.reference_preview.create_text((width + 8) / 2, 154, text='参考人脸', fill=COLORS['photo_text'])
+        self.reference_preview.create_image((width + 8) / 2, 218, image=face_photo)
 
     def show_current(self, *_):
         selection = self.tree.selection()
@@ -390,6 +401,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self._photos = []
         self._image_rect = None
         target = row['target']
+        if hasattr(self.tree, '_filename_tip'):
+            self.tree._filename_tip.text = target.stem
         proposal = row['proposal']
         reason = proposal.reason if proposal else '尚未计算'
         if row['accepted']:
@@ -403,13 +416,13 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.reason_label.configure(text=f"原因：{reason}")
         if not target.preview_path:
             self.preview.create_text(self.preview.winfo_width() // 2 or 200, 100,
-                                      text='预览缺失或不可读', fill='#666666')
+                                      text='预览缺失或不可读', fill=COLORS['photo_text'])
             self.inset.delete('all')
             return
         try:
             image = self._load_preview(target.preview_path)
         except OSError as exc:
-            self.preview.create_text(200, 100, text=f'预览不可用：{exc}')
+            self.preview.create_text(200, 100, text=f'预览不可用：{exc}', fill=COLORS['photo_text'], width=max(100, self.preview.winfo_width()-32))
             self.inset.delete('all')
             return
         width = max(120, self.preview.winfo_width())
