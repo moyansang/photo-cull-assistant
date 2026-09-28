@@ -43,6 +43,26 @@ def visible_group_range(count: int, viewport_top: int, viewport_height: int, row
     return range(first, last)
 
 
+def ellipsize_text(text: str, measure: Callable[[str], int], max_width: int) -> str:
+    """Fit one line to a pixel width while keeping the start and end useful."""
+    if not text or measure(text) <= max_width:
+        return text
+    marker = "…"
+    if max_width <= measure(marker):
+        return marker
+    low, high = 0, len(text)
+    while low < high:
+        keep = (low + high + 1) // 2
+        left = (keep + 1) // 2
+        candidate = text[:left] + marker + text[-(keep - left):] if keep > left else text[:left] + marker
+        if measure(candidate) <= max_width:
+            low = keep
+        else:
+            high = keep - 1
+    left = (low + 1) // 2
+    return text[:left] + marker + text[-(low - left):] if low > left else text[:left] + marker
+
+
 ThumbnailKey = tuple[int, tuple[int, int]]
 
 
@@ -179,9 +199,10 @@ class ThumbnailLoader:
 
 
 class GroupEditor(tk.Toplevel):
-    ROW_H = 145
-    ROW_THUMB = (105, 105)
-    DETAIL_THUMB = (150, 125)
+    ROW_H = 62
+    DETAIL_THUMB = (160, 120)
+    DETAIL_CELL_W = 180
+    DETAIL_CELL_H = 162
     THUMB_CACHE_SIZE = 160
     THUMB_POLL_MS = 20
 
@@ -207,6 +228,19 @@ class GroupEditor(tk.Toplevel):
         self._redraw_token: str | None = None
         self._detail_redraw_token: str | None = None
         install_page_chrome(self, "groups")
+        root = self
+        while root.master is not None:
+            root = root.master
+        self._fonts = root._cull_fonts
+        fonts = self._fonts
+        self._group_row_h = max(
+            self.ROW_H,
+            fonts['body'].metrics('linespace') + fonts['shortcut'].metrics('linespace') + 25,
+        )
+        self._detail_cell_h = max(
+            self.DETAIL_CELL_H,
+            self.DETAIL_THUMB[1] + fonts['small'].metrics('linespace') + 24,
+        )
         self._build_ui()
         fit_window(self, (1180, 680), minimum_size=(640, 480), parent=parent)
         self._redraw_rows()
@@ -217,9 +251,9 @@ class GroupEditor(tk.Toplevel):
     def _build_ui(self) -> None:
         header = ttk.Frame(self, padding=(10, 6, 10, 4))
         header.pack(side="top", fill="x")
-        ttk.Label(header, text="选片组与照片").pack(side="left")
+        ttk.Label(header, text="编辑选片组", style="Heading.TLabel").pack(side="left")
         self.status_var = tk.StringVar(value="")
-        ttk.Label(header, textvariable=self.status_var).pack(side="right")
+        ttk.Label(header, textvariable=self.status_var, style="Muted.TLabel").pack(side="right")
 
         actions = ttk.Frame(self, padding=(10, 4, 10, 8))
         actions.pack(side="bottom", fill="x")
@@ -228,24 +262,39 @@ class GroupEditor(tk.Toplevel):
         ttk.Button(actions, text="与上一组合并", command=lambda: self._merge_neighbor(-1)).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="与下一组合并", command=lambda: self._merge_neighbor(1)).pack(side="left", padx=(0, 8))
 
-        detail_frame = ttk.LabelFrame(self, text="当前组全部照片（点击照片选择拆分位置）", padding=8)
-        detail_frame.pack(side="bottom", fill="x", padx=10, pady=(0, 4))
-        self.detail_canvas = tk.Canvas(detail_frame, height=175, highlightthickness=0, background="white")
-        xbar = ttk.Scrollbar(detail_frame, orient="horizontal", command=self._scroll_detail)
-        self.detail_canvas.configure(xscrollcommand=xbar.set)
-        self.detail_canvas.pack(fill="x", expand=True)
-        xbar.pack(fill="x")
-        self.detail_canvas.bind("<Configure>", lambda _event: self._schedule_detail_redraw())
+        content = ttk.Frame(self, padding=(10, 0, 10, 6))
+        content.pack(side="top", fill="both", expand=True)
+        content.columnconfigure(0, minsize=220)
+        content.columnconfigure(1, weight=1)
+        content.rowconfigure(0, weight=1)
 
-        upper = ttk.Frame(self, padding=(10, 0, 10, 6))
-        upper.pack(side="top", fill="both", expand=True)
-        self.rows_canvas = tk.Canvas(upper, highlightthickness=0, background=COLORS["bg"])
-        ybar = ttk.Scrollbar(upper, orient="vertical", command=self._scroll_rows)
+        groups_frame = ttk.LabelFrame(content, text="选片组", padding=6)
+        groups_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        groups_frame.columnconfigure(0, weight=1)
+        groups_frame.rowconfigure(0, weight=1)
+        self.rows_canvas = tk.Canvas(groups_frame, width=230, highlightthickness=0, background=COLORS["bg"])
+        ybar = ttk.Scrollbar(groups_frame, orient="vertical", command=self._scroll_rows)
         self.rows_canvas.configure(yscrollcommand=ybar.set)
-        self.rows_canvas.pack(side="left", fill="both", expand=True)
-        ybar.pack(side="right", fill="y")
+        self.rows_canvas.grid(row=0, column=0, sticky="nsew")
+        ybar.grid(row=0, column=1, sticky="ns")
         self.rows_canvas.bind("<MouseWheel>", self._on_mousewheel)
         self.rows_canvas.bind("<Configure>", lambda _event: self._schedule_rows_redraw())
+
+        detail_frame = ttk.LabelFrame(content, text="当前组照片 · 点击照片选择拆分位置", padding=6)
+        detail_frame.grid(row=0, column=1, sticky="nsew")
+        detail_frame.columnconfigure(0, weight=1)
+        detail_frame.rowconfigure(1, weight=1)
+        self.detail_status_var = tk.StringVar(value="")
+        ttk.Label(detail_frame, textvariable=self.detail_status_var, style="Muted.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 5)
+        )
+        self.detail_canvas = tk.Canvas(detail_frame, highlightthickness=0, background=COLORS["surface"])
+        detail_ybar = ttk.Scrollbar(detail_frame, orient="vertical", command=self._scroll_detail)
+        self.detail_canvas.configure(yscrollcommand=detail_ybar.set)
+        self.detail_canvas.grid(row=1, column=0, sticky="nsew")
+        detail_ybar.grid(row=1, column=1, sticky="ns")
+        self.detail_canvas.bind("<MouseWheel>", self._on_detail_mousewheel)
+        self.detail_canvas.bind("<Configure>", lambda _event: self._schedule_detail_redraw())
 
     def _on_mousewheel(self, event) -> None:
         self.rows_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
@@ -267,8 +316,13 @@ class GroupEditor(tk.Toplevel):
             self._redraw_rows()
 
     def _scroll_detail(self, *args: str) -> None:
-        self.detail_canvas.xview(*args)
+        self.detail_canvas.yview(*args)
         self._schedule_detail_redraw()
+
+    def _on_detail_mousewheel(self, event) -> str:
+        self.detail_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self._schedule_detail_redraw()
+        return "break"
 
     def _schedule_detail_redraw(self) -> None:
         if self._detail_redraw_token is None:
@@ -282,45 +336,59 @@ class GroupEditor(tk.Toplevel):
     def _redraw_rows(self) -> None:
         self.rows_canvas.delete("all")
         self._row_images.clear()
-        width = max(self.rows_canvas.winfo_width(), 1080)
-        total_h = max(len(self._groups) * self.ROW_H, 1)
+        width = max(self.rows_canvas.winfo_width(), 210)
+        row_height = self._group_row_h
+        total_h = max(len(self._groups) * row_height, 1)
         self.rows_canvas.configure(scrollregion=(0, 0, width, total_h))
 
         # A Canvas can describe thousands of rows, but only the rows around the
         # viewport need widgets and decoded thumbnails.  Keeping a one-row
         # buffer makes wheel and scrollbar movement appear continuous.
         viewport_top = max(0, int(self.rows_canvas.canvasy(0)))
-        viewport_height = max(self.ROW_H, self.rows_canvas.winfo_height())
-        visible_rows = visible_group_range(len(self._groups), viewport_top, viewport_height, self.ROW_H)
-        self._row_requested_keys = {
-            self._thumbnail_key(asset, self.ROW_THUMB)
-            for row_index in visible_rows
-            for asset in self._groups[row_index][1][:8]
-        }
+        viewport_height = max(row_height, self.rows_canvas.winfo_height())
+        visible_rows = visible_group_range(len(self._groups), viewport_top, viewport_height, row_height)
+        self._row_requested_keys = set()
         self._cancel_stale_thumbnail_requests()
         for row_index in visible_rows:
             group_id, members = self._groups[row_index]
-            y0 = row_index * self.ROW_H
+            y0 = row_index * row_height
             selected = group_id == self.selected_group_id
             fill = COLORS['selection'] if selected else COLORS['surface']
             outline = COLORS['accent'] if selected else COLORS['border']
             tag = f"group:{group_id}"
-            self.rows_canvas.create_rectangle(5, y0 + 4, width - 8, y0 + self.ROW_H - 4, fill=fill, outline=outline, width=2 if selected else 1, tags=(tag,))
-            self.rows_canvas.create_text(18, y0 + 20, anchor="nw", text=f"G{group_id:03d}\n{len(members)} 张", font=("Microsoft YaHei UI", 11, "bold"), tags=(tag,))
-
-            x = 105
-            max_preview = 8
-            for asset in members[:max_preview]:
-                photo = self._cached_photo(asset, self.ROW_THUMB)
-                if photo is not None:
-                    self._row_images.append(photo)
-                    self.rows_canvas.create_image(x, y0 + 10, anchor="nw", image=photo, tags=(tag, f"asset:{asset.stem}"))
-                self.rows_canvas.create_text(x, y0 + 119, anchor="nw", text=asset.stem, font=("Microsoft YaHei UI", 9), tags=(tag, f"asset:{asset.stem}"))
-                x += 118
-            if len(members) > max_preview:
-                self.rows_canvas.create_text(x + 6, y0 + 54, anchor="nw", text=f"+{len(members) - max_preview}\n更多", font=("Microsoft YaHei UI", 10, "bold"), tags=(tag,))
+            self.rows_canvas.create_rectangle(
+                4, y0 + 3, width - 5, y0 + row_height - 3,
+                fill=fill, outline=outline, width=2 if selected else 1, tags=(tag,)
+            )
+            self.rows_canvas.create_text(
+                14, y0 + 12, anchor="nw", text=f"G{group_id:03d}",
+                font=("Microsoft YaHei UI", 10, "bold"), fill=COLORS['text'], tags=(tag,)
+            )
+            self.rows_canvas.create_text(
+                width - 14, y0 + 12, anchor="ne", text=f"{len(members)} 张",
+                font=("Microsoft YaHei UI", 9), fill=COLORS['muted'], tags=(tag,)
+            )
+            first_stem = members[0].stem
+            last_stem = members[-1].stem
+            full_range = first_stem if first_stem == last_stem else f"{first_stem} — {last_stem}"
+            range_text = ellipsize_text(
+                full_range,
+                self._fonts['shortcut'].measure,
+                max(40, width - 28),
+            )
+            self.rows_canvas.create_text(
+                14, y0 + 35, anchor="nw", text=range_text,
+                font=("Microsoft YaHei UI", 8), fill=COLORS['muted'], tags=(tag,)
+            )
 
             self.rows_canvas.tag_bind(tag, "<Button-1>", lambda e, gid=group_id: self._select_group(gid))
+            self.rows_canvas.tag_bind(
+                tag, "<Enter>",
+                lambda e, gid=group_id, full=full_range: self.status_var.set(f"G{gid:03d} · {full}"),
+            )
+            self.rows_canvas.tag_bind(
+                tag, "<Leave>", lambda e: self.status_var.set(f"共 {len(self._groups)} 组选片组")
+            )
 
         self.status_var.set(f"共 {len(self._groups)} 组选片组")
 
@@ -328,31 +396,73 @@ class GroupEditor(tk.Toplevel):
         self.detail_canvas.delete("all")
         self._detail_images.clear()
         if self.selected_group_id is None:
+            self.detail_status_var.set("没有可显示的选片组")
             return
         members = self._members_by_group.get(self.selected_group_id, [])
-        total_width = max(10 + len(members) * 170, 1)
-        self.detail_canvas.configure(scrollregion=(0, 0, total_width, 170))
-        viewport_left = max(0, int(self.detail_canvas.canvasx(0)))
-        viewport_width = max(170, self.detail_canvas.winfo_width())
-        first = max(0, viewport_left // 170 - 1)
-        last = min(len(members), (viewport_left + viewport_width) // 170 + 2)
+        self._refresh_detail_status()
+
+        width = max(self.detail_canvas.winfo_width(), self.DETAIL_CELL_W)
+        columns = max(1, width // self.DETAIL_CELL_W)
+        cell_width = max(self.DETAIL_CELL_W, width // columns)
+        row_height = self._detail_cell_h
+        row_count = (len(members) + columns - 1) // columns
+        total_height = max(8 + row_count * row_height, 1)
+        self.detail_canvas.configure(scrollregion=(0, 0, width, total_height))
+        viewport_top = max(0, int(self.detail_canvas.canvasy(0)))
+        viewport_height = max(row_height, self.detail_canvas.winfo_height())
+        first_row = max(0, viewport_top // row_height - 1)
+        last_row = min(row_count, (viewport_top + viewport_height) // row_height + 2)
+        first = first_row * columns
+        last = min(len(members), last_row * columns)
         self._detail_requested_keys = {
             self._thumbnail_key(members[index], self.DETAIL_THUMB) for index in range(first, last)
         }
         self._cancel_stale_thumbnail_requests()
         for index in range(first, last):
             asset = members[index]
-            x = 10 + index * 170
+            row, column = divmod(index, columns)
+            x0 = column * cell_width + 5
+            y0 = row * row_height + 5
+            x1 = (column + 1) * cell_width - 5
+            y1 = y0 + row_height - 10
+            tag = f"detail:{asset.stem}"
             selected = asset.stem == self.selected_stem
-            if selected:
-                self.detail_canvas.create_rectangle(x - 4, 5, x + 158, 158, outline=COLORS['accent'], width=3)
+            self.detail_canvas.create_rectangle(
+                x0, y0, x1, y1,
+                fill=COLORS['selection'] if selected else COLORS['surface'],
+                outline=COLORS['accent'] if selected else COLORS['border'],
+                width=2 if selected else 1,
+                tags=(tag,),
+            )
             photo = self._cached_photo(asset, self.DETAIL_THUMB)
             if photo is not None:
                 self._detail_images.append(photo)
-                item = self.detail_canvas.create_image(x, 10, anchor="nw", image=photo, tags=(f"detail:{asset.stem}",))
-                self.detail_canvas.tag_bind(item, "<Button-1>", lambda e, stem=asset.stem: self._select_asset(stem))
-            text = self.detail_canvas.create_text(x, 140, anchor="nw", text=asset.stem, font=("Microsoft YaHei UI", 9), tags=(f"detail:{asset.stem}",))
-            self.detail_canvas.tag_bind(text, "<Button-1>", lambda e, stem=asset.stem: self._select_asset(stem))
+                image_x = x0 + max(6, (x1 - x0 - photo.width()) // 2)
+                self.detail_canvas.create_image(image_x, y0 + 6, anchor="nw", image=photo, tags=(tag,))
+            display_stem = ellipsize_text(
+                asset.stem,
+                self._fonts['small'].measure,
+                max(40, x1 - x0 - 16),
+            )
+            self.detail_canvas.create_text(
+                x0 + 8, y1 - self._fonts['small'].metrics('linespace') - 5,
+                anchor="nw", text=display_stem,
+                font=("Microsoft YaHei UI", 9), fill=COLORS['text'], tags=(tag,)
+            )
+            self.detail_canvas.tag_bind(tag, "<Button-1>", lambda e, stem=asset.stem: self._select_asset(stem))
+            self.detail_canvas.tag_bind(
+                tag, "<Enter>", lambda e, stem=asset.stem: self._refresh_detail_status(stem)
+            )
+            self.detail_canvas.tag_bind(tag, "<Leave>", lambda e: self._refresh_detail_status())
+
+    def _refresh_detail_status(self, hovered_stem: str | None = None) -> None:
+        if self.selected_group_id is None:
+            self.detail_status_var.set("没有可显示的选片组")
+            return
+        members = self._members_by_group.get(self.selected_group_id, [])
+        stem = hovered_stem or self.selected_stem
+        suffix = f" · {'当前' if hovered_stem else '已选'} {stem}" if stem else ""
+        self.detail_status_var.set(f"G{self.selected_group_id:03d} · {len(members)} 张{suffix}")
 
     def _select_group(self, group_id: int) -> None:
         self.selected_group_id = group_id

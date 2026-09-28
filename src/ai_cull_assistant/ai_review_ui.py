@@ -212,6 +212,7 @@ class ReviewDialog(tk.Toplevel):
         self._closing_requested = False
         self._poll_token: str | None = None
         self._review_dirty = True
+        self._review_sashes_initialized = False
 
         self.preference_vars = {
             "intensity": tk.StringVar(value="均衡保留"),
@@ -225,7 +226,11 @@ class ReviewDialog(tk.Toplevel):
         self.filter_var = tk.StringVar(value="全部")
         self.status_var = tk.StringVar(value="就绪")
         self.export_status_var = tk.StringVar(value="")
+        self.review_count_var = tk.StringVar(value="0 张照片")
         self.review_caption_var = tk.StringVar(value="请选择照片")
+        self.review_rating_var = tk.StringVar(value="—")
+        self.review_flag_var = tk.StringVar(value="—")
+        self.review_clarity_var = tk.StringVar(value="—")
         self._build_ui()
         fit_window(self, (1180, 820), minimum_size=(640, 500), parent=parent)
         self._load_saved_preferences()
@@ -274,10 +279,23 @@ class ReviewDialog(tk.Toplevel):
         # Keep the preference panel in place across tabs so returning never
         # repacks the API page or changes its available area.
         if hasattr(self, "review_tree") and self.notebook.index(self.notebook.select()) == 2:
+            if not self._review_sashes_initialized:
+                self.after_idle(self._set_review_pane_positions)
             if self._review_dirty:
                 self._refresh_review()
             else:
                 self._show_selected_photo()
+
+    def _set_review_pane_positions(self) -> None:
+        """Give the photo preview useful room before the user adjusts dividers."""
+        width = self.review_workspace.winfo_width()
+        if width < 500:
+            return
+        first = max(210, min(320, round(width * 0.27)))
+        second = max(first + 260, min(width - 220, round(width * 0.70)))
+        self.review_workspace.sashpos(0, first)
+        self.review_workspace.sashpos(1, second)
+        self._review_sashes_initialized = True
 
     def _build_task_tab(self) -> None:
         tab = self.task_tab
@@ -288,7 +306,7 @@ class ReviewDialog(tk.Toplevel):
         fields = (
             (0, 0, "选片力度", "intensity", ("少量精选", "均衡保留", "多留备选")),
             (0, 2, "同组策略", "strategy", ("通常保留一张", "允许保留多个不同动作")),
-            (1, 0, "评价重点", "focus", ("表情优先", "动作优先", "综合判断")),
+            (0, 4, "评价重点", "focus", ("表情优先", "动作优先", "综合判断")),
         )
         for row, col, label, key, values in fields:
             pady = (5, 0) if row else 0
@@ -296,14 +314,14 @@ class ReviewDialog(tk.Toplevel):
             ttk.Combobox(prefs, textvariable=self.preference_vars[key], values=values, state="readonly", width=18).grid(
                 row=row, column=col + 1, sticky="ew", padx=(0, 10), pady=pady
             )
-        ttk.Label(prefs, text="目标数量").grid(row=1, column=2, sticky="w", pady=(5, 0))
-        ttk.Entry(prefs, textvariable=self.preference_vars["target"]).grid(row=1, column=3, sticky="ew", pady=(5, 0))
-        ttk.Label(prefs, text="补充要求").grid(row=2, column=0, sticky="w", pady=(5, 0))
-        ttk.Entry(prefs, textvariable=self.preference_vars["extra"]).grid(row=2, column=1, columnspan=2, sticky="ew", pady=(5, 0), padx=(0, 10))
-        for col in (1, 3):
+        ttk.Label(prefs, text="目标数量").grid(row=1, column=0, sticky="w", pady=(5, 0))
+        ttk.Entry(prefs, textvariable=self.preference_vars["target"]).grid(row=1, column=1, sticky="ew", pady=(5, 0), padx=(0, 10))
+        ttk.Label(prefs, text="补充要求").grid(row=1, column=2, sticky="w", pady=(5, 0))
+        ttk.Entry(prefs, textvariable=self.preference_vars["extra"]).grid(row=1, column=3, columnspan=2, sticky="ew", pady=(5, 0), padx=(0, 10))
+        for col in (1, 3, 5):
             prefs.columnconfigure(col, weight=1)
         create = ttk.Frame(prefs)
-        create.grid(row=2, column=3, sticky="e", pady=(5, 0))
+        create.grid(row=1, column=5, sticky="e", pady=(5, 0))
         self.refine_button = ttk.Button(create, text="精选照片再选一轮", command=self._create_refine)
         self.refine_button.pack(side="left", padx=(0, 8))
 
@@ -519,49 +537,95 @@ class ReviewDialog(tk.Toplevel):
 
     def _build_review_tab(self) -> None:
         self.review_tab.columnconfigure(0, weight=1)
-        self.review_tab.rowconfigure(1, weight=3)
-        self.review_tab.rowconfigure(2, weight=2)
+        self.review_tab.rowconfigure(1, weight=1)
         bar = ttk.Frame(self.review_tab)
         bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         ttk.Label(bar, text="筛选").pack(side="left")
         combo = ttk.Combobox(bar, textvariable=self.filter_var, values=("全部", "清晰度待确认", "待复核", "AI 建议弃置", "4～5 星", "回答缺失或异常"), state="readonly", width=18)
         combo.pack(side="left", padx=8)
+        ttk.Label(bar, textvariable=self.review_count_var, style="Muted.TLabel").pack(side="left")
         combo.bind("<<ComboboxSelected>>", lambda _e: (self._refresh_review(), self._save_ui_settings()))
         ttk.Label(bar, textvariable=self.export_status_var).pack(side="right")
-        table = ttk.Frame(self.review_tab)
-        table.grid(row=1, column=0, sticky="nsew")
+
+        self.review_workspace = ttk.Panedwindow(self.review_tab, orient="horizontal")
+        self.review_workspace.grid(row=1, column=0, sticky="nsew")
+
+        self.review_list_panel = ttk.LabelFrame(self.review_workspace, text="照片结果", padding=8)
         columns = ("name", "group", "ai", "flag", "reason", "clarity")
-        self.review_tree = ttk.Treeview(table, columns=columns, show="headings", selectmode="browse", height=8)
-        for key, label, width in (("name", "照片", 145), ("group", "分组", 55), ("ai", "星级", 60), ("flag", "是否弃置", 120), ("reason", "对应 AI 回复", 400), ("clarity", "清晰度", 150)):
+        self.review_tree = ttk.Treeview(
+            self.review_list_panel,
+            columns=columns,
+            displaycolumns=("name", "group", "ai", "flag"),
+            show="headings",
+            selectmode="browse",
+            height=12,
+        )
+        for key, label, width in (("name", "照片", 108), ("group", "组", 38), ("ai", "星级", 42), ("flag", "弃置", 62), ("reason", "对应 AI 回复", 0), ("clarity", "清晰度", 90)):
             self.review_tree.heading(key, text=label)
-            self.review_tree.column(key, width=width, minwidth=45, stretch=key in {"name", "reason"})
-        scroll = ttk.Scrollbar(table, orient="vertical", command=self.review_tree.yview)
-        horizontal = ttk.Scrollbar(table, orient="horizontal", command=self.review_tree.xview)
-        self.review_tree.configure(yscrollcommand=scroll.set, xscrollcommand=horizontal.set)
-        self.review_tree.grid(row=0, column=0, sticky="nsew")
-        scroll.grid(row=0, column=1, sticky="ns")
-        horizontal.grid(row=1, column=0, sticky="ew")
-        table.rowconfigure(0, weight=1); table.columnconfigure(0, weight=1)
+            self.review_tree.column(key, width=width, minwidth=38, stretch=key == "name")
+        scroll = ttk.Scrollbar(self.review_list_panel, orient="vertical", command=self.review_tree.yview)
+        self.review_tree.configure(yscrollcommand=scroll.set)
+        self.review_tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
         self.review_tree.bind("<<TreeviewSelect>>", self._show_selected_photo)
         self.review_tree.bind("<Double-1>", lambda _e: self._open_original())
-        detail = ttk.Frame(self.review_tab)
-        detail.grid(row=2, column=0, sticky="nsew", pady=(8, 0))
-        preview_frame = ttk.Frame(detail, width=300, height=200)
-        preview_frame.pack(side="left", fill="both", expand=True)
-        preview_frame.pack_propagate(False)
-        self.preview_label = ttk.Label(preview_frame, text="请选择照片", anchor="center")
+
+        self.review_preview_panel = ttk.LabelFrame(self.review_workspace, text="照片预览", padding=8)
+        preview_frame = tk.Frame(self.review_preview_panel, background=COLORS["photo"], highlightthickness=0)
+        preview_frame.pack(fill="both", expand=True)
+        self.preview_label = tk.Label(
+            preview_frame,
+            text="请选择照片",
+            anchor="center",
+            background=COLORS["photo"],
+            foreground=COLORS["photo_text"],
+            borderwidth=0,
+        )
         self.preview_label.pack(fill="both", expand=True)
-        right = ttk.Frame(detail)
-        right.pack(side="left", fill="both", expand=True, padx=(10, 0))
-        ttk.Label(right, textvariable=self.review_caption_var).pack(anchor="w")
-        details_frame = ttk.Frame(right)
+        preview_actions = ttk.Frame(self.review_preview_panel)
+        preview_actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(preview_actions, text="上一张", command=lambda: self._navigate_photo(-1)).pack(side="left")
+        ttk.Button(preview_actions, text="下一张", command=lambda: self._navigate_photo(1)).pack(side="left", padx=(8, 0))
+        ttk.Button(preview_actions, text="打开原图", command=self._open_original).pack(side="right")
+
+        self.review_detail_panel = ttk.LabelFrame(self.review_workspace, text="AI 结果", padding=10)
+        self.review_caption_label = ttk.Label(
+            self.review_detail_panel,
+            textvariable=self.review_caption_var,
+            style="Heading.TLabel",
+            wraplength=240,
+        )
+        self.review_caption_label.pack(anchor="w", fill="x")
+        self.review_detail_panel.bind(
+            "<Configure>",
+            lambda event: self.review_caption_label.configure(wraplength=max(150, event.width - 30)),
+            add="+",
+        )
+        ttk.Separator(self.review_detail_panel).pack(fill="x", pady=(8, 10))
+        summary = ttk.Frame(self.review_detail_panel)
+        summary.pack(fill="x")
+        for row, (label, variable) in enumerate((
+            ("AI 星级", self.review_rating_var),
+            ("弃置状态", self.review_flag_var),
+            ("清晰度", self.review_clarity_var),
+        )):
+            ttk.Label(summary, text=label, style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=1)
+            ttk.Label(summary, textvariable=variable, style="ReviewValue.TLabel", wraplength=170).grid(
+                row=row, column=1, sticky="w", padx=(12, 0), pady=1
+            )
+        summary.columnconfigure(1, weight=1)
+        ttk.Label(self.review_detail_panel, text="AI 回复与检查信息", style="Heading.TLabel").pack(anchor="w", pady=(8, 4))
+        details_frame = ttk.Frame(self.review_detail_panel)
         details_frame.pack(fill="both", expand=True)
-        self.details = tk.Text(details_frame, height=6, width=45, wrap="word", state="disabled")
+        self.details = tk.Text(details_frame, height=5, width=22, wrap="word", state="disabled")
         detail_scroll = ttk.Scrollbar(details_frame, command=self.details.yview)
         self.details.configure(yscrollcommand=detail_scroll.set)
         self.details.pack(side="left", fill="both", expand=True)
         detail_scroll.pack(side="right", fill="y")
-        ttk.Button(right, text="打开原图", command=self._open_original).pack(anchor="w", pady=6)
+
+        self.review_workspace.add(self.review_list_panel, weight=3)
+        self.review_workspace.add(self.review_preview_panel, weight=5)
+        self.review_workspace.add(self.review_detail_panel, weight=4)
 
     # ---- project/task helpers ------------------------------------------
     def _photos(self) -> dict[str, dict[str, Any]]:
@@ -1085,7 +1149,7 @@ class ReviewDialog(tk.Toplevel):
             with Image.open(path) as source:
                 image = ImageOps.exif_transpose(source).convert("RGB")
                 image.thumbnail(size, Image.Resampling.LANCZOS)
-                tile = Image.new("RGB", size, "#eeeeee")
+                tile = Image.new("RGB", size, COLORS["photo"])
                 tile.paste(image, ((size[0] - image.width) // 2, (size[1] - image.height) // 2))
             return ImageTk.PhotoImage(tile, master=self)
         except (OSError, ValueError):
@@ -1111,6 +1175,7 @@ class ReviewDialog(tk.Toplevel):
                 "" if ai.get("rating") is None or technical else ai.get("rating"),
                 flag, reason, clarity), tags=("stale",) if photo.get("stale") else ())
             self._photo_ids.append(str(photo_id))
+        self.review_count_var.set(f"{len(self._photo_ids)} 张照片")
         self.review_tree.tag_configure("stale", foreground="#b05a00")
         self._review_dirty = False
         if old and old in self._photo_ids:
@@ -1134,6 +1199,9 @@ class ReviewDialog(tk.Toplevel):
         photo = self._photos().get(photo_id or "")
         if not photo:
             self.review_caption_var.set("当前筛选没有照片")
+            self.review_rating_var.set("—")
+            self.review_flag_var.set("—")
+            self.review_clarity_var.set("—")
             self.preview_label.configure(image="", text="无预览")
             self._preview_photo = None
             self._set_details("")
@@ -1141,15 +1209,32 @@ class ReviewDialog(tk.Toplevel):
         ai = {} if photo.get("technical_reason") else (photo.get("ai") or {})
         self.review_caption_var.set(f"{photo.get('stem', photo_id)}  ·  分组 {photo.get('group_id', '')}{'  ·  结果已过时' if photo.get('stale') else ''}")
         review = "；".join(map(str, ai.get("review_items") or [])) or "无"
+        focus_result = photo.get("ai_focus_result") or {}
+        focus_blur = focus_result.get("status") == "blur"
+        technical = bool(photo.get("technical_reason"))
+        self.review_rating_var.set("未评分" if ai.get("rating") is None or technical else f"{ai.get('rating')} 星")
+        if focus_blur:
+            self.review_flag_var.set("已弃置 · AI 清晰度复查")
+        elif technical:
+            self.review_flag_var.set("已弃置 · 本地初筛")
+        elif ai.get("suggest_reject"):
+            self.review_flag_var.set("AI 建议弃置")
+        elif ai:
+            self.review_flag_var.set("保留原标记")
+        else:
+            self.review_flag_var.set("待选片")
+        self.review_clarity_var.set(
+            "清晰度待确认" if photo.get("focus_review") else
+            {"clear": "AI 复查清楚", "blur": "AI 复查模糊"}.get(
+                focus_result.get("status"), "已初筛" if photo.get("focus_review") is False else "未检查"
+            )
+        )
         details = (
-            f"AI 建议：{'未评分' if ai.get('rating') is None else str(ai.get('rating')) + ' 星'}"
-            f"；{'建议弃置' if ai.get('suggest_reject') else '未建议弃置'}\n"
-            f"理由：{ai.get('reason') or '无 AI 回答'}\n"
+            f"AI 回复：{ai.get('reason') or '无 AI 回答'}\n\n"
             f"待复核：{review}\n"
             f"技术检查：{photo.get('technical_reason') or '无'}\n"
             f"解析异常：{photo.get('error') or '无'}"
         )
-        focus_result = photo.get("ai_focus_result") or {}
         if focus_result:
             focus_label = {"clear": "清楚", "blur": "模糊，已弃置", "uncertain": "清晰度待确认"}.get(focus_result.get("status"), "清晰度待确认")
             details += f"\n清晰度复查：{focus_label}\n复查理由：{focus_result.get('reason', '')}"
@@ -1157,8 +1242,8 @@ class ReviewDialog(tk.Toplevel):
             details += "\n清晰度待确认"
         self._set_details(details)
         self.update_idletasks()
-        width = max(100, min(420, self.preview_label.winfo_width()))
-        height = max(80, min(300, self.preview_label.winfo_height()))
+        width = max(160, min(720, self.preview_label.winfo_width()))
+        height = max(140, min(620, self.preview_label.winfo_height()))
         thumb = self._make_thumb(photo, (width, height))
         self._preview_photo = thumb
         self.preview_label.configure(image=thumb or "", text="" if thumb else "预览不可用")

@@ -8,6 +8,7 @@ from .window_layout import fit_window
 
 
 PAGE_HELP = {
+    'focus': ('AI 清晰度复核', '使用主页已配置的 API 复核清晰度。开始前可调整人脸框；处理进度与停止、继续操作和主页共用。进入本页不会发送 API 请求。'),
     'home': ('主页面', '扫描图片只进行本地检测与分组。调整人脸和选片组后，进行 AI 复核，再生成联系表，最后进入 AI 选片与导出。\n\n停止与继续控制扫描和 AI 复核。清空日志仅清除界面文字；清空工作区会清除工作区结果，不删除原照片。\n\n身体清晰度检查是实验选项，可能增加待确认照片。AI 服务供复核和选片共用。'),
     'faces': ('检测／调整人脸框', '直接在照片上拖拽画框。蓝框为检测候选，点击可选择；已选人物为绿框，当前人物可用下拉框切换。点击裁切框后变黄，可上下左右拖动，滚轮微调范围。\n\n置信度全局生效；范围、偏移、比例按照片／人物保存。重置当前裁切不取消选脸。去除所有框选只清除当前照片已选框。\n\n补齐人脸使用当前人物作为参考，跨组寻找漏检候选。必须看图确认身份和位置，不保证所有姿态均可匹配。保存后仅重新扫描修改过的图片。'),
     'assist': ('补齐人脸', '参考人物来自外层当前选脸。多个人脸但未经人工确认主体的照片也会进入候选。软件在工作区的未标记照片中查找外观相似候选；相似分数不是身份概率。\n\n直接画框、点击框后拖动、滚轮缩放。确认后显示已确认；再次修改会撤销确认。不是这个人和跳过都不会采用本张。\n\n采用已确认候选写入外层编辑草稿，仍需外层保存。取消不写入草稿。已有人工框选不会被覆盖。'),
@@ -280,6 +281,8 @@ def install_page_chrome(window, page_id):
     bar = ttk.Frame(window, padding=(4, 1))
     bar.pack(side='top', fill='x')
     window._page_chrome = bar
+    tools = ttk.Frame(bar, style='Toolbar.TFrame')
+    tools.pack(fill='x')
     from .ui_style import style_page_chrome
     def go(action):
         if action in buttons and buttons[action].instate(['disabled']):
@@ -299,20 +302,44 @@ def install_page_chrome(window, page_id):
             callback()
     buttons = {}
     for name, action, shortcut in [('主页面', 'home', 'Alt+1'), ('配置 API', 'api', 'Alt+2'), ('检查更新', 'update', 'Alt+3'), ('LR 插件', 'lr', 'Alt+4')]:
-        button = ttk.Button(bar, text=name, command=lambda a=action: go(a))
+        button = ttk.Button(tools, text=name, command=lambda a=action: go(a))
         button.pack(side='left', padx=(0, 4))
         button._control_tooltip = ToolTip(button, f'{name}（{shortcut}）')
         if action == 'home':
             button._always_available = True
         buttons[action] = button
         window.bind('<Alt-Key-' + shortcut[-1] + '>', lambda _e, a=action: (go(a), 'break')[1], add='+')
-    help_button = ttk.Button(bar, text='帮助', command=lambda: show_page_help(window, page_id))
+    help_button = ttk.Button(tools, text='帮助', command=lambda: show_page_help(window, page_id))
     help_button._always_available = True
     help_button.pack(side='left')
     help_button._control_tooltip = ToolTip(help_button, '当前页面使用帮助（F1）')
     bar.help_button = help_button
     window.bind('<F1>', lambda _e: (show_page_help(window, page_id), 'break')[1], add='+')
     bar.buttons = buttons
+    bar.workflow_buttons = {}
+    if page_id in ('home', 'groups', 'focus', 'faces', 'review'):
+        navigation = ttk.Frame(bar, style='Toolbar.TFrame')
+        navigation.pack(fill='x', pady=(8, 0))
+        def navigate(target):
+            app = _app_for(window)
+            if app is None or target == page_id:
+                return
+            if getattr(app, '_processing_busy', False) or getattr(getattr(app, 'updates', None), 'busy', False):
+                messagebox.showinfo('暂不能切换', '请等待当前处理结束或停止后再切换页面。', parent=window)
+                return
+            if window is not app:
+                _home(window)
+                if window.winfo_exists():
+                    return
+            callback = {'home': lambda: app.lift(), 'groups': app._open_group_editor,
+                        'focus': app._open_focus_page, 'faces': app._open_crop_settings,
+                        'review': app._open_ai_review}[target]
+            callback()
+        for target, label in [('home', '主页'), ('groups', '选片组'), ('focus', '复核'),
+                              ('faces', '人脸框'), ('review', '选片')]:
+            button = ttk.Button(navigation, text=label, command=lambda t=target: navigate(t))
+            button.pack(side='left', padx=(0, 8))
+            bar.workflow_buttons[target] = button
     style_page_chrome(window)
     window.after_idle(lambda: install_control_help(window, page_id) if window.winfo_exists() else None)
     return bar

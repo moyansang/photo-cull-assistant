@@ -19,6 +19,7 @@ def test_toolbar_actions_help_and_tooltip_lifecycle():
         assert calls == ['api', 'update', 'lr']
         assert root.bind('<Alt-Key-1>') and root.bind('<Alt-Key-4>') and root.bind('<F1>')
         assert install_page_chrome(root, 'home') is bar
+        assert [button.cget('text') for button in bar.workflow_buttons.values()] == ['主页', '选片组', '复核', '人脸框', '选片']
         install_control_help(root, 'home')
         tooltip = bar.buttons['api']._control_tooltip
         tooltip.show()
@@ -62,5 +63,26 @@ def test_main_layout_fits_compact_desktop_and_keeps_flow_on_one_row(tmp_path):
         walk(app._page_chrome)
         assert help_buttons and not help_buttons[0].instate(['disabled'])
         app._set_processing_busy(False)
+    finally:
+        app.destroy()
+
+
+def test_workflow_navigation_only_enters_focus_page_without_submitting(tmp_path):
+    from ai_cull_assistant.app import App
+    from ai_cull_assistant.settings import save_values
+    save_values(tmp_path, {'input': '', 'workspace': '', 'no_auto_updates': True})
+    app = App(settings_dir=tmp_path)
+    calls = []
+    app._run_focus_review = lambda: calls.append('submitted')
+    try:
+        app._page_chrome.workflow_buttons['focus'].invoke()
+        app.update()
+        page = app._focus_page
+        assert page.winfo_exists() and page._page_id == 'focus'
+        assert not calls
+        assert page._page_chrome.workflow_buttons['focus'].cget('style') == 'Active.Nav.TButton'
+        page._page_chrome.workflow_buttons['home'].invoke()
+        assert not page.winfo_exists()
+        assert not calls
     finally:
         app.destroy()

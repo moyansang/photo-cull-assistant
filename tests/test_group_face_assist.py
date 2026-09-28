@@ -533,7 +533,7 @@ def test_assist_fixed_actions_visible_on_short_desktop(monkeypatch, tmp_path):
         dialog.assist_group_faces()
         assist = dialog._assist_dialog
         pump(assist, lambda: assist._finished)
-        wanted = {'停止查找', '确认此框 (Y)', '不是这个人 (X)', '暂时跳过 (P)', '取消', '采用选中候选'}
+        wanted = {'停止查找', '确认此框 (Y)', '不是这个人 (X)', '暂时跳过 (P)', '关闭', '采用选中候选'}
         buttons = []
 
         def walk(widget):

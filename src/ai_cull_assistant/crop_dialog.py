@@ -125,40 +125,19 @@ class CropDialog(tk.Toplevel):
             text="重新扫描修改过的图片" if self.assets else "保存设置",
             command=self.save,
         ).pack(side="right")
-        body = ttk.Frame(self, padding=(12, 6))
+        body = ttk.Frame(self, padding=(16, 8))
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(2, weight=1)
-        controls = ttk.Frame(body)
-        controls.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        ttk.Label(controls, text="全局置信度").pack(side="left")
-        self.confidence_spinbox = ttk.Spinbox(
-            controls, from_=.7, to=.95, increment=.01, textvariable=self.confidence,
-            width=6, format="%.2f",
-        )
-        self.confidence_spinbox.pack(side="left", padx=(6, 18))
-        self.confidence_spinbox.bind('<FocusOut>', self._commit_confidence)
-        self.confidence_spinbox.bind('<Return>', self._commit_confidence)
-        ttk.Label(controls, text="当前人物").pack(side="left")
-        self.person_picker = ttk.Combobox(
-            controls,
-            textvariable=self.person,
-            values=("自动主体",),
-            state="readonly",
-            width=13,
-        )
-        self.person_picker.pack(side="left", padx=(6, 18))
-        self.person_picker.bind("<<ComboboxSelected>>", self.select_person)
-        ttk.Label(controls, text="裁切比例").pack(side="left")
-        self.ratio_picker = ttk.Combobox(
-            controls, textvariable=self.ratio, values=("124:150", "1:1", "3:4"),
-            state="readonly", width=10,
-        )
-        self.ratio_picker.pack(side="left", padx=(6, 0))
-        self.caption = ttk.Label(body)
-        self.caption.grid(row=1, column=0, sticky="ew", pady=(2, 4))
+        body.columnconfigure(1, minsize=228)
+        body.rowconfigure(1, weight=1)
+        preview_header = ttk.Frame(body)
+        preview_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self.caption = ttk.Label(preview_header, style="Heading.TLabel")
+        self.caption.pack(side="left", fill="x", expand=True)
+        ttk.Button(preview_header, text="恢复本张自动选脸", command=self.auto_face).pack(side="right", padx=(6, 0))
+        ttk.Button(preview_header, text="去除所有框选", command=self.clear_face_selection).pack(side="right", padx=(6, 0))
         self.canvas = tk.Canvas(body, width=1, height=400, background=COLORS["photo"], highlightthickness=0)
-        self.canvas.grid(row=2, column=0, sticky="nsew")
+        self.canvas.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
         self.canvas.bind("<Configure>", self.schedule_preview)
         self.canvas.bind('<ButtonPress-1>', self.pointer_down)
         self.canvas.bind('<B1-Motion>', self.pointer_move)
@@ -166,12 +145,50 @@ class CropDialog(tk.Toplevel):
         self.canvas.bind('<MouseWheel>', self.mouse_wheel)
         self.canvas.bind('<Button-4>', self.mouse_wheel)
         self.canvas.bind('<Button-5>', self.mouse_wheel)
+
+        side = ttk.Frame(body)
+        side.grid(row=1, column=1, sticky="nsew")
+        detail = ttk.LabelFrame(side, text="人脸细节", padding=8)
+        detail.pack(fill="x")
+        self.detail_canvas = tk.Canvas(
+            detail, width=190, height=100, background=COLORS["photo"], highlightthickness=0,
+        )
+        self.detail_canvas.pack(fill="x")
+
+        detection = ttk.Frame(side)
+        detection.pack(fill="x", pady=(8, 0))
+        detection.columnconfigure(1, weight=1)
+        ttk.Label(detection, text="全局置信度").grid(row=0, column=0, sticky="w")
+        self.confidence_spinbox = ttk.Spinbox(
+            detection, from_=.7, to=.95, increment=.01, textvariable=self.confidence,
+            width=6, format="%.2f",
+        )
+        self.confidence_spinbox.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        self.confidence_spinbox.bind('<FocusOut>', self._commit_confidence)
+        self.confidence_spinbox.bind('<Return>', self._commit_confidence)
+
+        controls = ttk.LabelFrame(side, text="当前人物与裁切", padding=6)
+        controls.pack(fill="x", pady=(8, 0))
+        controls.columnconfigure(1, weight=1)
+        ttk.Label(controls, text="当前人物").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self.person_picker = ttk.Combobox(
+            controls,
+            textvariable=self.person,
+            values=("自动主体",),
+            state="readonly",
+            width=13,
+        )
+        self.person_picker.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=(0, 4))
+        self.person_picker.bind("<<ComboboxSelected>>", self.select_person)
+        ttk.Label(controls, text="裁切比例").grid(row=1, column=0, sticky="w")
+        self.ratio_picker = ttk.Combobox(
+            controls, textvariable=self.ratio, values=("124:150", "1:1", "3:4"),
+            state="readonly", width=10,
+        )
+        self.ratio_picker.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+
         lower = ttk.Frame(body)
-        lower.grid(row=3, column=0, sticky="ew", pady=(6, 0))
-        manual = ttk.Frame(lower)
-        manual.pack(fill="x", pady=(0, 4))
-        ttk.Button(manual, text="恢复本张自动选脸", command=self.auto_face).pack(side="left", padx=(0, 6))
-        ttk.Button(manual, text="去除所有框选", command=self.clear_face_selection).pack(side="left", padx=6)
+        lower.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         navigation = ttk.Frame(lower)
         navigation.pack(fill="x")
         navigation.columnconfigure((0, 1, 2), weight=1, uniform="crop-actions")
@@ -701,6 +718,7 @@ class CropDialog(tk.Toplevel):
         self._crop_rect = None
         self._current_head = None
         self.canvas.delete("all")
+        self.detail_canvas.delete("all")
         self.photos = []
         if not self.assets:
             self.caption.configure(text="扫描照片后可预览；现在可先保存全局置信度。")
@@ -715,11 +733,9 @@ class CropDialog(tk.Toplevel):
             canvas_width = max(240, self.canvas.winfo_width())
             canvas_height = max(100, self.canvas.winfo_height())
             padding = 10
-            inset_width = min(150, max(105, canvas_width // 4))
-            preview_width = max(80, canvas_width - inset_width - padding * 3)
+            preview_width = max(80, canvas_width - padding * 2)
             preview_height = max(80, canvas_height - padding * 2)
-            preview_x = padding + preview_width / 2
-            final_x = canvas_width - padding - inset_width / 2
+            preview_x = canvas_width / 2
             current_settings = self.global_settings()
             entry = current_settings.photos.get(current_settings.key(asset), {})
             prepared = self._prepared_preview(asset, current_settings)
@@ -795,16 +811,23 @@ class CropDialog(tk.Toplevel):
                 bounds = crop_bounds(original.size, head, self.settings())
                 self._current_head = head
                 crop = face_crop(original, getattr(subject, 'face', None), head, self.settings())
-                tile_size = (min(124, inset_width), min(150, max(60, canvas_height - 44)))
+                detail_width = max(100, self.detail_canvas.winfo_width())
+                detail_height = max(80, self.detail_canvas.winfo_height())
+                tile_size = (min(160, detail_width - 16), min(120, detail_height - 28))
                 tile = Image.new("RGB", tile_size, "white")
                 crop = ImageOps.contain(crop, tile_size)
                 tile.paste(crop, ((tile.width-crop.width)//2, (tile.height-crop.height)//2))
                 self.photos.append(ImageTk.PhotoImage(tile, master=self))
-                self.canvas.create_image(final_x, canvas_height / 2, image=self.photos[-1])
+                self.detail_canvas.create_image(detail_width / 2, detail_height / 2 + 8, image=self.photos[-1])
                 inset_label = "最终小窗 · 124×150" if getattr(subject, 'face', None) else "头部定位，清晰度待确认"
-                self.canvas.create_text(final_x, max(10, (canvas_height - tile.height) / 2 - 12), text=inset_label, fill=COLORS['photo_text'])
+                self.detail_canvas.create_text(detail_width / 2, 12, text=inset_label, fill=COLORS['photo_text'])
             else:
-                self.canvas.create_text(final_x, canvas_height / 2, text="未检测到可靠人脸\n本张不显示小窗", justify="center", fill=COLORS['photo_text'])
+                self.detail_canvas.create_text(
+                    max(60, self.detail_canvas.winfo_width() / 2),
+                    max(40, self.detail_canvas.winfo_height() / 2),
+                    text="未检测到可靠人脸\n本张不显示小窗", justify="center",
+                    fill=COLORS['photo_text'],
+                )
             selected_count = len(self._selected_boxes)
             if 'selected_faces' in entry:
                 current_person = f"人物 {selected_keys.index(self._active_face_key) + 1}" if self._active_face_key in selected_keys else "未选择人物"
@@ -834,6 +857,7 @@ class CropDialog(tk.Toplevel):
                 )
         except (OSError, ValueError) as exc:
             self.canvas.create_text(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, text=f"预览不可用：{exc}", fill=COLORS['photo_text'])
+            self.detail_canvas.delete("all")
 
     def global_settings(self):
         return CropSettings(detection_confidence=round(self._confidence_value(), 2), photos=deepcopy(self.edits))

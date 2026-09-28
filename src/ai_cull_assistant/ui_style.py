@@ -123,4 +123,6 @@ def style_page_chrome(window):
     style.map('Active.Nav.TButton', background=[('active', COLORS['selection'])])
     for action, button in bar.buttons.items():
         button.configure(style='Active.Nav.TButton' if action == window._page_id else 'Nav.TButton')
+    for action, button in getattr(bar, 'workflow_buttons', {}).items():
+        button.configure(style='Active.Nav.TButton' if action == window._page_id else 'Nav.TButton')
     bar.help_button.configure(style='Nav.TButton')

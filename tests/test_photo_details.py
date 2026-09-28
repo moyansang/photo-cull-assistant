@@ -76,7 +76,13 @@ def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monke
     real_open=module.Image.open
     monkeypatch.setattr(module, 'ensure_preview', lambda *_: (_ for _ in ()).throw(AssertionError('existing preview must be reused')))
     monkeypatch.setattr(module, 'detect', lambda *_: detections.append(True) or [])
-    monkeypatch.setattr(module.Image, 'open', lambda *args,**kwargs: opened.append(True) or real_open(*args,**kwargs))
+    def tracked_open(*args, **kwargs):
+        # ttkbootstrap may open its own packaged images while constructing the
+        # window.  This assertion is about decoding the selected preview only.
+        if args and str(args[0]) == str(path):
+            opened.append(True)
+        return real_open(*args, **kwargs)
+    monkeypatch.setattr(module.Image, 'open', tracked_open)
     root=tk.Tk();root.withdraw()
     try:
         dialog=CropDialog(root,[asset],CropSettings(),lambda settings:None)
@@ -124,12 +130,12 @@ def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monke
         dialog.auto_face()
         assert 'preview_version' not in dialog.current_entry()
         dialog.destroy()
-        asset.subject_features=SimpleNamespace(face=None,head=(.3,.12,.3,.36))
+        asset.subject_features=SubjectFeatures('', '', None, None, (.3,.12,.3,.36))
         head_dialog=CropDialog(root,[asset],CropSettings(),lambda settings:None)
         wait_preview(head_dialog)
         assert head_dialog._crop_rect is not None
-        labels=[head_dialog.canvas.itemcget(item,'text') for item in head_dialog.canvas.find_all()
-                if head_dialog.canvas.type(item)=='text']
+        labels=[head_dialog.detail_canvas.itemcget(item,'text') for item in head_dialog.detail_canvas.find_all()
+                if head_dialog.detail_canvas.type(item)=='text']
         assert '头部定位，清晰度待确认' in labels
         head_dialog.destroy()
     finally:
@@ -280,7 +286,7 @@ def test_crop_title_and_footer_visible_on_small_screen(tmp_path, monkeypatch):
         root.update()
         assert d.title()=='检测/调整人脸框'
         expected = {
-            '取消', '重新扫描修改过的图片', '恢复本张自动选脸', '去除所有框选',
+            '关闭', '重新扫描修改过的图片', '恢复本张自动选脸', '去除所有框选',
             '上一张', '下一张', '上一张未标记', '下一张未标记', '重置当前裁切', '补齐人脸',
         }
         buttons=[]

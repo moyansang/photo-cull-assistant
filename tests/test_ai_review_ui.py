@@ -176,6 +176,51 @@ def test_review_only_loads_selected_preview(ui,monkeypatch):
     assert not calls
 
 
+def test_result_tab_uses_photo_preview_and_ai_result_columns(ui):
+    root, dialog, project, task, batch, errors = ui
+    project.ingest(task, batch, answer(task, batch))
+    dialog.notebook.select(2)
+    root.update()
+
+    assert str(dialog.review_workspace.cget('orient')) == 'horizontal'
+    assert list(dialog.review_workspace.panes()) == [
+        str(dialog.review_list_panel),
+        str(dialog.review_preview_panel),
+        str(dialog.review_detail_panel),
+    ]
+    assert dialog.review_tree.cget('displaycolumns') == ('name', 'group', 'ai', 'flag')
+    assert dialog.review_count_var.get() == f'{len(project.data["photos"])} 张照片'
+
+    photo_id = batch['photo_ids'][0]
+    dialog.review_tree.selection_set(photo_id)
+    dialog._show_selected_photo()
+    row = project.data['photos'][photo_id]
+    assert dialog.review_rating_var.get() == f'{row["ai"]["rating"]} 星'
+    assert dialog.review_flag_var.get() in {'保留原标记', 'AI 建议弃置'}
+    assert row['ai']['reason'] in dialog.details.get('1.0', 'end-1c')
+
+
+@pytest.mark.parametrize('size', ['1100x650', '900x620'])
+def test_result_tab_keeps_all_three_columns_visible_at_compact_sizes(ui, size):
+    root, dialog, *_rest = ui
+    root.deiconify()
+    dialog.deiconify()
+    dialog.geometry(f'{size}+80+80')
+    dialog.notebook.select(2)
+    root.update()
+
+    widths = [
+        dialog.review_list_panel.winfo_width(),
+        dialog.review_preview_panel.winfo_width(),
+        dialog.review_detail_panel.winfo_width(),
+    ]
+    assert widths[0] >= 200
+    assert widths[1] >= 250
+    assert widths[2] >= 200
+    assert int(dialog.review_caption_label.cget('wraplength')) <= widths[2]
+    root.withdraw()
+
+
 def test_export_warns_about_unscored_and_can_return_without_writing(ui, monkeypatch):
     root, dialog, project, task, batch, errors = ui
     project.ingest(task, batch, answer(task, batch))

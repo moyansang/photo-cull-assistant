@@ -7,7 +7,14 @@ from tkinter import ttk
 
 from PIL import Image
 
-from ai_cull_assistant.group_editor import GroupEditor, ThumbnailLoader, grouped_assets, load_thumbnail, visible_group_range
+from ai_cull_assistant.group_editor import (
+    GroupEditor,
+    ThumbnailLoader,
+    ellipsize_text,
+    grouped_assets,
+    load_thumbnail,
+    visible_group_range,
+)
 from ai_cull_assistant.models import PhotoAsset
 
 
@@ -37,11 +44,23 @@ def test_grouped_assets_returns_groups_in_photo_order():
 
 
 def test_large_group_editor_only_renders_rows_near_viewport():
-    indexes = visible_group_range(450, viewport_top=145 * 220, viewport_height=820, row_height=145)
+    row_height = GroupEditor.ROW_H
+    indexes = visible_group_range(450, viewport_top=row_height * 220, viewport_height=820, row_height=row_height)
 
     assert 218 <= indexes.start <= 220
-    assert indexes.stop - indexes.start < 10
+    assert indexes.stop - indexes.start < 20
     assert 220 in indexes
+
+
+def test_long_photo_names_are_ellipsized_in_the_middle():
+    text = 'P1100245_中文与English_非常长的文件名'
+
+    fitted = ellipsize_text(text, lambda value: len(value) * 10, 120)
+
+    assert len(fitted) <= 12
+    assert fitted.startswith('P1100')
+    assert fitted.endswith('文件名')
+    assert '…' in fitted
 
 
 def test_group_editor_fixed_actions_remain_visible_at_900_by_600(tmp_path, monkeypatch):
@@ -50,12 +69,13 @@ def test_group_editor_fixed_actions_remain_visible_at_900_by_600(tmp_path, monke
                         lambda _widget: window_layout.WorkArea(0, 0, 900, 600))
     path = tmp_path / 'preview.jpg'
     Image.new('RGB', (160, 120), 'white').save(path)
-    asset = make_asset('A', 1)
-    asset.preview_path = path
-    asset.primary_path = path
+    assets = [make_asset(chr(ord('A') + index), 1) for index in range(8)]
+    for asset in assets:
+        asset.preview_path = path
+        asset.primary_path = path
     root = tk.Tk()
     try:
-        editor = GroupEditor(root, [asset], lambda: None)
+        editor = GroupEditor(root, assets, lambda: None)
         root.update()
         wanted = {'从所选照片拆分', '与上一组合并', '与下一组合并'}
         buttons = []
@@ -73,6 +93,16 @@ def test_group_editor_fixed_actions_remain_visible_at_900_by_600(tmp_path, monke
             assert button.winfo_rooty() + button.winfo_height() <= editor.winfo_rooty() + editor.winfo_height()
         assert editor.rows_canvas.winfo_height() >= 80
         assert editor.detail_canvas.winfo_viewable()
+        assert editor.rows_canvas.winfo_rootx() < editor.detail_canvas.winfo_rootx()
+        assert editor.detail_canvas.winfo_height() >= 250
+        editor._redraw_detail()
+        first_box = editor.detail_canvas.bbox('detail:A')
+        second_box = editor.detail_canvas.bbox('detail:B')
+        fifth_box = editor.detail_canvas.bbox('detail:E')
+        assert first_box is not None and second_box is not None and fifth_box is not None
+        assert first_box[1] == second_box[1]
+        assert fifth_box[1] > first_box[1]
+        assert editor.detail_canvas.cget('yscrollcommand')
     finally:
         root.destroy()
 

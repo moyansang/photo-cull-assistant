@@ -384,7 +384,7 @@ class App(tk.Tk):
     def _build_ui(self) -> None:
         toolbar = install_page_chrome(self, "home")
         self.update_button = toolbar.buttons["update"]
-        frame = ttk.Frame(self, padding=(24, 16))
+        frame = ttk.Frame(self, padding=(20, 12))
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(5, weight=1)
@@ -427,7 +427,7 @@ class App(tk.Tk):
         self._refresh_api_profiles()
 
         first = ttk.Frame(frame)
-        first.grid(row=1, column=0, sticky="ew", pady=(24, 10))
+        first.grid(row=1, column=0, sticky="ew", pady=(16, 10))
         workflow = [("scan_button", "扫描图片", self._run_scan_thread),
                     ("group_button", "编辑选片组", self._open_group_editor),
                     ("crop_button", "检测/调整人脸框", self._open_crop_settings),
@@ -982,6 +982,47 @@ class App(tk.Tk):
 
     def _run_focus_review(self):
         self._start_processing(mode="focus")
+
+    def _open_focus_page(self):
+        old = getattr(self, '_focus_page', None)
+        if old is not None and old.winfo_exists():
+            old.lift()
+            return
+        page = self._focus_page = tk.Toplevel(self)
+        page.withdraw()
+        page.title('AI 清晰度复核')
+        page.transient(self)
+        self._setup_aux_page(page)
+        install_page_chrome(page, 'focus')
+        footer = ttk.Frame(page, padding=(20, 12))
+        footer.pack(side='bottom', fill='x')
+        ttk.Button(footer, text='关闭', command=page.destroy).pack(side='right')
+        body = ttk.Frame(page, padding=(20, 16))
+        body.pack(fill='both', expand=True)
+        ttk.Label(body, text='AI 清晰度复核', style='Heading.TLabel').pack(anchor='w', pady=(0, 16))
+        ttk.Label(body, textvariable=self.api_profile_var).pack(anchor='w', pady=(0, 12))
+        label = ttk.Label(body, textvariable=self.workspace_var, wraplength=620)
+        label.pack(fill='x', pady=(0, 20))
+        body.bind('<Configure>', lambda event: label.configure(wraplength=max(180, event.width - 40)))
+        ttk.Label(body, textvariable=self.next_step_var, style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
+        progress = ttk.Frame(body)
+        progress.pack(fill='x', pady=(0, 20))
+        ttk.Label(progress, textvariable=self.progress_label).pack(side='left')
+        ttk.Label(progress, textvariable=self.progress_text, width=5).pack(side='right')
+        ttk.Progressbar(progress, variable=self.progress_var, maximum=100).pack(side='left', fill='x', expand=True, padx=12)
+        def run(callback):
+            # Use the existing task entry and return to its live log and controls.
+            page.destroy()
+            callback()
+        actions = ttk.Frame(body)
+        actions.pack(anchor='w')
+        for title, callback in [('开始 AI 复核', self._run_focus_review),
+                                ('停止处理', self._stop_processing),
+                                ('继续处理', self._continue_processing)]:
+            ttk.Button(actions, text=title, command=lambda cb=callback: run(cb)).pack(side='left', padx=(0, 8))
+        apply_page(page)
+        install_control_help(page, 'focus')
+        fit_window(page, (780, 450), minimum_size=(640, 360), parent=self)
 
     def _generate_contact_sheets(self):
         self._start_processing(mode="sheets")
