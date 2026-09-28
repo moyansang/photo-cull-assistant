@@ -114,7 +114,11 @@ def test_page_space_and_return_actions(tmp_path, monkeypatch):
             if name == 'focus':
                 resume = next(b for b in buttons(page) if b.cget('text') == '继续处理')
                 assert home.winfo_rooty() == resume.winfo_rooty()
+                assert home.winfo_rootx() > resume.winfo_rootx() + resume.winfo_width() + 100
             if name == 'faces':
+                assert page.caption.winfo_viewable()
+                assert abs(page.clear_faces_button.winfo_rooty() - page.ratio_picker.winfo_rooty()) < 5
+                assert page.detail_canvas.winfo_width() >= 220
                 scan = next(b for b in buttons(page) if b.cget('text') == '重新扫描')
                 assert scan.winfo_rooty() < home.winfo_rooty()
                 assert page.canvas.winfo_height() > 250

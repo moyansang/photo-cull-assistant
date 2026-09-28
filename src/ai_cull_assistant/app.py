@@ -1069,6 +1069,8 @@ class App(tk.Tk):
         self._workspace_layout.rowconfigure(0, weight=0 if compact else 1)
         self._workspace_layout.rowconfigure(4, weight=1 if compact else 0)
         lines = 3 if compact else max(1, min(5, (self._workspace_layout.winfo_height() - 360) // 100))
+        if self._visible_page == 'faces':
+            lines = min(lines, 2)
         if int(self.log_text.cget('height')) != lines:
             self.log_text.configure(height=lines)
 
@@ -1150,12 +1152,12 @@ class App(tk.Tk):
         body.bind('<Configure>', lambda event: label.configure(wraplength=max(180, event.width - 40)))
         ttk.Label(body, textvariable=self.next_step_var, style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
         actions = ttk.Frame(body)
-        actions.pack(anchor='w')
+        actions.pack(fill='x')
         for title, callback in [('开始 AI 复核', self._run_focus_review),
                                 ('停止处理', self._stop_processing),
-                                ('继续处理', self._continue_processing),
-                                ('返回主页', lambda: self._show_workspace_page('home'))]:
+                                ('继续处理', self._continue_processing)]:
             ttk.Button(actions, text=title, command=callback).pack(side='left', padx=(0, 8))
+        ttk.Button(actions, text='返回主页', command=lambda: self._show_workspace_page('home')).pack(side='right')
         apply_page(page)
         install_control_help(page, 'focus')
         self._mount_workspace_page('focus', page)

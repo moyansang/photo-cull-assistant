@@ -132,12 +132,11 @@ class CropDialog(WorkspacePage):
         preview_row = 2 if embedded else 1
         body.rowconfigure(preview_row, weight=1)
         preview_header = ttk.Frame(body)
-        preview_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         self.caption = ttk.Label(preview_header, style="Heading.TLabel", width=1)
-        self.caption.pack(side="left", fill="x", expand=True)
-        ttk.Button(preview_header, text="恢复本张自动选脸", command=self.auto_face).pack(side="right", padx=(6, 0))
-        ttk.Button(preview_header, text="去除所有框选", command=self.clear_face_selection).pack(side="right", padx=(6, 0))
-        self.caption.pack_forget()
+        preview_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4 if embedded else 8))
+        if not embedded:
+            ttk.Button(preview_header, text="恢复本张自动选脸", command=self.auto_face).pack(side="right", padx=(6, 0))
+            ttk.Button(preview_header, text="去除所有框选", command=self.clear_face_selection).pack(side="right", padx=(6, 0))
         self.caption.pack(side="left", fill="x", expand=True)
 
         if embedded:
@@ -146,21 +145,30 @@ class CropDialog(WorkspacePage):
             ttk.Label(settings_line, text="全局置信度").pack(side="left")
             self.confidence_spinbox = ttk.Spinbox(
                 settings_line, from_=.7, to=.95, increment=.01,
-                textvariable=self.confidence, width=6, format="%.2f",
+                textvariable=self.confidence, width=5, format="%.2f",
             )
-            self.confidence_spinbox.pack(side="left", padx=(6, 18))
+            self.confidence_spinbox.pack(side="left", padx=(4, 10))
             ttk.Label(settings_line, text="当前人物").pack(side="left")
             self.person_picker = ttk.Combobox(
                 settings_line, textvariable=self.person, values=("自动主体",),
-                state="readonly", width=14,
+                state="readonly", width=8,
             )
-            self.person_picker.pack(side="left", padx=(6, 18))
+            self.person_picker.pack(side="left", padx=(4, 10))
             ttk.Label(settings_line, text="裁切比例").pack(side="left")
             self.ratio_picker = ttk.Combobox(
                 settings_line, textvariable=self.ratio, values=("124:150", "1:1", "3:4"),
-                state="readonly", width=10,
+                state="readonly", width=7,
             )
             self.ratio_picker.pack(side="left", padx=(6, 0))
+            self.restore_face_button = ttk.Button(settings_line, text="恢复本张自动选脸", command=self.auto_face)
+            self.restore_face_button.pack(side="right", padx=(6, 0))
+            self.clear_faces_button = ttk.Button(settings_line, text="去除所有框选", command=self.clear_face_selection)
+            self.clear_faces_button.pack(side="right", padx=(6, 0))
+            def fit_photo_columns(event):
+                body.columnconfigure(1, minsize=max(220, min(320, int(event.width * .24))))
+                self.restore_face_button.configure(text="恢复自动选脸" if event.width < 1000 else "恢复本张自动选脸")
+            body.bind('<Configure>', fit_photo_columns)
+
         self.canvas = tk.Canvas(
             body, width=1, height=220 if embedded else 400,
             background=COLORS["photo"], highlightthickness=0,
@@ -185,10 +193,11 @@ class CropDialog(WorkspacePage):
         detail = ttk.LabelFrame(side, text="人脸细节", padding=8)
         detail.pack(fill="both", expand=True)
         self.detail_canvas = tk.Canvas(
-            detail, width=178 if embedded else 190, height=86 if embedded else 100,
+            detail, width=1 if embedded else 190, height=86 if embedded else 100,
             background=COLORS["photo"], highlightthickness=0,
         )
         self.detail_canvas.pack(fill="both", expand=True)
+        self.detail_canvas.bind("<Configure>", self.schedule_crop_preview)
 
         if not embedded:
             detection = ttk.Frame(side)
@@ -856,13 +865,13 @@ class CropDialog(WorkspacePage):
                 crop = face_crop(original, getattr(subject, 'face', None), head, self.settings())
                 detail_width = max(100, self.detail_canvas.winfo_width())
                 detail_height = max(30, self.detail_canvas.winfo_height())
-                tile_size = (min(160, detail_width - 16), max(1, min(120, detail_height - 28)))
-                tile = Image.new("RGB", tile_size, "white")
+                tile_size = (max(1, detail_width - 16), max(1, detail_height - 28))
+                tile = Image.new("RGB", tile_size, COLORS["photo"])
                 crop = ImageOps.contain(crop, tile_size)
                 tile.paste(crop, ((tile.width-crop.width)//2, (tile.height-crop.height)//2))
                 self.photos.append(ImageTk.PhotoImage(tile, master=self))
                 self.detail_canvas.create_image(detail_width / 2, detail_height / 2 + 8, image=self.photos[-1])
-                inset_label = "最终小窗 · 124×150" if getattr(subject, 'face', None) else "头部定位，清晰度待确认"
+                inset_label = f"裁切预览 · {self.ratio.get()}" if getattr(subject, 'face', None) else "头部定位，清晰度待确认"
                 self.detail_canvas.create_text(detail_width / 2, 12, text=inset_label, fill=COLORS['photo_text'])
             else:
                 self.detail_canvas.create_text(
@@ -873,10 +882,9 @@ class CropDialog(WorkspacePage):
                 )
             selected_count = len(self._selected_boxes)
             if 'selected_faces' in entry:
-                current_person = f"人物 {selected_keys.index(self._active_face_key) + 1}" if self._active_face_key in selected_keys else "未选择人物"
                 self.caption.configure(text=(
                     f"{self.index+1}/{len(self.assets)}  ·  {asset.stem}  ·  G{asset.group_id:03d}"
-                    f"  ·  已选 {selected_count} 人  ·  当前 {current_person}"
+                    f"  ·  已选 {selected_count} 人"
                     f"  ·  范围 {self.scale.get():.2f}  ·  {mode}"
                 ))
             preview = ImageOps.contain(marked, (preview_width, preview_height))
