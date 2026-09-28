@@ -37,3 +37,6 @@ settings.json.tmp
 /.workspace-archive.zip
 /.workspace-storage.json
 /.workspace-restore-*/
+
+# Locally quarantined disposable build artifacts
+/待清理/

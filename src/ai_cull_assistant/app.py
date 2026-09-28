@@ -49,6 +49,7 @@ GROUPING_LABELS = {"严格": "strict", "标准": "standard", "宽松": "loose"}
 class App(tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
+        self.withdraw()
         self.title(f"AI 选片助手 v{VERSION} · 构建 {BUILD}")
         self.review_project = None
         self.scan_result: ScanResult | None = None
@@ -490,7 +491,12 @@ class App(tk.Tk):
         ttk.Button(parent, text="选择", command=command).grid(row=row, column=2, padx=(8, 0))
 
     def _choose_input(self) -> None:
-        path = filedialog.askdirectory(title="选择照片文件夹")
+        from .directory_picker import choose_photo_directory
+        try:
+            path = choose_photo_directory(self, self.input_var.get().strip())
+        except OSError as exc:
+            messagebox.showerror("文件夹无法打开", str(exc), parent=self)
+            return
         if path:
             self.input_var.set(path)
             if self._settings_pending:
@@ -499,7 +505,11 @@ class App(tk.Tk):
             self._save_preferences()
 
     def _choose_workspace(self) -> None:
-        path = filedialog.askdirectory(title="选择工作区")
+        from .directory_picker import existing_directory
+        base = self.settings_dir.parent if self.settings_dir.name == 'settings' else self.settings_dir
+        initial = (existing_directory(self.workspace_var.get().strip())
+                   or existing_directory(base / 'workspaces') or str(application_dir()))
+        path = filedialog.askdirectory(title="选择工作区", parent=self, initialdir=initial)
         if path:
             from .source_relocation import recorded_source
             try:
@@ -1219,6 +1229,7 @@ class App(tk.Tk):
             old.lift()
             return
         page = self._update_page = tk.Toplevel(self)
+        page.withdraw()
         page.title('更新与版本')
         page.transient(self)
         self._setup_aux_page(page)
@@ -1234,6 +1245,7 @@ class App(tk.Tk):
         ttk.Button(body, text='立即检查', command=check).pack(anchor='w', pady=12)
         ttk.Label(body, text='下载进度显示在主页面共用进度条。').pack(anchor='w')
         ttk.Button(body, text='关闭', command=page.destroy).pack(side='bottom', anchor='e')
+        apply_page(page)
         fit_window(page, (700, 310), minimum_size=(640, 260), parent=self)
         install_control_help(page, 'update')
 
@@ -1243,6 +1255,7 @@ class App(tk.Tk):
             old.lift()
             return
         page = self._lr_page = tk.Toplevel(self)
+        page.withdraw()
         page.title('Lightroom 插件')
         page.transient(self)
         self._setup_aux_page(page)
@@ -1252,6 +1265,7 @@ class App(tk.Tk):
         ttk.Label(body, text='1. 在 Lightroom 增效工具管理器中添加插件。\n\n2. 从 AI 选片与导出页导出结果。\n\n3. 在 Lightroom 插件中导入结果文件。').pack(anchor='w', pady=12)
         ttk.Button(body, text='打开插件目录', command=self._open_lr_plugin).pack(anchor='w', pady=8)
         ttk.Button(body, text='关闭', command=page.destroy).pack(side='bottom', anchor='e')
+        apply_page(page)
         fit_window(page, (700, 340), minimum_size=(640, 280), parent=self)
         install_control_help(page, 'lr')
 

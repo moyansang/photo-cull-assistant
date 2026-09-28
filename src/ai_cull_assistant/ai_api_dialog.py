@@ -44,6 +44,7 @@ class ApiConfigDialog(tk.Toplevel):
         on_saved: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title("AI API 配置")
         self.transient(parent)
         self._owner = parent

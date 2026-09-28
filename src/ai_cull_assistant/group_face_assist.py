@@ -126,6 +126,8 @@ def _entry_located(entry: dict, asset) -> bool:
     if entry.get('manual_face'):
         return True
     subject = getattr(asset, 'subject_features', None)
+    if (getattr(subject, 'candidate_count', None) or 0) > 1:
+        return False  # Automatic subject choice is not a human confirmation.
     return bool(subject and (getattr(subject, 'head', None) or getattr(subject, 'face', None)))
 
 

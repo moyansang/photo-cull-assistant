@@ -233,7 +233,7 @@ def test_next_unmarked_wraps_skips_hidden_and_preserves_edits(monkeypatch, tmp_p
     assets[3].subject_features=None
     monkeypatch.setattr(module, 'detail_features', lambda *_: (_ for _ in ()).throw(AssertionError('must use cached scan results')))
     calls=[]
-    dialog=SimpleNamespace(assets=assets,index=1,store_current=lambda:calls.append('stored'),global_settings=lambda:settings,load_current=lambda:calls.append('loaded'),render=lambda:calls.append('rendered'),caption=SimpleNamespace(configure=lambda **kw:calls.append(kw['text'])))
+    dialog=SimpleNamespace(_ensure_review_index=lambda callback:True,assets=assets,index=1,store_current=lambda:calls.append('stored'),global_settings=lambda:settings,load_current=lambda:calls.append('loaded'),render=lambda:calls.append('rendered'),caption=SimpleNamespace(configure=lambda **kw:calls.append(kw['text'])))
     CropDialog.next_unmarked(dialog)
     assert dialog.index==3 and calls[:3]==['stored','loaded','rendered']
     assets[0].subject_features=None

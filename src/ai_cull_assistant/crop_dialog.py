@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 import json
 import threading
@@ -21,6 +22,12 @@ from .preview import ensure_preview
 from .ui_help import install_control_help, install_page_chrome
 from .ui_style import apply_page, set_button_style, COLORS
 from .window_layout import fit_window
+
+
+def needs_person_review(asset, entry):
+    if entry.get('hidden') or entry.get('manual_face') or 'selected_faces' in entry:
+        return False
+    return (getattr(getattr(asset, 'subject_features', None), 'candidate_count', None) or 0) > 1
 
 
 def same_face_box(first, second):
@@ -61,6 +68,7 @@ def apply_face_box(entry, selected_boxes, box, preview_version):
 class CropDialog(tk.Toplevel):
     def __init__(self, parent, assets, settings, on_save):
         super().__init__(parent)
+        self.withdraw()
         self.title("检测/调整人脸框")
         self.transient(parent)
         self.assets = [a for a in assets if a.preview_path or a.primary_path]
@@ -68,6 +76,11 @@ class CropDialog(tk.Toplevel):
         self._original_photos = deepcopy(settings.photos)
         self._original_confidence = settings.detection_confidence
         self._assist_dialog = None
+        self._review_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='face-review-index')
+        self._review_future = None
+        self._review_poll = None
+        self._review_stop = threading.Event()
+        self._review_attempted = set()
         self._loading = False
         self._drag = None
         self._image_rect = None
@@ -106,7 +119,7 @@ class CropDialog(tk.Toplevel):
         # height.  This dialog intentionally has no outer scrolling surface.
         actions = ttk.Frame(self, padding=(16, 8))
         actions.pack(side="bottom", fill="x")
-        ttk.Button(actions, text="取消", command=self.destroy).pack(side="right", padx=6)
+        ttk.Button(actions, text="关闭", command=self.destroy).pack(side="right", padx=6)
         ttk.Button(
             actions,
             text="重新扫描修改过的图片" if self.assets else "保存设置",
@@ -291,6 +304,9 @@ class CropDialog(tk.Toplevel):
             with self._cache_lock:
                 if not self._closed:
                     self._remember(self._detection_cache, detection_key, candidates, 512)
+        if asset.subject_features is not None:
+            asset.subject_features = replace(asset.subject_features, candidate_count=len(candidates),
+                                             candidate_confidence=settings.detection_confidence)
         return image_key, subjects, candidates, asset
 
     def _prepared_preview(self, asset, settings):
@@ -371,7 +387,7 @@ class CropDialog(tk.Toplevel):
             subject = asset.subject_features
             located = bool(entry.get('selected_faces')) if 'selected_faces' in entry else bool(
                 entry.get('manual_face') or (subject and (subject.head or subject.face)))
-            if not entry.get('hidden') and not located:
+            if not entry.get('hidden') and (not located or needs_person_review(asset, entry)):
                 indices.append(index)
                 break
         for index in indices:
@@ -407,11 +423,87 @@ class CropDialog(tk.Toplevel):
     def previous_unmarked(self):
         self.next_unmarked(direction=-1)
 
+    def _ensure_review_index(self, callback):
+        """Upgrade old single-subject records using previews on a worker, not RAW."""
+        if self._review_future is not None:
+            return False
+        confidence = self.confidence.get()
+        jobs = []
+        settings = self.global_settings()
+        for asset in self.assets:
+            entry = self.edits.get(settings.key(asset), {})
+            subject = asset.subject_features
+            if entry.get('hidden') or entry.get('manual_face') or 'selected_faces' in entry or subject is None:
+                continue
+            if (getattr(subject, 'candidate_count', None) is not None
+                    and getattr(subject, 'candidate_confidence', None) == confidence):
+                continue
+            path = getattr(asset, 'preview_path', None)
+            if not path:
+                continue
+            try:
+                stat = Path(path).stat()
+            except OSError:
+                continue
+            signature = (str(path), stat.st_size, stat.st_mtime_ns, confidence)
+            if signature not in self._review_attempted:
+                jobs.append((asset, signature))
+        if not jobs:
+            return True
+        self.caption.configure(text='正在用预览图检查多个人脸，完成后继续；不调用 API。')
+        def inspect():
+            results = []
+            for _, signature in jobs:
+                if self._review_stop.is_set():
+                    break
+                try:
+                    with Image.open(signature[0]) as source:
+                        image = np.asarray(ImageOps.exif_transpose(source).convert('RGB'))
+                    count = len(detect(cv2.cvtColor(image, cv2.COLOR_RGB2BGR), confidence))
+                except (OSError, ValueError, cv2.error):
+                    count = None
+                results.append((signature, count))
+            return results
+        self._review_future = self._review_executor.submit(inspect)
+        anchor = self.index
+        def poll():
+            self._review_poll = None
+            if self._closed:
+                return
+            if not self._review_future.done():
+                self._review_poll = self.after(50, poll)
+                return
+            try:
+                results = dict(self._review_future.result())
+            except Exception as exc:
+                self._review_future = None
+                self.caption.configure(text=f'多脸检查未完成：{exc}；可稍后重试。')
+                return
+            self._review_future = None
+            for asset, signature in jobs:
+                self._review_attempted.add(signature)
+                count = results.get(signature)
+                try:
+                    stat = Path(signature[0]).stat()
+                    valid = (str(asset.preview_path) == signature[0]
+                             and (stat.st_size, stat.st_mtime_ns) == signature[1:3])
+                except OSError:
+                    valid = False
+                if valid and count is not None and asset.subject_features is not None:
+                    asset.subject_features = replace(asset.subject_features, candidate_count=count,
+                                                     candidate_confidence=confidence)
+            if self.index == anchor and self.confidence.get() == confidence:
+                callback()
+        self._review_poll = self.after(50, poll)
+        return False
+
     def next_unmarked(self, direction=1):
         if not self.assets:
             self.caption.configure(text="请先扫描照片，再查找未标记人脸。")
             return
         self.store_current()
+        if not self._ensure_review_index(lambda: self.next_unmarked(direction)):
+            return
         settings = self.global_settings()
         for step in range(1, len(self.assets) + 1):
             index = (self.index + direction * step) % len(self.assets)
@@ -433,13 +525,14 @@ class CropDialog(tk.Toplevel):
                     entry.get('manual_face')
                     or (subject and (getattr(subject, 'head', None) or getattr(subject, 'face', None)))
                 )
-            if not located:
+            if not located or needs_person_review(asset, entry):
                 self.index = index
                 self._crop_selected = False
                 self._active_face_key = None
                 self.load_current()
                 self.render()
-                self.caption.configure(text=f"{index+1}/{len(self.assets)}  ·  {asset.stem}  ·  待补选人脸")
+                label = '多个人脸，待人工确认主体' if needs_person_review(asset, entry) else '待补选人脸'
+                self.caption.configure(text=f"{index+1}/{len(self.assets)}  ·  {asset.stem}  ·  {label}")
                 return
         self.caption.configure(text="没有待补选的人脸：已标记和手动隐藏的照片会自动跳过。")
 
@@ -483,6 +576,8 @@ class CropDialog(tk.Toplevel):
             return
         if not asset.preview_path or not Path(asset.preview_path).is_file():
             messagebox.showinfo("补齐人脸", "参考照片的预览不可读，无法进行匹配。", parent=self)
+            return
+        if not self._ensure_review_index(lambda: self.assist_group_faces(group_ids)):
             return
         siblings = list(self.assets)
         targets = collect_targets(asset, siblings, self.edits, settings.key, allow_cross_group=True)
@@ -664,6 +759,8 @@ class CropDialog(tk.Toplevel):
                 self.person.set(picker_value)
                 self._loading = False
             self.candidates = candidates
+            if needs_person_review(asset, entry):
+                self.caption.configure(text=f'{self.index+1}/{len(self.assets)} · {asset.stem} · 多个人脸，待人工确认主体；点击要选择的人脸框')
             marked = original.copy()
             painter = ImageDraw.Draw(marked)
             for candidate in self.candidates:
@@ -944,7 +1041,8 @@ class CropDialog(tk.Toplevel):
 
     def _toggle_selected(self, box):
         self.store_current()
-        selected = list(self._selected_boxes)
+        selected = ([] if needs_person_review(self.assets[self.index], self.current_entry())
+                    else list(self._selected_boxes))
         match = next(
             (index for index, current in enumerate(selected) if self._same_face(current, box)),
             None,
@@ -1035,6 +1133,10 @@ class CropDialog(tk.Toplevel):
 
     def destroy(self):
         self._closed = True
+        self._review_stop.set()
+        self._review_executor.shutdown(wait=False, cancel_futures=True)
+        if self._review_poll:
+            self.after_cancel(self._review_poll)
         if self._assist_dialog is not None:
             self._assist_dialog.destroy()
         if self._poll_token:

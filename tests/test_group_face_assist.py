@@ -533,7 +533,7 @@ def test_assist_fixed_actions_visible_on_short_desktop(monkeypatch, tmp_path):
         dialog.assist_group_faces()
         assist = dialog._assist_dialog
         pump(assist, lambda: assist._finished)
-        wanted = {'停止查找', '确认此框', '不是这个人', '暂时跳过', '取消', '采用选中候选'}
+        wanted = {'停止查找', '确认此框 (Y)', '不是这个人 (X)', '暂时跳过 (P)', '取消', '采用选中候选'}
         buttons = []
 
         def walk(widget):
@@ -789,6 +789,8 @@ def test_confirmation_label_and_direct_drawing(monkeypatch, tmp_path):
         assist.show_current()
         assist.confirm_current()
         assert assist.tree.item(key, 'values')[2] == '已确认'
+        assist.tree.selection_set(key)
+        assist.show_current()
         x,y,w,h,_,_ = assist._image_rect
         assist.pointer_down(SimpleNamespace(x=x+w*.6,y=y+h*.6))
         assist.pointer_up(SimpleNamespace(x=x+w*.8,y=y+h*.8))
@@ -815,3 +817,74 @@ def test_clear_selected_faces_and_previous_unmarked(monkeypatch, tmp_path):
     finally:
         dialog.destroy()
         root.destroy()
+
+
+def test_review_shortcuts_advance_and_last_stays(monkeypatch, tmp_path):
+    root, dialog, assets, saved, ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
+    key=dialog.global_settings().key
+    target_key=key(assets[1]);second=key(assets[2])
+    monkeypatch.setattr(group_face_assist,'propose_person_faces',fake_propose({target_key:(.25,.3,.12,.15),second:(.25,.3,.12,.15)}))
+    try:
+        dialog.assist_group_faces()
+        assist=dialog._assist_dialog
+        pump(root,lambda:assist._finished)
+        assist.tree.selection_set(target_key)
+        event=lambda key:SimpleNamespace(keysym=key,state=0,widget=assist.tree)
+        assert assist._review_shortcut(event('Y'))=='break'
+        assert assist.rows[target_key]['accepted']
+        assert assist.tree.selection()[0]==second
+        assist._review_shortcut(event('x'))
+        assert assist.rows[second]['status']=='不是这个人'
+        assert assist.tree.selection()[0]==second
+        assist.tree.selection_set(target_key)
+        assist._review_shortcut(event('p'))
+        assert assist.rows[target_key]['status']=='跳过'
+        assert not assist.rows[target_key]['accepted']
+        assert assist.tree.selection()[0]==second
+        assert not saved
+        assist._awaiting_done=True
+        assist._review_shortcut(event('y'))
+        assert not assist.rows[second]['accepted']
+    finally:
+        dialog.destroy();root.destroy()
+
+
+def test_multiple_automatic_faces_require_review_but_manual_choices_do_not():
+    from ai_cull_assistant.subject import SubjectFeatures
+    from ai_cull_assistant.crop_dialog import needs_person_review
+    item=asset('multiple',subject=SubjectFeatures('','',None,(.1,.1,.1,.1),candidate_count=2,candidate_confidence=.8))
+    assert needs_person_review(item,{})
+    assert not group_face_assist._entry_located({},item)
+    for entry in ({'selected_faces':[[.1,.1,.1,.1]]},{'selected_faces':[]},
+                  {'hidden':True},{'manual_face':[.1,.1,.1,.1]}):
+        assert not needs_person_review(item,entry)
+        assert group_face_assist._entry_located(entry,item)
+    assert collect_targets(asset('ref'),[asset('ref'),item],{},key_for)[0].key=='multiple'
+
+
+def test_legacy_multiple_faces_index_then_choose_replaces_auto(monkeypatch,tmp_path):
+    from ai_cull_assistant.subject import SubjectFeatures
+    from ai_cull_assistant.crop_dialog import needs_person_review
+    root,dialog,assets,saved,ui=open_dialog_with_manual_face(monkeypatch,tmp_path)
+    try:
+        wait_preview(dialog)
+        item=assets[1]
+        item.subject_features=SubjectFeatures('','',None,(.1,.1,.1,.1),(.08,.08,.15,.2))
+        item.subject_checked=True;item.subject_confidence=.8
+        monkeypatch.setattr(crop_dialog_module,'detect',lambda *a,**k:[
+            FaceDetection((40,60,40,60),(),.99), FaceDetection((200,120,40,60),(),.9)])
+        dialog.next_unmarked()
+        assert dialog._review_future is not None  # worker, no synchronous preview inference
+        pump(root,lambda:dialog._review_future is None)
+        assert dialog.index==1
+        wait_preview(dialog)
+        assert item.subject_features.candidate_count==2
+        assert needs_person_review(item,dialog.current_entry())
+        dialog._selected_boxes=[(.1,.1,.1,.1)]
+        wanted=(.5,.2,.1,.1)
+        dialog._toggle_selected(wanted)
+        assert dialog.current_entry()['selected_faces']==[list(wanted)]
+        assert not needs_person_review(item,dialog.current_entry())
+        assert not saved
+    finally:
+        dialog.destroy();root.destroy()

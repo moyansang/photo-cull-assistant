@@ -125,6 +125,11 @@ def fit_window(
             min(max(1, minimum_size[1]), geometry.height),
         )
     window.geometry(geometry.tk_value())
+    # Constructors withdraw before creating controls so theme initialization and
+    # geometry negotiation cannot expose a default-sized window at the origin.
+    if window.state() == 'withdrawn':
+        window.update_idletasks()
+        window.deiconify()
     return geometry
 
 

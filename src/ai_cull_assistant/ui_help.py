@@ -10,7 +10,7 @@ from .window_layout import fit_window
 PAGE_HELP = {
     'home': ('主页面', '扫描图片只进行本地检测与分组。调整人脸和选片组后，进行 AI 复核，再生成联系表，最后进入 AI 选片与导出。\n\n停止与继续控制扫描和 AI 复核。清空日志仅清除界面文字；清空工作区会清除工作区结果，不删除原照片。\n\n身体清晰度检查是实验选项，可能增加待确认照片。AI 服务供复核和选片共用。'),
     'faces': ('检测／调整人脸框', '直接在照片上拖拽画框。蓝框为检测候选，点击可选择；已选人物为绿框，当前人物可用下拉框切换。点击裁切框后变黄，可上下左右拖动，滚轮微调范围。\n\n置信度全局生效；范围、偏移、比例按照片／人物保存。重置当前裁切不取消选脸。去除所有框选只清除当前照片已选框。\n\n补齐人脸使用当前人物作为参考，跨组寻找漏检候选。必须看图确认身份和位置，不保证所有姿态均可匹配。保存后仅重新扫描修改过的图片。'),
-    'assist': ('补齐人脸', '参考人物来自外层当前选脸。软件在工作区的未标记照片中查找外观相似候选；相似分数不是身份概率。\n\n直接画框、点击框后拖动、滚轮缩放。确认后显示已确认；再次修改会撤销确认。不是这个人和跳过都不会采用本张。\n\n采用已确认候选写入外层编辑草稿，仍需外层保存。取消不写入草稿。已有人工框选不会被覆盖。'),
+    'assist': ('补齐人脸', '参考人物来自外层当前选脸。多个人脸但未经人工确认主体的照片也会进入候选。软件在工作区的未标记照片中查找外观相似候选；相似分数不是身份概率。\n\n直接画框、点击框后拖动、滚轮缩放。确认后显示已确认；再次修改会撤销确认。不是这个人和跳过都不会采用本张。\n\n采用已确认候选写入外层编辑草稿，仍需外层保存。取消不写入草稿。已有人工框选不会被覆盖。'),
     'groups': ('编辑选片组', '选择组，再选择照片作为拆分起点。可与相邻组合并。人工分组修改立即保存。\n\n分组只决定照片比较范围，不改变人脸检测置信度。列表及缩略图区域可独立滚动。'),
     'review': ('AI 选片与导出', 'API 选片使用主页面服务；网页选片不需要 API，可合并多个批次上传，并导入整份回答。两种方式共用结果。\n\n开始／继续只提交未完成批次。重新提交使用当前偏好发起新评审，可能产生费用。暂停需等待当前请求结束。\n\n选片结果显示对应回复、星级与弃置状态。导出合并技术弃置、AI 结果及清晰度待确认，最终在 Lightroom 中复核。'),
     'api': ('API 配置', '选择预设后填写密钥，自定义服务在高级设置填写接口地址和模型。切换标签不会保存或关闭。\n\n密钥留空保留已保存密钥；配置文件不直接写入密钥。测试连接会请求服务，可能产生少量费用；测试成功后按现有流程保存并选用该服务。'),
@@ -45,8 +45,9 @@ CONTROL_HELP = {
     '去除所有框选': '清除当前照片的全部已选人物和手动画框，其他照片不变。',
     '重置当前裁切': '恢复当前裁切范围、偏移和比例，不删除已选人脸。',
     '补齐人脸': '以当前人物为参考，跨组查找未标记照片，候选需逐张确认。',
-    '确认此框': '确认当前候选；修改位置或范围后需要重新确认。',
-    '不是这个人': '排除此候选，不作为所选人物采用。',
+    '暂时跳过 (P)': '按 P 暂时跳过当前照片并跳到下一张，本张不会采用。',
+    '确认此框 (Y)': '按 Y 确认当前候选并跳到下一张；修改位置或范围后需要重新确认。',
+    '不是这个人 (X)': '按 X 排除此候选并跳到下一张，不作为所选人物采用。',
     '跳过': '不采用当前照片的候选框。',
     '采用选中候选': '将已确认候选合入外层人脸编辑草稿，之后需保存。',
     '采用已确认结果': '将已确认候选合入外层人脸编辑草稿，之后需保存。',
@@ -217,6 +218,7 @@ def show_page_help(window, page_id):
         return
     title, text = PAGE_HELP.get(page_id, PAGE_HELP['home'])
     help_window = tk.Toplevel(window)
+    help_window.withdraw()
     window._page_help_window = help_window
     help_window.title(title + ' · 帮助')
     help_window.transient(window)
@@ -228,10 +230,19 @@ def show_page_help(window, page_id):
         if previous is not None and previous.winfo_exists():
             previous.grab_set()
     ttk.Button(footer, text='关闭', command=close).pack(side='right')
-    body = tk.Text(help_window, wrap='word', height=12, padx=16, pady=14)
+    from .ui_style import apply_page
+    heading = ttk.Label(help_window, text=title, style='Heading.TLabel', padding=(16, 12))
+    heading.pack(anchor='w')
+    body_frame = ttk.Frame(help_window, padding=(16, 0, 16, 0))
+    body_frame.pack(fill='both', expand=True)
+    body = tk.Text(body_frame, wrap='word', height=12, padx=16, pady=14)
+    scroll = ttk.Scrollbar(body_frame, command=body.yview)
+    body.configure(yscrollcommand=scroll.set)
+    scroll.pack(side='right', fill='y')
     body.insert('1.0', text)
     body.configure(state='disabled')
-    body.pack(fill='both', expand=True)
+    body.pack(side='left', fill='both', expand=True)
+    apply_page(help_window)
     help_window.protocol('WM_DELETE_WINDOW', close)
     help_window.bind('<Escape>', lambda _e: close())
     fit_window(help_window, (620, 350), minimum_size=(360, 240), parent=window)

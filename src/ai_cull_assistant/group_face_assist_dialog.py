@@ -31,6 +31,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
                  group_id=None, detection_confidence=.8, target_assets=None,
                  preview_cache_dir=None, on_target_prepared=None):
         super().__init__(parent)
+        self.withdraw()
         self.title(f"补齐人脸 · 参考人物 {reference.stem}")
         self.transient(parent)
         self.reference = reference
@@ -83,9 +84,10 @@ class GroupFaceAssistDialog(tk.Toplevel):
         footer.bind('<Configure>', lambda e: self.reason_label.configure(wraplength=max(200, e.width-24)))
         buttons = ttk.Frame(footer)
         buttons.pack(fill='x', pady=(6, 0))
-        ttk.Button(buttons, text='确认此框', command=self.confirm_current).pack(side='left', padx=(0, 6))
-        ttk.Button(buttons, text='不是这个人', command=self.reject_current).pack(side='left', padx=6)
-        ttk.Button(buttons, text='暂时跳过', command=self.skip_current).pack(side='left', padx=6)
+        ttk.Button(buttons, text='确认此框 (Y)', command=self.confirm_current).pack(side='left', padx=(0, 6))
+        ttk.Button(buttons, text='不是这个人 (X)', command=self.reject_current).pack(side='left', padx=6)
+        ttk.Button(buttons, text='暂时跳过 (P)', command=self.skip_current).pack(side='left', padx=6)
+        self.bind('<KeyPress>', self._review_shortcut, add='+')
         ttk.Button(buttons, text='取消', command=self.destroy).pack(side='right', padx=(6, 0))
         self.accept_button = ttk.Button(buttons, text='采用选中候选', command=self.accept_selected)
         self.accept_button.pack(side='right', padx=6)
@@ -498,6 +500,28 @@ class GroupFaceAssistDialog(tk.Toplevel):
         row['accepted'] = True
         self._selected_box_key = None
         self._update_row(key)
+        self._advance_after_review(key)
+
+    def _review_shortcut(self, event):
+        if self._closed or self._awaiting_done or event.state & 0xC:
+            return
+        if event.widget.winfo_toplevel() is not self:
+            return
+        if event.widget.winfo_class() in ('Entry', 'TEntry', 'Text', 'TCombobox', 'Spinbox', 'TSpinbox'):
+            return
+        action = {'y': self.confirm_current, 'x': self.reject_current, 'p': self.skip_current}.get(event.keysym.lower())
+        if action:
+            action()
+            return 'break'
+
+    def _advance_after_review(self, key):
+        values = self.tree.get_children()
+        index = values.index(key)
+        if index + 1 < len(values):
+            next_key = values[index + 1]
+            self.tree.selection_set(next_key)
+            self.tree.focus(next_key)
+            self.tree.see(next_key)
         self.show_current()
 
     def skip_current(self):
@@ -510,11 +534,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         row['accepted'] = False
         row['status'] = '跳过'
         self._update_row(key)
-        values = self.tree.get_children()
-        index = values.index(key)
-        if index + 1 < len(values):
-            self.tree.selection_set(values[index + 1])
-            self.tree.see(values[index + 1])
+        self._advance_after_review(key)
 
     def reject_current(self):
         if self._awaiting_done:
@@ -526,11 +546,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         row['accepted'] = False
         row['status'] = '不是这个人'
         self._update_row(key)
-        values = self.tree.get_children()
-        index = values.index(key)
-        if index + 1 < len(values):
-            self.tree.selection_set(values[index + 1])
-            self.tree.see(values[index + 1])
+        self._advance_after_review(key)
 
     def pointer_down(self, event):
         if not self._image_rect or self._awaiting_done:

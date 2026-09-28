@@ -41,6 +41,11 @@ def initialize(widget):
                        for name, size, weight in [('body', 10, 'normal'), ('small', 9, 'normal'),
                                                 ('shortcut', 8, 'normal'), ('heading', 11, 'bold')]}
     body = root._cull_fonts['body']
+    # ttk combobox popup uses a classic Tk Listbox, outside the page tree.
+    for option, value in dict(font=body, background=COLORS['surface'],
+                              foreground=COLORS['text'], selectBackground=COLORS['selection'],
+                              selectForeground=COLORS['text'], selectBorderWidth=0).items():
+        root.option_add('*TCombobox*Listbox.' + option, value, 80)
     style.configure('.', font=body, foreground=COLORS['text'])
     style.configure('TLabel', foreground=COLORS['text'])
     style.configure('TEntry', fieldbackground=COLORS['surface'])
@@ -72,6 +77,12 @@ def apply_page(window):
                 bootstrap.apply_bootstyle(child, 'secondary-outline')
             elif isinstance(child, ttk.Entry) or isinstance(child, (ttk.Combobox, ttk.Spinbox)):
                 child.configure(font=fonts['body'])
+                if isinstance(child, ttk.Combobox):
+                    popup = child.tk.call('ttk::combobox::PopdownWindow', child)
+                    child.tk.call(str(popup) + '.f.l', 'configure',
+                                  '-font', fonts['body'], '-background', COLORS['surface'],
+                                  '-foreground', COLORS['text'], '-selectbackground', COLORS['selection'],
+                                  '-selectforeground', COLORS['text'], '-selectborderwidth', 0)
             elif isinstance(child, ttk.Treeview):
                 child.configure(style='Assist.Treeview' if getattr(window, '_page_id', '') == 'assist' else 'Workbench.Treeview')
             elif isinstance(child, tk.Text):

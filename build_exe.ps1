@@ -45,6 +45,7 @@ pyinstaller `
     --clean `
     --onedir `
     --noconsole `
+    --manifest app.manifest `
     --name "AI选片助手" `
     --paths src `
     --add-data "src/ai_cull_assistant/data;ai_cull_assistant/data" `

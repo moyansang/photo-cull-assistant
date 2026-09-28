@@ -82,6 +82,7 @@ class PasteResponseDialog(tk.Toplevel):
         submit_text: str = "校验并保存 JSON",
     ) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title(title)
         self.transient(parent)
         self.on_submit = on_submit
@@ -118,6 +119,7 @@ class PasteResponseDialog(tk.Toplevel):
 class RawResponsesDialog(tk.Toplevel):
     def __init__(self, parent: tk.Misc, responses: Iterable[Any]) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title("原始回答")
         self.transient(parent)
         self.responses = list(responses)
@@ -188,6 +190,7 @@ class ReviewDialog(tk.Toplevel):
         home_pages=None,
     ) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title("AI 选片与 Lightroom 导出")
         self.transient(parent)
         self.project = project

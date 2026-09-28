@@ -187,6 +187,7 @@ class GroupEditor(tk.Toplevel):
 
     def __init__(self, parent: tk.Misc, assets: list[PhotoAsset], on_change) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title("选片组编辑")
         self.transient(parent)
         self.assets = assets
@@ -222,6 +223,7 @@ class GroupEditor(tk.Toplevel):
 
         actions = ttk.Frame(self, padding=(10, 4, 10, 8))
         actions.pack(side="bottom", fill="x")
+        ttk.Button(actions, text="关闭", command=self.destroy).pack(side="right")
         ttk.Button(actions, text="从所选照片拆分", command=self._split_selected).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="与上一组合并", command=lambda: self._merge_neighbor(-1)).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="与下一组合并", command=lambda: self._merge_neighbor(1)).pack(side="left", padx=(0, 8))

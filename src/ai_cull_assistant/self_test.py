@@ -35,6 +35,13 @@ def run(report_path: str) -> None:
             app.withdraw()
             app.update()
             report["window_title"] = app.title()
+            if getattr(sys, 'frozen', False) and sys.platform == 'win32':
+                import ctypes
+                awareness = ctypes.c_int()
+                hr = ctypes.windll.shcore.GetProcessDpiAwareness(None, ctypes.byref(awareness))
+                assert hr == 0 and awareness.value == 1, 'EXE must be system DPI aware'
+                report['system_dpi_aware'] = True
+                report['tk_pixels_per_inch'] = app.winfo_fpixels('1i')
             from .app import GROUPING_LABELS
             assert app.preset_var.get() == "标准"
             assert not app.body_screening_var.get()

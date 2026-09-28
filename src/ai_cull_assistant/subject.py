@@ -54,6 +54,8 @@ class SubjectFeatures:
     # A head-only fallback does not imply a visible face or eye evidence.
     head_source: str | None = None
     detection_version: str | None = None
+    candidate_count: int | None = None
+    candidate_confidence: float | None = None
 
 
 def image_hash(image: Image.Image) -> str:
@@ -146,6 +148,8 @@ def _cached_features(path: str, modified: int, size: int, score_threshold: float
         landmarks,
         'yunet' if face else (located_head.source if located_head else None),
         DETECTION_VERSION,
+        len(candidates),
+        score_threshold,
     )
 
 
