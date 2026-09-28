@@ -85,7 +85,7 @@ def test_crop_page_can_embed_without_creating_or_grabbing_a_window(tmp_path, mon
         assert page.master is host
         assert page.winfo_toplevel() is root
         assert root.grab_current() is None
-        assert page.confidence_spinbox.master is page.person_picker.master
+        assert not hasattr(page, 'confidence_spinbox')
         assert page.person_picker.master is page.ratio_picker.master
         navigation = {'上一张', '下一张', '重置当前裁切', '上一张未标记', '下一张未标记', '补齐人脸'}
         buttons = []

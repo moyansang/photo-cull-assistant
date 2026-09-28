@@ -1,2 +1,2 @@
 VERSION = '1.5.7'
-BUILD = 6
+BUILD = 7

@@ -27,6 +27,11 @@ def test_main_tabs_preserve_drafts_and_shared_footer(tmp_path, monkeypatch):
         app._navigate_workspace('faces')
         faces = app._workspace_pages['faces']
         faces.edits['test-draft'] = {'hidden': True}
+        monkeypatch.setattr(app, '_save_session', lambda: None)
+        app.detection_confidence_var.set('0.76')
+        app._commit_detection_confidence()
+        assert faces.global_settings().detection_confidence == .76
+        assert all(asset.ai_focus_dirty for asset in assets)
         for target in ('home', 'focus', 'groups', 'faces'):
             app._navigate_workspace(target)
             app.update()
@@ -122,6 +127,15 @@ def test_page_space_and_return_actions(tmp_path, monkeypatch):
                 scan = next(b for b in buttons(page) if b.cget('text') == '重新扫描')
                 assert scan.winfo_rooty() < home.winfo_rooty()
                 assert page.canvas.winfo_height() > 250
+                # Both orientations keep controls beside the image; flipping
+                # repeatedly must preserve drafts and keep every action visible.
+                for portrait in (True, False, True):
+                    page._fit_preview_layout(portrait=portrait)
+                    app.update_idletasks()
+                    assert page._navigation.winfo_viewable()
+                    assert page.detail_canvas.winfo_height() > 100
+                    assert page.canvas.winfo_rooty() + page.canvas.winfo_height() <= app.log_text.winfo_rooty()
+                    assert all(b.winfo_viewable() for b in buttons(page))
                 assert not any(b.cget('text') in ('关闭', '重新扫描修改过的图片') for b in buttons(page))
             home.invoke(); app.update()
             assert app._visible_page == 'home'

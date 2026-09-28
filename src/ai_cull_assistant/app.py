@@ -36,7 +36,7 @@ from .ui_help import install_page_chrome, install_control_help
 from .ui_style import set_button_style, apply_page
 from .workspace_layout import workspace_path
 from .workspace_log import append_log, visible_log
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from .workflow import (
     ScanResult,
     persist_manual_groups,
@@ -202,7 +202,35 @@ class App(tk.Tk):
                 pass
         return options
 
+    def _commit_detection_confidence(self, _event=None):
+        import math
+        previous = self.crop_settings.detection_confidence
+        try:
+            value = float(self.detection_confidence_var.get())
+            if not math.isfinite(value):
+                value = previous
+        except (ValueError, tk.TclError):
+            value = previous
+        value = round(max(.7, min(.95, value)), 2)
+        if self._processing_busy or self._review_busy():
+            value = previous
+        self.detection_confidence_var.set(f"{value:.2f}")
+        if value == previous:
+            return
+        self.crop_settings = replace(self.crop_settings, detection_confidence=value)
+        page = self._workspace_pages.get('faces')
+        if page is not None and page.winfo_exists():
+            page.confidence.set(f"{value:.2f}")
+            page._original_confidence = value
+        if self.scan_result:
+            for asset in self.scan_result.assets:
+                asset.ai_focus_dirty = True
+            self._set_sheets_ready(False)
+            self._save_session()
+        self._workspace_setting_changed()
+
     def _save_active_workspace_preferences(self):
+        self._commit_detection_confidence()
         if (self._workspace_blocked or self._workspace_cleared
                 or not self._active_input or not self._active_workspace):
             return
@@ -233,6 +261,7 @@ class App(tk.Tk):
         self.saved_options["no_auto_updates"] = self.no_updates_var.get()
         self._suppress_settings_trace = True
         try:
+            self.detection_confidence_var.set(f"{self.crop_settings.detection_confidence:.2f}")
             self.workspace_var.set(str(workspace))
             grouping = self.saved_options.get("grouping")
             self.preset_var.set(grouping if grouping in GROUPING_LABELS else "标准")
@@ -429,6 +458,7 @@ class App(tk.Tk):
         self.screening_var = tk.BooleanVar(value=self.saved_options.get("screening", True) if isinstance(self.saved_options.get("screening", True), bool) else True)
         self.body_screening_var = tk.BooleanVar(value=self.saved_options.get('body_screening') is True)
 
+        self.detection_confidence_var = tk.StringVar(value=f"{self.crop_settings.detection_confidence:.2f}")
         self.no_updates_var = tk.BooleanVar(value=self.saved_options.get('no_auto_updates') is True)
 
         form = ttk.Frame(home)
@@ -446,6 +476,14 @@ class App(tk.Tk):
         ttk.Spinbox(options, from_=8, to=60, textvariable=self.per_page_var, width=5).pack(side="left")
         ttk.Label(options, text="列数").pack(side="left", padx=(28, 12))
         ttk.Spinbox(options, from_=2, to=6, textvariable=self.columns_var, width=5).pack(side="left")
+        ttk.Label(options, text="全局置信度").pack(side="left", padx=(24, 8))
+        self.detection_confidence_spinbox = ttk.Spinbox(
+            options, from_=.7, to=.95, increment=.01, width=5, format="%.2f",
+            textvariable=self.detection_confidence_var, command=self._commit_detection_confidence)
+        self.detection_confidence_spinbox.pack(side="left")
+        self.detection_confidence_spinbox.bind('<FocusOut>', self._commit_detection_confidence)
+        self.detection_confidence_spinbox.bind('<Return>', self._commit_detection_confidence)
+
         checks = ttk.Frame(form)
         checks.grid(row=3, column=0, columnspan=4, sticky="w", pady=(0, 10))
         ttk.Checkbutton(checks, text="明显虚焦／严重抖动弃置", variable=self.screening_var).pack(side="left", padx=(0, 24))
@@ -472,7 +510,7 @@ class App(tk.Tk):
             first.columnconfigure(col, weight=1)
             setattr(self, name, button)
 
-        controls = ttk.Frame(frame)
+        controls = self._shared_controls = ttk.Frame(frame)
         controls.grid(row=1, column=0, sticky="ew", pady=(8, 6))
         self.stop_button = ttk.Button(controls, text="停止处理", command=self._stop_processing, state="disabled")
         self.stop_button.pack(side="left", padx=(0, 8))
@@ -485,7 +523,7 @@ class App(tk.Tk):
         self.clear_log_button = ttk.Button(controls, text="清空日志", command=self._clear_log)
         self.clear_log_button.pack(side="right", padx=(0, 8))
 
-        status = ttk.Frame(frame)
+        status = self._shared_status = ttk.Frame(frame)
         status.grid(row=2, column=0, sticky="ew", pady=(0, 4))
         self.next_step_var = tk.StringVar(value="推荐下一步：扫描图片")
         self.next_step_label = ttk.Label(status, textvariable=self.next_step_var)
@@ -502,7 +540,10 @@ class App(tk.Tk):
 
         log_frame = ttk.Frame(frame)
         log_frame.grid(row=4, column=0, sticky="nsew")
-        ttk.Label(log_frame, text="日志").pack(anchor="w", pady=(0, 4))
+        log_heading = ttk.Frame(log_frame)
+        log_heading.pack(fill="x", pady=(0, 4))
+        ttk.Label(log_heading, text="日志").pack(side="left")
+        self._compact_next_step = ttk.Label(log_heading, textvariable=self.next_step_var, style="Muted.TLabel")
         log_body = ttk.Frame(log_frame)
         log_body.pack(fill="both", expand=True)
         self.log_text = tk.Text(log_body, height=3, wrap="word", state="disabled")
@@ -812,6 +853,7 @@ class App(tk.Tk):
             messagebox.showerror("设置无效", str(exc), parent=self)
             return
         input_dir, workspace = self.input_var.get(), self.workspace_var.get()
+        self._commit_detection_confidence()
         crops = copy.deepcopy(self.crop_settings)
         if resume:
             try:
@@ -1069,8 +1111,15 @@ class App(tk.Tk):
         self._workspace_layout.rowconfigure(0, weight=0 if compact else 1)
         self._workspace_layout.rowconfigure(4, weight=1 if compact else 0)
         lines = 3 if compact else max(1, min(5, (self._workspace_layout.winfo_height() - 360) // 100))
-        if self._visible_page == 'faces':
+        faces = self._visible_page == 'faces'
+        if faces:
             lines = min(lines, 2)
+            self._shared_status.grid_remove()
+            self._compact_next_step.pack(side='right')
+        else:
+            self._shared_status.grid()
+            self._compact_next_step.pack_forget()
+        self._shared_controls.grid_configure(pady=(2, 2) if faces else (8, 6))
         if int(self.log_text.cget('height')) != lines:
             self.log_text.configure(height=lines)
 
@@ -1166,6 +1215,7 @@ class App(tk.Tk):
         self._start_processing(mode="sheets")
 
     def _open_crop_settings(self) -> None:
+        self._commit_detection_confidence()
         if self.updates.busy:
             messagebox.showinfo("提示", "请等待更新完成。", parent=self)
             return
@@ -1198,6 +1248,7 @@ class App(tk.Tk):
                     asset.ai_focus_dirty = True
             self._save_session()
         self.crop_settings = settings
+        self.detection_confidence_var.set(f"{settings.detection_confidence:.2f}")
         if self.scan_result:
             self._set_sheets_ready(False)
             self._log("人脸设置已保存，正在重新扫描修改过的图片。")
@@ -1327,6 +1378,7 @@ class App(tk.Tk):
             self.crop_settings = CropSettings()
             self._suppress_settings_trace = True
             try:
+                self.detection_confidence_var.set("0.80")
                 self.preset_var.set("标准")
                 self.per_page_var.set(16)
                 self.columns_var.set(4)

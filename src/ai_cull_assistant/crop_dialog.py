@@ -133,7 +133,7 @@ class CropDialog(WorkspacePage):
         body.rowconfigure(preview_row, weight=1)
         preview_header = ttk.Frame(body)
         self.caption = ttk.Label(preview_header, style="Heading.TLabel", width=1)
-        preview_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4 if embedded else 8))
+        preview_header.grid(row=0, column=0, columnspan=3 if embedded else 2, sticky="ew", pady=(0, 4 if embedded else 8))
         if not embedded:
             ttk.Button(preview_header, text="恢复本张自动选脸", command=self.auto_face).pack(side="right", padx=(6, 0))
             ttk.Button(preview_header, text="去除所有框选", command=self.clear_face_selection).pack(side="right", padx=(6, 0))
@@ -141,13 +141,7 @@ class CropDialog(WorkspacePage):
 
         if embedded:
             settings_line = ttk.Frame(body)
-            settings_line.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 5))
-            ttk.Label(settings_line, text="全局置信度").pack(side="left")
-            self.confidence_spinbox = ttk.Spinbox(
-                settings_line, from_=.7, to=.95, increment=.01,
-                textvariable=self.confidence, width=5, format="%.2f",
-            )
-            self.confidence_spinbox.pack(side="left", padx=(4, 10))
+            settings_line.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 5))
             ttk.Label(settings_line, text="当前人物").pack(side="left")
             self.person_picker = ttk.Combobox(
                 settings_line, textvariable=self.person, values=("自动主体",),
@@ -165,13 +159,13 @@ class CropDialog(WorkspacePage):
             self.clear_faces_button = ttk.Button(settings_line, text="去除所有框选", command=self.clear_face_selection)
             self.clear_faces_button.pack(side="right", padx=(6, 0))
             def fit_photo_columns(event):
-                body.columnconfigure(1, minsize=max(220, min(320, int(event.width * .24))))
+                self._fit_preview_layout(event.width)
                 self.restore_face_button.configure(text="恢复自动选脸" if event.width < 1000 else "恢复本张自动选脸")
             body.bind('<Configure>', fit_photo_columns)
 
         self.canvas = tk.Canvas(
             body, width=1, height=220 if embedded else 400,
-            background=COLORS["photo"], highlightthickness=0,
+            background=COLORS["bg"], highlightthickness=0,
         )
         self.canvas.grid(row=preview_row, column=0, sticky="nsew", padx=(0, 12))
         self.canvas.bind("<Configure>", self.schedule_preview)
@@ -194,7 +188,7 @@ class CropDialog(WorkspacePage):
         detail.pack(fill="both", expand=True)
         self.detail_canvas = tk.Canvas(
             detail, width=1 if embedded else 190, height=86 if embedded else 100,
-            background=COLORS["photo"], highlightthickness=0,
+            background=COLORS["bg"], highlightthickness=0,
         )
         self.detail_canvas.pack(fill="both", expand=True)
         self.detail_canvas.bind("<Configure>", self.schedule_crop_preview)
@@ -228,25 +222,48 @@ class CropDialog(WorkspacePage):
                 state="readonly", width=10,
             )
             self.ratio_picker.grid(row=1, column=1, sticky="ew", padx=(8, 0))
-        self.confidence_spinbox.bind('<FocusOut>', self._commit_confidence)
-        self.confidence_spinbox.bind('<Return>', self._commit_confidence)
+        if not embedded:
+            self.confidence_spinbox.bind('<FocusOut>', self._commit_confidence)
+            self.confidence_spinbox.bind('<Return>', self._commit_confidence)
         self.person_picker.bind("<<ComboboxSelected>>", self.select_person)
 
-        lower = ttk.Frame(body)
-        lower.grid(row=preview_row + 1, column=0, columnspan=2, sticky="ew", pady=(6 if embedded else 8, 0))
-        navigation = ttk.Frame(lower)
-        navigation.pack(fill="x")
-        navigation.columnconfigure((0, 1, 2), weight=1, uniform="crop-actions")
-        for column, (label, command) in enumerate((
-            ("上一张", lambda: self.navigate(-1)),
-            ("下一张", lambda: self.navigate(1)),
-            ("重置当前裁切", self.reset),
-            ("上一张未标记", self.previous_unmarked),
-            ("下一张未标记", self.next_unmarked),
-            ("补齐人脸", self.choose_assist_groups),
-        )):
+        if embedded:
+            # Keep navigation beside the photo, freeing its full vertical span.
+            navigation = ttk.Frame(body)
+            navigation.pack(in_=side_actions, side="top", before=side_actions.winfo_children()[0], fill="x", pady=(0, 6))
+            self._preview_body = body
+            self._preview_side = side
+            self._side_actions = side_actions
+            self._navigation = navigation
+            self._portrait_preview = False
+            self._preview_layout_key = None
+            columns = 2
+            actions = (
+                ("上一张", lambda: self.navigate(-1)),
+                ("下一张", lambda: self.navigate(1)),
+                ("上一张未标记", self.previous_unmarked),
+                ("下一张未标记", self.next_unmarked),
+                ("重置当前裁切", self.reset),
+                ("补齐人脸", self.choose_assist_groups),
+            )
+        else:
+            lower = ttk.Frame(body)
+            lower.grid(row=preview_row + 1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+            navigation = ttk.Frame(lower)
+            navigation.pack(fill="x")
+            columns = 3
+            actions = (
+                ("上一张", lambda: self.navigate(-1)),
+                ("下一张", lambda: self.navigate(1)),
+                ("重置当前裁切", self.reset),
+                ("上一张未标记", self.previous_unmarked),
+                ("下一张未标记", self.next_unmarked),
+                ("补齐人脸", self.choose_assist_groups),
+            )
+        navigation.columnconfigure(tuple(range(columns)), weight=1, uniform="crop-actions")
+        for index, (label, command) in enumerate(actions):
             ttk.Button(navigation, text=label, command=command).grid(
-                row=column // 3, column=column % 3, sticky="ew", padx=3, pady=2)
+                row=index // columns, column=index % columns, sticky="ew", padx=2, pady=2)
         for variable in (self.scale, self.shift, self.offset_x, self.ratio):
             variable.trace_add("write", self.schedule_crop_preview)
         self.confidence.trace_add("write", self.schedule_preview)
@@ -260,9 +277,49 @@ class CropDialog(WorkspacePage):
             ttk.Style(self).configure('Compact.secondary.Outline.TButton', padding=(8, 3))
             for container in (navigation, side_actions):
                 for button in container.winfo_children():
-                    button.configure(style='Compact.secondary.Outline.TButton')
+                    if isinstance(button, ttk.Button):
+                        button.configure(style='Compact.secondary.Outline.TButton')
         if not self._embedded:
             self.grab_set()
+
+    def _fit_preview_layout(self, width=None, *, portrait=None):
+        if not self._embedded or not hasattr(self, '_navigation'):
+            return
+        if portrait is not None:
+            self._portrait_preview = portrait
+        body = self._preview_body
+        width = width or body.winfo_width()
+        portrait = self._portrait_preview
+        side_width = max(230, min(300, int(width * .28))) if portrait else max(260, min(340, int(width * .30)))
+        key = (portrait, side_width)
+        if self._preview_layout_key == key:
+            return
+        self._preview_layout_key = key
+        navigation = self._navigation
+        navigation.pack_forget()
+        navigation.grid_forget()
+        for column in range(3):
+            body.columnconfigure(column, weight=0, minsize=0)
+        for column in range(2):
+            navigation.columnconfigure(column, weight=0, minsize=0, uniform='')
+        if portrait:
+            body.columnconfigure(1, weight=1)
+            body.columnconfigure(2, minsize=side_width)
+            navigation.grid(row=2, column=0, sticky='n', padx=(0, 8))
+            self.canvas.grid_configure(column=1)
+            self._preview_side.grid_configure(column=2)
+            columns = 1
+        else:
+            body.columnconfigure(0, weight=1)
+            body.columnconfigure(1, minsize=side_width)
+            navigation.pack(in_=self._side_actions, before=self._side_actions.winfo_children()[0],
+                            fill='x', pady=(0, 6))
+            self.canvas.grid_configure(column=0)
+            self._preview_side.grid_configure(column=1)
+            columns = 2
+        navigation.columnconfigure(tuple(range(columns)), weight=1, uniform='crop-actions')
+        for index, button in enumerate(navigation.winfo_children()):
+            button.grid_configure(row=index // columns, column=index % columns)
 
     def settings(self):
         return CropSettings.from_dict(dict(
@@ -773,7 +830,7 @@ class CropDialog(WorkspacePage):
         self.detail_canvas.delete("all")
         self.photos = []
         if not self.assets:
-            self.caption.configure(text="扫描照片后可预览；现在可先保存全局置信度。")
+            self.caption.configure(text="扫描照片后可预览和调整人脸框。")
             return
         asset = self.assets[self.index]
         mode = "拖动黄框调整位置" if self._crop_selected else "拖拽补框；点裁切框空白处可移动"
@@ -796,6 +853,7 @@ class CropDialog(WorkspacePage):
                 image_key = self._source_key(asset)
                 cached = self._cached_image(image_key)
                 if cached is not None:
+                    self._fit_preview_layout(portrait=cached.height > cached.width)
                     shown = ImageOps.contain(cached, (preview_width, preview_height))
                     photo = ImageTk.PhotoImage(shown)
                     self.photos.append(photo)
@@ -803,6 +861,7 @@ class CropDialog(WorkspacePage):
                     self._loading_image_key = image_key
                 return
             original, subjects, candidates = prepared
+            self._fit_preview_layout(portrait=original.height > original.width)
             self._selected_boxes = [
                 tuple(item.face) for item in subjects
                 if item and getattr(item, 'face', None)
@@ -866,19 +925,19 @@ class CropDialog(WorkspacePage):
                 detail_width = max(100, self.detail_canvas.winfo_width())
                 detail_height = max(30, self.detail_canvas.winfo_height())
                 tile_size = (max(1, detail_width - 16), max(1, detail_height - 28))
-                tile = Image.new("RGB", tile_size, COLORS["photo"])
+                tile = Image.new("RGB", tile_size, COLORS["bg"])
                 crop = ImageOps.contain(crop, tile_size)
                 tile.paste(crop, ((tile.width-crop.width)//2, (tile.height-crop.height)//2))
                 self.photos.append(ImageTk.PhotoImage(tile, master=self))
                 self.detail_canvas.create_image(detail_width / 2, detail_height / 2 + 8, image=self.photos[-1])
                 inset_label = f"裁切预览 · {self.ratio.get()}" if getattr(subject, 'face', None) else "头部定位，清晰度待确认"
-                self.detail_canvas.create_text(detail_width / 2, 12, text=inset_label, fill=COLORS['photo_text'])
+                self.detail_canvas.create_text(detail_width / 2, 12, text=inset_label, fill=COLORS['text'])
             else:
                 self.detail_canvas.create_text(
                     max(60, self.detail_canvas.winfo_width() / 2),
                     self.detail_canvas.winfo_height() / 2,
                     text="未检测到可靠人脸\n本张不显示小窗", justify="center",
-                    fill=COLORS['photo_text'],
+                    fill=COLORS['text'],
                 )
             selected_count = len(self._selected_boxes)
             if 'selected_faces' in entry:
@@ -907,7 +966,7 @@ class CropDialog(WorkspacePage):
                     tags="crop-outline",
                 )
         except (OSError, ValueError) as exc:
-            self.canvas.create_text(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, text=f"预览不可用：{exc}", fill=COLORS['photo_text'])
+            self.canvas.create_text(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, text=f"预览不可用：{exc}", fill=COLORS['text'])
             self.detail_canvas.delete("all")
 
     def global_settings(self):

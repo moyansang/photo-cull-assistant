@@ -323,3 +323,28 @@ def test_latest_photo_selection_wins_over_pending_workspace_edit(tmp_path, monke
         assert app.workspace_var.get() == chosen
     finally:
         app._close()
+
+
+def test_home_confidence_is_validated_and_saved_per_workspace(tmp_path):
+    source = make_source(tmp_path, 'photos')
+    workspace = workspace_for(tmp_path, source, preferred=tmp_path/'project')
+    save_workspace_preferences(workspace, {'detection_confidence': .84}, {})
+    app = make_app(tmp_path/'settings', source, workspace)
+    try:
+        assert app.detection_confidence_var.get() == '0.84'
+        app.detection_confidence_var.set('0.77')
+        app._commit_detection_confidence()
+        app._save_active_workspace_preferences()
+        stored = json.loads((workspace/'workspace-settings.json').read_text('utf-8'))
+        assert stored['face_crop']['detection_confidence'] == .77
+        for value in ('', '.', 'nan', 'inf'):
+            app.detection_confidence_var.set(value)
+            app._commit_detection_confidence()
+            assert app.detection_confidence_var.get() == '0.77'
+        app._processing_busy = True
+        app.detection_confidence_var.set('0.90')
+        app._commit_detection_confidence()
+        assert app.crop_settings.detection_confidence == .77
+        app._processing_busy = False
+    finally:
+        app.destroy()
