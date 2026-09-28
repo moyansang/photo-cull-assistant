@@ -20,6 +20,12 @@ def test_toolbar_actions_help_and_tooltip_lifecycle():
         assert root.bind('<Alt-Key-1>') and root.bind('<Alt-Key-4>') and root.bind('<F1>')
         assert install_page_chrome(root, 'home') is bar
         assert [button.cget('text') for button in bar.workflow_buttons.values()] == ['主页', '选片组', '复核', '人脸框', '选片']
+        from ai_cull_assistant.ui_style import COLORS
+        assert bar.brand.winfo_rootx() < bar.buttons['home'].winfo_rootx()
+        assert bar.help_button.winfo_rootx() > root.winfo_rootx() + root.winfo_width() / 2
+        assert bar.workflow_markers['home'].cget('background') == COLORS['accent']
+        assert bar.workflow_markers['faces'].cget('background') == COLORS['surface']
+        assert ttk.Style(root).lookup('Active.Nav.TButton', 'background') == COLORS['surface']
         install_control_help(root, 'home')
         tooltip = bar.buttons['api']._control_tooltip
         tooltip.show()

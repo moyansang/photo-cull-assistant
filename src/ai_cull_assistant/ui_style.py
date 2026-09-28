@@ -111,18 +111,22 @@ def style_page_chrome(window):
         return
     style = initialize(window)
     fonts = _root(window)._cull_fonts
-    bar.configure(padding=(16, 8), style='Toolbar.TFrame')
+    bar.configure(padding=(16, 8, 16, 0 if getattr(bar, 'workflow_buttons', {}) else 8), style='Toolbar.TFrame')
     style.configure('Toolbar.TFrame', background=COLORS['surface'])
+    style.configure('Brand.TLabel', font=fonts['heading'], background=COLORS['surface'], foreground=COLORS['text'])
     style.configure('Nav.TButton', font=fonts['body'], padding=(14, 7),
                     foreground=COLORS['muted'], background=COLORS['surface'],
                     borderwidth=0, relief='flat', bordercolor=COLORS['surface'],
                     focuscolor=COLORS['accent'])
     style.map('Nav.TButton', background=[('active', COLORS['hover'])],
               foreground=[('disabled', COLORS['disabled']), ('active', COLORS['text'])])
-    style.configure('Active.Nav.TButton', foreground=COLORS['accent'], background=COLORS['selection'])
-    style.map('Active.Nav.TButton', background=[('active', COLORS['selection'])])
+    style.configure('Active.Nav.TButton', foreground=COLORS['accent'], background=COLORS['surface'])
+    style.map('Active.Nav.TButton', background=[('active', COLORS['hover'])],
+              foreground=[('disabled', COLORS['disabled']), ('active', COLORS['accent'])])
+    style.configure('Utility.Nav.TButton', font=fonts['small'], padding=(9, 5))
     for action, button in bar.buttons.items():
-        button.configure(style='Active.Nav.TButton' if action == window._page_id else 'Nav.TButton')
+        button.configure(style='Utility.Nav.TButton')
     for action, button in getattr(bar, 'workflow_buttons', {}).items():
         button.configure(style='Active.Nav.TButton' if action == window._page_id else 'Nav.TButton')
-    bar.help_button.configure(style='Nav.TButton')
+        bar.workflow_markers[action].configure(background=COLORS['accent'] if action == window._page_id else COLORS['surface'])
+    bar.help_button.configure(style='Utility.Nav.TButton')

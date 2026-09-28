@@ -283,6 +283,18 @@ def install_page_chrome(window, page_id):
     window._page_chrome = bar
     tools = ttk.Frame(bar, style='Toolbar.TFrame')
     tools.pack(fill='x')
+    tools.columnconfigure(0, weight=1)
+    bar.brand = ttk.Label(tools, text='AI 选片助手', style='Brand.TLabel')
+    bar.brand.grid(row=0, column=0, sticky='w')
+    utility = ttk.Frame(tools, style='Toolbar.TFrame')
+    utility.grid(row=0, column=1, sticky='e')
+    def fit_brand(_event=None):
+        # Keep every tool reachable on small auxiliary windows/high DPI screens.
+        if tools.winfo_width() < utility.winfo_reqwidth() + bar.brand.winfo_reqwidth() + 16:
+            bar.brand.grid_remove()
+        else:
+            bar.brand.grid()
+    tools.bind('<Configure>', fit_brand, add='+')
     from .ui_style import style_page_chrome
     def go(action):
         if action in buttons and buttons[action].instate(['disabled']):
@@ -302,14 +314,14 @@ def install_page_chrome(window, page_id):
             callback()
     buttons = {}
     for name, action, shortcut in [('主页面', 'home', 'Alt+1'), ('配置 API', 'api', 'Alt+2'), ('检查更新', 'update', 'Alt+3'), ('LR 插件', 'lr', 'Alt+4')]:
-        button = ttk.Button(tools, text=name, command=lambda a=action: go(a))
+        button = ttk.Button(utility, text=name, command=lambda a=action: go(a))
         button.pack(side='left', padx=(0, 4))
         button._control_tooltip = ToolTip(button, f'{name}（{shortcut}）')
         if action == 'home':
             button._always_available = True
         buttons[action] = button
         window.bind('<Alt-Key-' + shortcut[-1] + '>', lambda _e, a=action: (go(a), 'break')[1], add='+')
-    help_button = ttk.Button(tools, text='帮助', command=lambda: show_page_help(window, page_id))
+    help_button = ttk.Button(utility, text='帮助', command=lambda: show_page_help(window, page_id))
     help_button._always_available = True
     help_button.pack(side='left')
     help_button._control_tooltip = ToolTip(help_button, '当前页面使用帮助（F1）')
@@ -317,9 +329,11 @@ def install_page_chrome(window, page_id):
     window.bind('<F1>', lambda _e: (show_page_help(window, page_id), 'break')[1], add='+')
     bar.buttons = buttons
     bar.workflow_buttons = {}
+    bar.workflow_markers = {}
     if page_id in ('home', 'groups', 'focus', 'faces', 'review'):
+        ttk.Separator(bar).pack(fill='x', pady=(8, 0))
         navigation = ttk.Frame(bar, style='Toolbar.TFrame')
-        navigation.pack(fill='x', pady=(8, 0))
+        navigation.pack(fill='x')
         def navigate(target):
             app = _app_for(window)
             if app is None or target == page_id:
@@ -337,8 +351,13 @@ def install_page_chrome(window, page_id):
             callback()
         for target, label in [('home', '主页'), ('groups', '选片组'), ('focus', '复核'),
                               ('faces', '人脸框'), ('review', '选片')]:
-            button = ttk.Button(navigation, text=label, command=lambda t=target: navigate(t))
-            button.pack(side='left', padx=(0, 8))
+            tab = ttk.Frame(navigation, style='Toolbar.TFrame')
+            tab.pack(side='left', padx=(0, 8))
+            button = ttk.Button(tab, text=label, command=lambda t=target: navigate(t))
+            button.pack(fill='x')
+            marker = tk.Frame(tab, height=2, borderwidth=0, highlightthickness=0)
+            marker.pack(fill='x')
+            bar.workflow_markers[target] = marker
             bar.workflow_buttons[target] = button
     style_page_chrome(window)
     window.after_idle(lambda: install_control_help(window, page_id) if window.winfo_exists() else None)
