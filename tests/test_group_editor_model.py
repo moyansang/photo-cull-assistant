@@ -240,3 +240,21 @@ def test_thumbnail_loader_serializes_one_asset_while_other_assets_overlap():
     finally:
         release.set()
         loader.close()
+
+
+def test_adaptive_grid_enlarges_small_groups_and_scrolls_large_groups():
+    from ai_cull_assistant.group_editor import detail_grid_layout
+    pair = detail_grid_layout(840, 360, 2, 20)
+    eight = detail_grid_layout(840, 360, 8, 20)
+    bigger = detail_grid_layout(1100, 520, 2, 20)
+    assert pair[0] == 2
+    assert pair[3][0] > 300 and pair[3][1] > 250
+    assert min(pair[3]) > min(eight[3])
+    assert bigger[3][0] > pair[3][0] and bigger[3][1] > pair[3][1]
+    many = detail_grid_layout(840, 360, 400, 20)
+    assert min(many[3]) >= 120
+    assert ((400 + many[0] - 1) // many[0]) * many[2] > 360
+    for count in (0, 1, 2, 8, 400):
+        columns, cell, row, box = detail_grid_layout(300, 200, count, 20)
+        assert columns * cell <= 300
+        assert box[0] < cell and box[1] < row

@@ -64,6 +64,32 @@ def ellipsize_text(text: str, measure: Callable[[str], int], max_width: int) -> 
     return text[:left] + marker + text[-(low - left):] if low > left else text[:left] + marker
 
 
+def detail_grid_layout(width: int, height: int, photo_count: int, caption_height: int):
+    """Fit small groups to the viewport; keep large groups readable by scrolling."""
+    width, height = max(40, width), max(60, height)
+    count = max(1, photo_count)
+    overhead = caption_height + 26
+    if count <= 2:
+        columns = count
+        row_height = height - 8
+    else:
+        candidates = []
+        for columns in range(1, min(count, max(1, width // 160)) + 1):
+            rows = (count + columns - 1) // columns
+            row_height = (height - 8) // rows
+            score = min(width // columns - 22, row_height - overhead)
+            candidates.append((score, -rows, columns, row_height))
+        score, _, columns, row_height = max(candidates)
+        if score < 120:
+            columns = min(count, max(1, width // 240))
+            row_height = max(180, min(320, width // columns))
+    cell_width = width // columns
+    # Reuse cached thumbnails during small resize movements; cap pixel storage.
+    box = tuple(max(8, min(768, value // 8 * 8)) for value in
+                (cell_width - 22, row_height - overhead))
+    return columns, cell_width, row_height, box
+
+
 ThumbnailKey = tuple[int, tuple[int, int]]
 
 
@@ -201,9 +227,6 @@ class ThumbnailLoader:
 
 class GroupEditor(WorkspacePage):
     ROW_H = 62
-    DETAIL_THUMB = (192, 120)
-    DETAIL_CELL_W = 212
-    DETAIL_CELL_H = 162
     THUMB_CACHE_SIZE = 160
     THUMB_POLL_MS = 20
 
@@ -247,10 +270,6 @@ class GroupEditor(WorkspacePage):
         self._group_row_h = max(
             self.ROW_H,
             fonts['body'].metrics('linespace') + fonts['shortcut'].metrics('linespace') + 25,
-        )
-        self._detail_cell_h = max(
-            self.DETAIL_CELL_H,
-            self.DETAIL_THUMB[1] + fonts['small'].metrics('linespace') + 24,
         )
         self._build_ui()
         if not embedded:
@@ -414,10 +433,10 @@ class GroupEditor(WorkspacePage):
         members = self._members_by_group.get(self.selected_group_id, [])
         self._refresh_detail_status()
 
-        width = max(self.detail_canvas.winfo_width(), self.DETAIL_CELL_W)
-        columns = max(1, width // self.DETAIL_CELL_W)
-        cell_width = max(self.DETAIL_CELL_W, width // columns)
-        row_height = self._detail_cell_h
+        width = max(40, self.detail_canvas.winfo_width())
+        caption_height = self._fonts['small'].metrics('linespace')
+        columns, cell_width, row_height, thumb_box = detail_grid_layout(
+            width, self.detail_canvas.winfo_height(), len(members), caption_height)
         row_count = (len(members) + columns - 1) // columns
         total_height = max(8 + row_count * row_height, 1)
         self.detail_canvas.configure(scrollregion=(0, 0, width, total_height))
@@ -428,7 +447,7 @@ class GroupEditor(WorkspacePage):
         first = first_row * columns
         last = min(len(members), last_row * columns)
         self._detail_requested_keys = {
-            self._thumbnail_key(members[index], self.DETAIL_THUMB) for index in range(first, last)
+            self._thumbnail_key(members[index], thumb_box) for index in range(first, last)
         }
         self._cancel_stale_thumbnail_requests()
         for index in range(first, last):
@@ -447,11 +466,13 @@ class GroupEditor(WorkspacePage):
                 width=2 if selected else 1,
                 tags=(tag,),
             )
-            photo = self._cached_photo(asset, self.DETAIL_THUMB)
+            photo = self._cached_photo(asset, thumb_box)
             if photo is not None:
                 self._detail_images.append(photo)
                 image_x = x0 + max(6, (x1 - x0 - photo.width()) // 2)
-                self.detail_canvas.create_image(image_x, y0 + 6, anchor="nw", image=photo, tags=(tag,))
+                image_area_height = row_height - caption_height - 26
+                image_y = y0 + 6 + max(0, (image_area_height - photo.height()) // 2)
+                self.detail_canvas.create_image(image_x, image_y, anchor="nw", image=photo, tags=(tag,))
             display_stem = ellipsize_text(
                 asset.stem,
                 self._fonts['small'].measure,
@@ -480,6 +501,7 @@ class GroupEditor(WorkspacePage):
     def _select_group(self, group_id: int) -> None:
         self.selected_group_id = group_id
         self.selected_stem = None
+        self.detail_canvas.yview_moveto(0)
         self._redraw_rows()
         self._redraw_detail()
 
