@@ -86,9 +86,11 @@ def test_workflow_navigation_only_enters_focus_page_without_submitting(tmp_path)
         page = app._focus_page
         assert page.winfo_exists() and page._page_id == 'focus'
         assert not calls
-        assert page._page_chrome.workflow_buttons['focus'].cget('style') == 'Active.Nav.TButton'
-        page._page_chrome.workflow_buttons['home'].invoke()
-        assert not page.winfo_exists()
+        assert page.winfo_toplevel() is app
+        assert app._page_chrome.workflow_buttons['focus'].cget('style') == 'Active.Nav.TButton'
+        app._page_chrome.workflow_buttons['home'].invoke()
+        app.update()
+        assert page.winfo_exists() and not page.winfo_ismapped()
         assert not calls
     finally:
         app.destroy()

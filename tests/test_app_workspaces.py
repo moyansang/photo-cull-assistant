@@ -292,7 +292,9 @@ def test_existing_ai_task_opens_even_when_homepage_sheets_missing(tmp_path,monke
     monkeypatch.setattr(app_module.messagebox,'showinfo',lambda *a,**kw:notices.append(a))
     owner=SimpleNamespace(updates=SimpleNamespace(busy=False),_ensure_selected_session=lambda:None,
                           scan_result=result,crop_settings=crops,settings_dir=tmp_path/'settings',
-                          _sheets_ready=lambda:False)
+                          _sheets_ready=lambda:False, _show_workspace_page=lambda name:False,
+                          _page_host=None, _mount_workspace_page=lambda *args:None,
+                          _review_progress=lambda *args:None, _log=lambda *args:None)
     App._open_ai_review(owner)
     assert opened==[task['id']] and not notices
 

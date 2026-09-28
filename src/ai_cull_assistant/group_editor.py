@@ -15,7 +15,8 @@ from PIL import Image, ImageOps, ImageTk
 from .grouping import merge_adjacent_groups, split_group_at
 from .models import PhotoAsset
 from .ui_help import install_control_help, install_page_chrome
-from .ui_style import apply_page, set_button_style, COLORS
+from .ui_page import WorkspacePage
+from .ui_style import apply_page, set_button_style, COLORS, initialize
 from .window_layout import fit_window
 
 
@@ -198,7 +199,7 @@ class ThumbnailLoader:
                 image.close()
 
 
-class GroupEditor(tk.Toplevel):
+class GroupEditor(WorkspacePage):
     ROW_H = 62
     DETAIL_THUMB = (160, 120)
     DETAIL_CELL_W = 180
@@ -206,11 +207,19 @@ class GroupEditor(tk.Toplevel):
     THUMB_CACHE_SIZE = 160
     THUMB_POLL_MS = 20
 
-    def __init__(self, parent: tk.Misc, assets: list[PhotoAsset], on_change) -> None:
-        super().__init__(parent)
-        self.withdraw()
-        self.title("选片组编辑")
-        self.transient(parent)
+    def __init__(
+        self,
+        parent: tk.Misc,
+        assets: list[PhotoAsset],
+        on_change,
+        *,
+        embedded: bool = False,
+    ) -> None:
+        super().__init__(parent, embedded=embedded)
+        if not embedded:
+            self.withdraw()
+            self.title("选片组编辑")
+            self.transient(parent)
         self.assets = assets
         self.on_change = on_change
         self.selected_group_id: int | None = assets[0].group_id if assets else None
@@ -227,7 +236,9 @@ class GroupEditor(tk.Toplevel):
         self._members_by_group = {group_id: members for group_id, members in self._groups}
         self._redraw_token: str | None = None
         self._detail_redraw_token: str | None = None
-        install_page_chrome(self, "groups")
+        if not embedded:
+            install_page_chrome(self, "groups")
+        initialize(self)
         root = self
         while root.master is not None:
             root = root.master
@@ -242,7 +253,8 @@ class GroupEditor(tk.Toplevel):
             self.DETAIL_THUMB[1] + fonts['small'].metrics('linespace') + 24,
         )
         self._build_ui()
-        fit_window(self, (1180, 680), minimum_size=(640, 480), parent=parent)
+        if not embedded:
+            fit_window(self, (1180, 680), minimum_size=(640, 480), parent=parent)
         self._redraw_rows()
         self._redraw_detail()
         install_control_help(self, "groups")
@@ -257,7 +269,8 @@ class GroupEditor(tk.Toplevel):
 
         actions = ttk.Frame(self, padding=(10, 4, 10, 8))
         actions.pack(side="bottom", fill="x")
-        ttk.Button(actions, text="关闭", command=self.destroy).pack(side="right")
+        if not self._embedded:
+            ttk.Button(actions, text="关闭", command=self.close_page).pack(side="right")
         ttk.Button(actions, text="从所选照片拆分", command=self._split_selected).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="与上一组合并", command=lambda: self._merge_neighbor(-1)).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="与下一组合并", command=lambda: self._merge_neighbor(1)).pack(side="left", padx=(0, 8))
@@ -509,6 +522,22 @@ class GroupEditor(tk.Toplevel):
         self.on_change()
         self._groups = grouped_assets(self.assets)
         self._members_by_group = {group_id: members for group_id, members in self._groups}
+        self._redraw_rows()
+        self._redraw_detail()
+
+    def on_activate(self) -> None:
+        """Refresh group membership and visible thumbnails after page switches."""
+        if self._closed or not self.winfo_exists():
+            return
+        self._groups = grouped_assets(self.assets)
+        self._members_by_group = {group_id: members for group_id, members in self._groups}
+        if self.selected_group_id not in self._members_by_group:
+            self.selected_group_id = self._groups[0][0] if self._groups else None
+            self.selected_stem = None
+        elif self.selected_stem is not None:
+            members = self._members_by_group[self.selected_group_id]
+            if all(asset.stem != self.selected_stem for asset in members):
+                self.selected_stem = None
         self._redraw_rows()
         self._redraw_detail()
 

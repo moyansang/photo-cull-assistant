@@ -62,6 +62,51 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
         root.destroy()
 
 
+def test_crop_page_can_embed_without_creating_or_grabbing_a_window(tmp_path, monkeypatch):
+    import ai_cull_assistant.crop_dialog as module
+    monkeypatch.setattr(module, 'detect', lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(module, 'detail_features', lambda *_args, **_kwargs: None)
+    path = tmp_path / 'embedded.jpg'
+    Image.new('RGB', (160, 240), 'gray').save(path)
+    asset = PhotoAsset(
+        path.stem, path, path, None, path, datetime.now(), '.jpg', preview_path=path)
+    root = tk.Tk()
+    root.geometry('1100x430')
+    root._open_api_config = lambda: None
+    root._page_chrome = tk.Frame(root)
+    host = tk.Frame(root)
+    host.pack(fill='both', expand=True)
+    saved = []
+    try:
+        page = CropDialog(host, [asset], CropSettings(), saved.append, embedded=True)
+        page.pack(fill='both', expand=True)
+        root.update()
+        assert page._embedded
+        assert page.master is host
+        assert page.winfo_toplevel() is root
+        assert root.grab_current() is None
+        assert page.confidence_spinbox.master is page.person_picker.master
+        assert page.person_picker.master is page.ratio_picker.master
+        navigation = {'上一张', '下一张', '重置当前裁切', '上一张未标记', '下一张未标记', '补齐人脸'}
+        buttons = []
+        def collect(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, tk.ttk.Button) and child.cget('text') in navigation:
+                    buttons.append(child)
+                collect(child)
+        collect(page)
+        assert {button.cget('text') for button in buttons} == navigation
+        assert all(button.winfo_viewable() for button in buttons)
+        assert all(button.winfo_rooty() + button.winfo_height()
+                   <= page.winfo_rooty() + page.winfo_height() for button in buttons)
+        page.save()
+        assert len(saved) == 1
+        assert not page.winfo_exists()
+        assert root.winfo_exists()
+    finally:
+        root.destroy()
+
+
 def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monkeypatch):
     import ai_cull_assistant.crop_dialog as module
     preview_dir=tmp_path/'v05';preview_dir.mkdir()

@@ -498,6 +498,8 @@ def test_assist_dialog_adopts_into_parent_edits(monkeypatch, tmp_path):
         dialog.assist_group_faces()
         assist = dialog._assist_dialog
         assert assist is not None
+        assert assist.master is dialog
+        assert str(assist.transient()) == str(dialog.winfo_toplevel())
         pump(assist, lambda: all(row['proposal'] is not None for row in assist.rows.values()))
         target_key = key(assets[1])
         pump(assist, lambda: target_key in assist._thumbnail_cache)

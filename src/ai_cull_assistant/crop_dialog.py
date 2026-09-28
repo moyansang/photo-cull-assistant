@@ -20,6 +20,7 @@ from .group_face_assist_dialog import GroupFaceAssistDialog
 from .subject import face_crop, detail_features, detail_features_list
 from .preview import ensure_preview
 from .ui_help import install_control_help, install_page_chrome
+from .ui_page import WorkspacePage
 from .ui_style import apply_page, set_button_style, COLORS
 from .window_layout import fit_window
 
@@ -65,9 +66,9 @@ def apply_face_box(entry, selected_boxes, box, preview_version):
     entry.pop('hidden', None)
 
 
-class CropDialog(tk.Toplevel):
-    def __init__(self, parent, assets, settings, on_save):
-        super().__init__(parent)
+class CropDialog(WorkspacePage):
+    def __init__(self, parent, assets, settings, on_save, *, embedded=False):
+        super().__init__(parent, embedded=embedded)
         self.withdraw()
         self.title("检测/调整人脸框")
         self.transient(parent)
@@ -117,7 +118,8 @@ class CropDialog(tk.Toplevel):
         install_page_chrome(self, "faces")
         # Fixed footer and compact controls leave the preview all remaining
         # height.  This dialog intentionally has no outer scrolling surface.
-        actions = ttk.Frame(self, padding=(16, 8))
+        page_pad = 10 if embedded else 16
+        actions = ttk.Frame(self, padding=(page_pad, 6 if embedded else 8))
         actions.pack(side="bottom", fill="x")
         ttk.Button(actions, text="关闭", command=self.destroy).pack(side="right", padx=6)
         ttk.Button(
@@ -125,19 +127,45 @@ class CropDialog(tk.Toplevel):
             text="重新扫描修改过的图片" if self.assets else "保存设置",
             command=self.save,
         ).pack(side="right")
-        body = ttk.Frame(self, padding=(16, 8))
+        body = ttk.Frame(self, padding=(page_pad, 5 if embedded else 8))
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, minsize=228)
-        body.rowconfigure(1, weight=1)
+        body.columnconfigure(1, minsize=188 if embedded else 228)
+        preview_row = 2 if embedded else 1
+        body.rowconfigure(preview_row, weight=1)
         preview_header = ttk.Frame(body)
         preview_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         self.caption = ttk.Label(preview_header, style="Heading.TLabel")
         self.caption.pack(side="left", fill="x", expand=True)
         ttk.Button(preview_header, text="恢复本张自动选脸", command=self.auto_face).pack(side="right", padx=(6, 0))
         ttk.Button(preview_header, text="去除所有框选", command=self.clear_face_selection).pack(side="right", padx=(6, 0))
-        self.canvas = tk.Canvas(body, width=1, height=400, background=COLORS["photo"], highlightthickness=0)
-        self.canvas.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
+
+        if embedded:
+            settings_line = ttk.Frame(body)
+            settings_line.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 5))
+            ttk.Label(settings_line, text="全局置信度").pack(side="left")
+            self.confidence_spinbox = ttk.Spinbox(
+                settings_line, from_=.7, to=.95, increment=.01,
+                textvariable=self.confidence, width=6, format="%.2f",
+            )
+            self.confidence_spinbox.pack(side="left", padx=(6, 18))
+            ttk.Label(settings_line, text="当前人物").pack(side="left")
+            self.person_picker = ttk.Combobox(
+                settings_line, textvariable=self.person, values=("自动主体",),
+                state="readonly", width=14,
+            )
+            self.person_picker.pack(side="left", padx=(6, 18))
+            ttk.Label(settings_line, text="裁切比例").pack(side="left")
+            self.ratio_picker = ttk.Combobox(
+                settings_line, textvariable=self.ratio, values=("124:150", "1:1", "3:4"),
+                state="readonly", width=10,
+            )
+            self.ratio_picker.pack(side="left", padx=(6, 0))
+        self.canvas = tk.Canvas(
+            body, width=1, height=220 if embedded else 400,
+            background=COLORS["photo"], highlightthickness=0,
+        )
+        self.canvas.grid(row=preview_row, column=0, sticky="nsew", padx=(0, 12))
         self.canvas.bind("<Configure>", self.schedule_preview)
         self.canvas.bind('<ButtonPress-1>', self.pointer_down)
         self.canvas.bind('<B1-Motion>', self.pointer_move)
@@ -147,48 +175,50 @@ class CropDialog(tk.Toplevel):
         self.canvas.bind('<Button-5>', self.mouse_wheel)
 
         side = ttk.Frame(body)
-        side.grid(row=1, column=1, sticky="nsew")
+        side.grid(row=preview_row, column=1, sticky="nsew")
         detail = ttk.LabelFrame(side, text="人脸细节", padding=8)
         detail.pack(fill="x")
         self.detail_canvas = tk.Canvas(
-            detail, width=190, height=100, background=COLORS["photo"], highlightthickness=0,
+            detail, width=178 if embedded else 190, height=86 if embedded else 100,
+            background=COLORS["photo"], highlightthickness=0,
         )
         self.detail_canvas.pack(fill="x")
 
-        detection = ttk.Frame(side)
-        detection.pack(fill="x", pady=(8, 0))
-        detection.columnconfigure(1, weight=1)
-        ttk.Label(detection, text="全局置信度").grid(row=0, column=0, sticky="w")
-        self.confidence_spinbox = ttk.Spinbox(
-            detection, from_=.7, to=.95, increment=.01, textvariable=self.confidence,
-            width=6, format="%.2f",
-        )
-        self.confidence_spinbox.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        if not embedded:
+            detection = ttk.Frame(side)
+            detection.pack(fill="x", pady=(8, 0))
+            detection.columnconfigure(1, weight=1)
+            ttk.Label(detection, text="全局置信度").grid(row=0, column=0, sticky="w")
+            self.confidence_spinbox = ttk.Spinbox(
+                detection, from_=.7, to=.95, increment=.01, textvariable=self.confidence,
+                width=6, format="%.2f",
+            )
+            self.confidence_spinbox.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
+            controls = ttk.LabelFrame(side, text="当前人物与裁切", padding=6)
+            controls.pack(fill="x", pady=(8, 0))
+            controls.columnconfigure(1, weight=1)
+            ttk.Label(controls, text="当前人物").grid(row=0, column=0, sticky="w", pady=(0, 4))
+            self.person_picker = ttk.Combobox(
+                controls,
+                textvariable=self.person,
+                values=("自动主体",),
+                state="readonly",
+                width=13,
+            )
+            self.person_picker.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=(0, 4))
+            ttk.Label(controls, text="裁切比例").grid(row=1, column=0, sticky="w")
+            self.ratio_picker = ttk.Combobox(
+                controls, textvariable=self.ratio, values=("124:150", "1:1", "3:4"),
+                state="readonly", width=10,
+            )
+            self.ratio_picker.grid(row=1, column=1, sticky="ew", padx=(8, 0))
         self.confidence_spinbox.bind('<FocusOut>', self._commit_confidence)
         self.confidence_spinbox.bind('<Return>', self._commit_confidence)
-
-        controls = ttk.LabelFrame(side, text="当前人物与裁切", padding=6)
-        controls.pack(fill="x", pady=(8, 0))
-        controls.columnconfigure(1, weight=1)
-        ttk.Label(controls, text="当前人物").grid(row=0, column=0, sticky="w", pady=(0, 4))
-        self.person_picker = ttk.Combobox(
-            controls,
-            textvariable=self.person,
-            values=("自动主体",),
-            state="readonly",
-            width=13,
-        )
-        self.person_picker.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=(0, 4))
         self.person_picker.bind("<<ComboboxSelected>>", self.select_person)
-        ttk.Label(controls, text="裁切比例").grid(row=1, column=0, sticky="w")
-        self.ratio_picker = ttk.Combobox(
-            controls, textvariable=self.ratio, values=("124:150", "1:1", "3:4"),
-            state="readonly", width=10,
-        )
-        self.ratio_picker.grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
         lower = ttk.Frame(body)
-        lower.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        lower.grid(row=preview_row + 1, column=0, columnspan=2, sticky="ew", pady=(6 if embedded else 8, 0))
         navigation = ttk.Frame(lower)
         navigation.pack(fill="x")
         navigation.columnconfigure((0, 1, 2), weight=1, uniform="crop-actions")
@@ -211,7 +241,8 @@ class CropDialog(tk.Toplevel):
         self.render()
         install_control_help(self, "faces")
         apply_page(self)
-        self.grab_set()
+        if not self._embedded:
+            self.grab_set()
 
     def settings(self):
         return CropSettings.from_dict(dict(
@@ -611,7 +642,8 @@ class CropDialog(tk.Toplevel):
             key=key, stem=asset.stem, preview_path=str(asset.preview_path))
         # The crop dialog owns an application-wide grab; hand it to the child
         # window and take it back when that window closes.
-        self.grab_release()
+        if not self._embedded:
+            self.grab_release()
         self._assist_dialog = GroupFaceAssistDialog(
             self, reference, tuple(box), targets,
             apply_items=self.apply_assist_proposals,
@@ -653,7 +685,7 @@ class CropDialog(tk.Toplevel):
 
     def _assist_dialog_closed(self):
         self._assist_dialog = None
-        if not self._closed and self.winfo_exists():
+        if not self._embedded and not self._closed and self.winfo_exists():
             self.grab_set()
 
     def apply_assist_proposals(self, reference_key, reference_box, items):

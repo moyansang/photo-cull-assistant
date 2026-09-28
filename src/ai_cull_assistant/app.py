@@ -100,9 +100,11 @@ class App(tk.Tk):
         self._log_epoch = 0
         self._close_after_stop = False
         self._settings_pending = None
+        self._workspace_pages = {}
+        self._visible_page = 'home'
         self._build_ui()
         self._api_selection_changed()
-        fit_window(self, (1100, 720), minimum_size=(820, 520))
+        fit_window(self, (1180, 840), minimum_size=(900, 660))
         if not self._workspace_blocked:
             self._restore_session()
         self.input_var.trace_add("write", self._input_path_changed)
@@ -211,6 +213,9 @@ class App(tk.Tk):
         )
 
     def _activate_workspace(self, input_dir: str, workspace: Path) -> None:
+        if not self._confirm_face_draft_reset():
+            raise ValueError('已取消切换，保留当前人脸编辑草稿。')
+        self._discard_workspace_pages()
         previous_workspace = self._active_workspace
         previous_blocked = self._workspace_blocked
         self._save_active_workspace_preferences()
@@ -251,6 +256,15 @@ class App(tk.Tk):
     def _sync_selected_workspace(self) -> bool:
         if self._processing_busy:
             return False
+        if self._review_busy():
+            if self.input_var.get().strip() != self._active_input or self.workspace_var.get().strip() != self._active_workspace:
+                self._suppress_settings_trace = True
+                try:
+                    self.input_var.set(self._active_input)
+                    self.workspace_var.set(self._active_workspace)
+                finally:
+                    self._suppress_settings_trace = False
+            return False
         input_dir = self.input_var.get().strip()
         requested_workspace = self.workspace_var.get().strip()
         if self._workspace_user_custom and requested_workspace:
@@ -268,6 +282,9 @@ class App(tk.Tk):
                 self._log(f"工作区未打开：{exc}")
                 return False
         if not input_dir:
+            if not self._confirm_face_draft_reset():
+                return False
+            self._discard_workspace_pages()
             if self._active_input:
                 self._save_active_workspace_preferences()
             self._active_input = ""
@@ -328,6 +345,10 @@ class App(tk.Tk):
             self._log(f"设置保存失败：{exc}")
 
     def _close(self) -> None:
+        if self._review_busy():
+            self._workspace_pages['review']._close()
+            self._close_after_review = True
+            return
         for child in self.winfo_children():
             if getattr(child, '_api_active', False) or getattr(child, '_preparing_task', False):
                 child._close()
@@ -338,6 +359,9 @@ class App(tk.Tk):
             self._close_after_stop = True
             self._stop_processing()
             return
+        if not self._confirm_face_draft_reset():
+            return
+        self._discard_workspace_pages()
         self._save_preferences()
         self._save_session()
         if self._active_workspace and not self._workspace_cleared and not self._workspace_blocked:
@@ -387,7 +411,14 @@ class App(tk.Tk):
         frame = ttk.Frame(self, padding=(20, 12))
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(5, weight=1)
+        frame.rowconfigure(0, weight=1)
+        self._page_host = ttk.Frame(frame)
+        self._page_host.grid(row=0, column=0, sticky='nsew')
+        self._page_host.columnconfigure(0, weight=1)
+        self._page_host.rowconfigure(0, weight=1)
+        home = self._home_page = ttk.Frame(self._page_host)
+        home.grid(row=0, column=0, sticky='nsew')
+        home.columnconfigure(0, weight=1)
 
         self.input_var = tk.StringVar(value=self.saved_paths["input"])
         self.workspace_var = tk.StringVar(value=self.saved_paths["workspace"])
@@ -399,7 +430,7 @@ class App(tk.Tk):
 
         self.no_updates_var = tk.BooleanVar(value=self.saved_options.get('no_auto_updates') is True)
 
-        form = ttk.Frame(frame)
+        form = ttk.Frame(home)
         form.grid(row=0, column=0, sticky="ew")
         form.columnconfigure(1, weight=1)
         self._path_row(form, 0, "照片文件夹", self.input_var, self._choose_input)
@@ -426,7 +457,7 @@ class App(tk.Tk):
         self._api_profile_ids = {}
         self._refresh_api_profiles()
 
-        first = ttk.Frame(frame)
+        first = ttk.Frame(home)
         first.grid(row=1, column=0, sticky="ew", pady=(16, 10))
         workflow = [("scan_button", "扫描图片", self._run_scan_thread),
                     ("group_button", "编辑选片组", self._open_group_editor),
@@ -441,7 +472,7 @@ class App(tk.Tk):
             setattr(self, name, button)
 
         controls = ttk.Frame(frame)
-        controls.grid(row=2, column=0, sticky="ew", pady=(0, 16))
+        controls.grid(row=1, column=0, sticky="ew", pady=(8, 6))
         self.stop_button = ttk.Button(controls, text="停止处理", command=self._stop_processing, state="disabled")
         self.stop_button.pack(side="left", padx=(0, 8))
         self.continue_button = ttk.Button(controls, text="继续处理", command=self._continue_processing, state="disabled")
@@ -454,26 +485,26 @@ class App(tk.Tk):
         self.clear_log_button.pack(side="right", padx=(0, 8))
 
         status = ttk.Frame(frame)
-        status.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        status.grid(row=2, column=0, sticky="ew", pady=(0, 4))
         self.next_step_var = tk.StringVar(value="推荐下一步：扫描图片")
         self.next_step_label = ttk.Label(status, textvariable=self.next_step_var)
         self.next_step_label.pack(side="left")
         progress = ttk.Frame(frame)
-        progress.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+        progress.grid(row=3, column=0, sticky="ew", pady=(0, 6))
         progress.columnconfigure(1, weight=1)
         self.progress_var = tk.DoubleVar(value=0)
-        self.progress_label = tk.StringVar(value="扫描图片进度：")
+        self.progress_label = tk.StringVar(value="进度：")
         self.progress_text = tk.StringVar(value="0%")
         ttk.Label(progress, textvariable=self.progress_label).grid(row=0, column=0, sticky="w", padx=(0, 16))
         ttk.Progressbar(progress, variable=self.progress_var, maximum=100).grid(row=0, column=1, sticky="ew")
         ttk.Label(progress, textvariable=self.progress_text, width=5, anchor="e").grid(row=0, column=2, padx=(12, 0))
 
         log_frame = ttk.Frame(frame)
-        log_frame.grid(row=5, column=0, sticky="nsew")
-        ttk.Label(log_frame, text="日志").pack(anchor="w", pady=(0, 8))
+        log_frame.grid(row=4, column=0, sticky="nsew")
+        ttk.Label(log_frame, text="日志").pack(anchor="w", pady=(0, 4))
         log_body = ttk.Frame(log_frame)
         log_body.pack(fill="both", expand=True)
-        self.log_text = tk.Text(log_body, height=4, wrap="word", state="disabled")
+        self.log_text = tk.Text(log_body, height=3, wrap="word", state="disabled")
         scrollbar = ttk.Scrollbar(log_body, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
@@ -523,7 +554,7 @@ class App(tk.Tk):
             self.workspace_var.set(path)
 
     def _relink_source(self, workspace=None):
-        if self._processing_busy or self.updates.busy:
+        if self._processing_busy or self.updates.busy or self._review_busy():
             messagebox.showinfo("暂不能重新定位", "请先停止当前任务并等待保存完成。", parent=self)
             return
         if any(isinstance(child, tk.Toplevel) and child.winfo_exists() for child in self.winfo_children()):
@@ -544,6 +575,9 @@ class App(tk.Tk):
         if not messagebox.askyesno("重新定位原照片",
                 f"原位置：{old}\n新位置：{new}\n\n将按相对路径、文件大小和修改时间核对原片，并保留分组、人脸调整和 AI 结果。确定继续？", parent=self):
             return
+        if not self._confirm_face_draft_reset():
+            return
+        self._discard_workspace_pages()
         if self._settings_pending:
             self.after_cancel(self._settings_pending)
             self._settings_pending = None
@@ -713,7 +747,7 @@ class App(tk.Tk):
 
     def _display_progress(self, label, value):
         self.progress_var.set(value)
-        self.progress_label.set(label)
+        self.progress_label.set('进度：')
         self.progress_text.set(f"{value}%")
 
     def _show_update_progress(self, value):
@@ -742,6 +776,8 @@ class App(tk.Tk):
             self._disabled_widgets = []
             def walk(parent):
                 for widget in parent.winfo_children():
+                    if isinstance(widget, tk.Toplevel):
+                        continue
                     if widget in (self.stop_button, self.clear_workspace_button, self.clear_log_button) or getattr(widget, "_always_available", False):
                         continue
                     if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Spinbox, ttk.Checkbutton)):
@@ -756,6 +792,9 @@ class App(tk.Tk):
         self.stop_button.configure(state="normal" if busy else "disabled")
 
     def _start_processing(self, resume=False, mode="scan", regroup=False, focus_errors_skipped=False):
+        if self._review_busy():
+            messagebox.showinfo('选片任务进行中', '请先停止或等待 AI 选片完成，再开始照片处理。', parent=self)
+            return
         if self._processing_busy or self.updates.busy:
             return
         if not self._sync_selected_workspace():
@@ -820,6 +859,9 @@ class App(tk.Tk):
         if not resume and mode != "scan" and previous is None:
             messagebox.showinfo(self._mode_label(mode), "请先扫描图片。", parent=self)
             return
+        if mode != 'rescan' and not self._confirm_face_draft_reset():
+            return
+        self._discard_workspace_pages(keep=('focus', 'faces') if mode == 'rescan' else ('focus',))
         self._save_preferences()
         self._workspace_cleared = False
         self._stop_event.clear()
@@ -857,6 +899,29 @@ class App(tk.Tk):
         self._scan_thread.start()
 
     def _poll_processing(self):
+        review_busy = self._review_busy()
+        if review_busy != getattr(self, '_review_controls_busy', False):
+            self._review_controls_busy = review_busy
+            if review_busy:
+                self._review_disabled_widgets = []
+                def disable(parent):
+                    for widget in parent.winfo_children():
+                        if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Spinbox, ttk.Checkbutton)):
+                            self._review_disabled_widgets.append((widget, str(widget.cget('state'))))
+                            widget.configure(state='disabled')
+                        disable(widget)
+                disable(self._home_page)
+                self.stop_button.configure(state='normal')
+                self.continue_button.configure(state='disabled')
+            else:
+                for widget, state in getattr(self, '_review_disabled_widgets', []):
+                    if widget.winfo_exists():
+                        widget.configure(state=state)
+                self.stop_button.configure(state='normal' if self._processing_busy else 'disabled')
+                self.continue_button.configure(state='normal' if self._processing_job else 'disabled')
+        if not review_busy and getattr(self, '_close_after_review', False):
+            self._close_after_review = False
+            self.after_idle(self._close)
         try:
             while True:
                 event, value = self._process_events.get_nowait()
@@ -966,6 +1031,13 @@ class App(tk.Tk):
             messagebox.showerror("处理出错照片", str(exc), parent=self)
 
     def _stop_processing(self):
+        if self._review_busy():
+            page = self._workspace_pages['review']
+            if page._api_active:
+                page._pause_api()
+            elif page._preparing_task:
+                page._prepare_stop.set()
+            return
         if getattr(self, "_clearing_workspace", False) or getattr(self, "_relocating_source", False):
             self.next_step_var.set("正在整理工作区，请等待完成")
             return
@@ -983,20 +1055,82 @@ class App(tk.Tk):
     def _run_focus_review(self):
         self._start_processing(mode="focus")
 
-    def _open_focus_page(self):
-        old = getattr(self, '_focus_page', None)
-        if old is not None and old.winfo_exists():
-            old.lift()
+    def _review_busy(self):
+        page = self._workspace_pages.get('review')
+        return bool(page and page.winfo_exists() and
+                    (getattr(page, '_api_active', False) or getattr(page, '_preparing_task', False)))
+
+    def _show_workspace_page(self, name):
+        page = self._home_page if name == 'home' else self._workspace_pages.get(name)
+        if page is None or not page.winfo_exists():
+            return False
+        self._home_page.grid_remove()
+        for cached in self._workspace_pages.values():
+            if cached.winfo_exists():
+                cached.grid_remove()
+        page.grid(row=0, column=0, sticky='nsew')
+        activate = getattr(page, 'on_activate', None)
+        if activate:
+            activate()
+        self._visible_page = self._page_id = name
+        from .ui_style import style_page_chrome
+        style_page_chrome(self)
+        return True
+
+    def _mount_workspace_page(self, name, page):
+        page._page_id = name
+        self._workspace_pages[name] = page
+        def closed(event):
+            if event.widget is page and self._workspace_pages.get(name) is page:
+                self._workspace_pages.pop(name, None)
+                if self._visible_page == name:
+                    self._show_workspace_page('home')
+        page.bind('<Destroy>', closed, add='+')
+        self._show_workspace_page(name)
+        return page
+
+    def _navigate_workspace(self, name):
+        if name == 'home':
+            self._show_workspace_page('home')
             return
-        page = self._focus_page = tk.Toplevel(self)
-        page.withdraw()
-        page.title('AI 清晰度复核')
-        page.transient(self)
-        self._setup_aux_page(page)
-        install_page_chrome(page, 'focus')
+        if name == 'focus':
+            self._open_focus_page()
+            return
+        if (self._processing_busy or self.updates.busy or self._review_busy()) and name != 'review':
+            messagebox.showinfo('暂不能编辑', '当前任务仍在处理，请停止或等待完成后再编辑照片。', parent=self)
+            return
+        {'groups': self._open_group_editor, 'faces': self._open_crop_settings,
+         'review': self._open_ai_review}[name]()
+
+    def _discard_workspace_pages(self, *, keep=()):
+        for name, page in list(self._workspace_pages.items()):
+            if name in keep:
+                continue
+            if page.winfo_exists():
+                close = getattr(page, 'dispose', None) or page.destroy
+                close()
+
+    def _confirm_face_draft_reset(self):
+        page = self._workspace_pages.get('faces')
+        if page is None or not page.winfo_exists():
+            return True
+        page.store_current()
+        if not page._changed_face_assets(page.global_settings()) and page._confidence_value() == self.crop_settings.detection_confidence:
+            return True
+        return messagebox.askyesno('尚未保存人脸修改', '人脸框页有未保存的修改。继续将放弃这些草稿；如需保留，请返回人脸框页保存。是否继续？', parent=self)
+
+    def _review_progress(self, percent, label):
+        if not self._processing_busy and not self._update_progress_active:
+            self._scan_progress = max(0, min(100, int(percent)))
+            self._display_progress(label, self._scan_progress)
+
+    def _open_focus_page(self):
+        if self._show_workspace_page('focus'):
+            return
+        page = self._focus_page = tk.Frame(self._page_host)
         footer = ttk.Frame(page, padding=(20, 12))
         footer.pack(side='bottom', fill='x')
-        ttk.Button(footer, text='关闭', command=page.destroy).pack(side='right')
+        ttk.Button(footer, text='返回主页', command=lambda: self._show_workspace_page('home')).pack(side='right')
         body = ttk.Frame(page, padding=(20, 16))
         body.pack(fill='both', expand=True)
         ttk.Label(body, text='AI 清晰度复核', style='Heading.TLabel').pack(anchor='w', pady=(0, 16))
@@ -1005,24 +1139,15 @@ class App(tk.Tk):
         label.pack(fill='x', pady=(0, 20))
         body.bind('<Configure>', lambda event: label.configure(wraplength=max(180, event.width - 40)))
         ttk.Label(body, textvariable=self.next_step_var, style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
-        progress = ttk.Frame(body)
-        progress.pack(fill='x', pady=(0, 20))
-        ttk.Label(progress, textvariable=self.progress_label).pack(side='left')
-        ttk.Label(progress, textvariable=self.progress_text, width=5).pack(side='right')
-        ttk.Progressbar(progress, variable=self.progress_var, maximum=100).pack(side='left', fill='x', expand=True, padx=12)
-        def run(callback):
-            # Use the existing task entry and return to its live log and controls.
-            page.destroy()
-            callback()
         actions = ttk.Frame(body)
         actions.pack(anchor='w')
         for title, callback in [('开始 AI 复核', self._run_focus_review),
                                 ('停止处理', self._stop_processing),
                                 ('继续处理', self._continue_processing)]:
-            ttk.Button(actions, text=title, command=lambda cb=callback: run(cb)).pack(side='left', padx=(0, 8))
+            ttk.Button(actions, text=title, command=callback).pack(side='left', padx=(0, 8))
         apply_page(page)
         install_control_help(page, 'focus')
-        fit_window(page, (780, 450), minimum_size=(640, 360), parent=self)
+        self._mount_workspace_page('focus', page)
 
     def _generate_contact_sheets(self):
         self._start_processing(mode="sheets")
@@ -1033,8 +1158,10 @@ class App(tk.Tk):
             return
         if not self._sync_selected_workspace():
             return
+        if self._show_workspace_page('faces'):
+            return
         assets = self.scan_result.assets if self.scan_result else []
-        CropDialog(self, assets, self.crop_settings, self._save_crop_settings)
+        self._mount_workspace_page('faces', CropDialog(self._page_host, assets, self.crop_settings, self._save_crop_settings, embedded=True))
 
     def _save_crop_settings(self, settings: CropSettings) -> None:
         if not self._sync_selected_workspace():
@@ -1072,6 +1199,8 @@ class App(tk.Tk):
             return
         if not self._sync_selected_workspace():
             return
+        if self._show_workspace_page('groups'):
+            return
         if not self.scan_result:
             messagebox.showinfo("提示", "请先扫描照片。")
             return
@@ -1085,10 +1214,14 @@ class App(tk.Tk):
             self._save_session()
             self._log("人工分组已保存到 groups.json。")
             self.next_step_var.set("推荐下一步：AI 复核")
+            self._discard_workspace_pages(keep=('groups', 'faces', 'focus'))
 
-        GroupEditor(self, self.scan_result.assets, save_changes)
+        self._mount_workspace_page('groups', GroupEditor(self._page_host, self.scan_result.assets, save_changes, embedded=True))
 
     def _clear_workspace(self):
+        if self._review_busy():
+            messagebox.showinfo('暂不能清理', 'AI 选片仍在处理，请停止并等待保存完成。', parent=self)
+            return
         if self._processing_busy:
             messagebox.showinfo("暂不能清理", "当前任务尚未结束。请先停止处理，等待当前请求和后台图片准备收尾后再清空工作区。", parent=self)
             return
@@ -1120,6 +1253,7 @@ class App(tk.Tk):
         ):
             return
         originals = []
+        self._discard_workspace_pages()
         if self.scan_result:
             for asset in self.scan_result.assets:
                 originals.extend(
@@ -1233,6 +1367,8 @@ class App(tk.Tk):
             self._restore_processing_job()
 
     def _open_ai_review(self):
+        if self._show_workspace_page('review'):
+            return
         if self.updates.busy or (getattr(self, '_scan_thread', None) and self._scan_thread.is_alive()):
             messagebox.showinfo("提示", "请等待扫描或更新结束。", parent=self)
             return
@@ -1248,8 +1384,11 @@ class App(tk.Tk):
                     and any(ReviewProject._asset_is_admitted(a) for a in self.scan_result.assets)):
                 messagebox.showinfo("提示", "当前联系表尚未生成或已经过期，请先生成联系表。", parent=self)
                 return
-            ReviewDialog(self,self.review_project,self.scan_result.assets,self.crop_settings,self.settings_dir,
-                home_pages=list(self.scan_result.main_pages or []) + list(self.scan_result.rejected_pages or []))
+            page = ReviewDialog(self._page_host,self.review_project,self.scan_result.assets,self.crop_settings,self.settings_dir,
+                home_pages=list(self.scan_result.main_pages or []) + list(self.scan_result.rejected_pages or []),
+                embedded=True, on_close=lambda: self._show_workspace_page('home'),
+                on_progress=self._review_progress, on_log=self._log)
+            self._mount_workspace_page('review', page)
         except Exception as exc:
             messagebox.showerror("AI 选片",str(exc),parent=self)
 

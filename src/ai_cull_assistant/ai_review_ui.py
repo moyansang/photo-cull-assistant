@@ -12,6 +12,7 @@ from typing import Any, Callable, Iterable
 
 from PIL import Image, ImageOps, ImageTk
 from .ui_help import install_control_help, install_page_chrome
+from .ui_page import WorkspacePage
 from .ui_style import apply_page, set_button_style, COLORS
 from .window_layout import fit_window
 
@@ -84,7 +85,7 @@ class PasteResponseDialog(tk.Toplevel):
         super().__init__(parent)
         self.withdraw()
         self.title(title)
-        self.transient(parent)
+        self.transient(parent.winfo_toplevel())
         self.on_submit = on_submit
         install_page_chrome(self, "paste")
         footer = ttk.Frame(self, padding=(12, 0, 12, 10))
@@ -121,7 +122,7 @@ class RawResponsesDialog(tk.Toplevel):
         super().__init__(parent)
         self.withdraw()
         self.title("原始回答")
-        self.transient(parent)
+        self.transient(parent.winfo_toplevel())
         self.responses = list(responses)
         install_page_chrome(self, "raw")
         footer = ttk.Frame(self, padding=(12, 0, 12, 10))
@@ -177,7 +178,7 @@ class RawResponsesDialog(tk.Toplevel):
         self.text.configure(state="disabled")
 
 
-class ReviewDialog(tk.Toplevel):
+class ReviewDialog(WorkspacePage):
     """AI task submission and explicit human review workflow."""
 
     def __init__(
@@ -188,8 +189,20 @@ class ReviewDialog(tk.Toplevel):
         crop_settings: Any,
         settings_dir: str | Path,
         home_pages=None,
+        *,
+        embedded: bool = False,
+        on_close: Callable[[], None] | None = None,
+        on_progress: Callable[[int, str], None] | None = None,
+        on_log: Callable[[str], None] | None = None,
     ) -> None:
-        super().__init__(parent)
+        self._host_parent = parent
+        self._on_close = on_close
+        self._on_progress = on_progress
+        self._on_log = on_log
+        self._last_forwarded_log = ""
+        self._api_total_batches = 0
+        self._api_completed_batches = 0
+        super().__init__(parent, embedded=embedded)
         self.withdraw()
         self.title("AI 选片与 Lightroom 导出")
         self.transient(parent)
@@ -231,6 +244,7 @@ class ReviewDialog(tk.Toplevel):
         self.review_rating_var = tk.StringVar(value="—")
         self.review_flag_var = tk.StringVar(value="—")
         self.review_clarity_var = tk.StringVar(value="—")
+        self.status_var.trace_add("write", self._forward_status)
         self._build_ui()
         fit_window(self, (1180, 820), minimum_size=(640, 500), parent=parent)
         self._load_saved_preferences()
@@ -239,18 +253,61 @@ class ReviewDialog(tk.Toplevel):
         self._refresh_tasks(select_current=True)
         self._refresh_export_status()
         self.protocol("WM_DELETE_WINDOW", self._close)
-        self.bind("<Left>", lambda _e: self._navigate_photo(-1))
-        self.bind("<Right>", lambda _e: self._navigate_photo(1))
+        self._install_navigation_bindings()
         self._poll_token = self.after(120, self._poll_api)
         self.grab_set()
         self._create_task("initial", reuse_unchanged=True)
 
+    def _forward_status(self, *_args: Any) -> None:
+        """Mirror page status to the persistent main-page log when embedded."""
+        message = self.status_var.get().strip()
+        if not message or message == self._last_forwarded_log:
+            return
+        self._last_forwarded_log = message
+        if self._on_log is not None:
+            try:
+                self._on_log(message)
+            except Exception:
+                pass
+
+    def _report_progress(self, percent: int, label: str) -> None:
+        if self._on_progress is None:
+            return
+        try:
+            self._on_progress(max(0, min(100, int(percent))), label)
+        except Exception:
+            pass
+
+    def _report_api_progress(self, label: str = "AI 选片") -> None:
+        total = self._api_total_batches
+        done = min(self._api_completed_batches, total)
+        percent = round(done * 100 / total) if total else 0
+        self._report_progress(percent, f"{label}：{done}/{total} 批" if total else label)
+
+    def _install_navigation_bindings(self) -> None:
+        """Keep photo arrow navigation working when this page is a Frame."""
+        self._nav_bindtag = f"review-photo-navigation-{id(self)}"
+        self.bind_class(self._nav_bindtag, "<Left>", lambda _event: self._navigate_photo(-1))
+        self.bind_class(self._nav_bindtag, "<Right>", lambda _event: self._navigate_photo(1))
+        excluded = (tk.Entry, tk.Text, tk.Listbox, ttk.Entry, ttk.Combobox, ttk.Treeview)
+
+        def add_tag(widget: tk.Misc) -> None:
+            if not isinstance(widget, excluded):
+                tags = widget.bindtags()
+                if self._nav_bindtag not in tags:
+                    widget.bindtags(tags[:-2] + (self._nav_bindtag,) + tags[-2:])
+            for child in widget.winfo_children():
+                add_tag(child)
+
+        add_tag(self)
+
     # ---- layout ---------------------------------------------------------
     def _build_ui(self) -> None:
         install_page_chrome(self, "review")
-        footer = ttk.Frame(self, padding=(10, 6, 10, 10))
+        footer = ttk.Frame(self, padding=(10, 3 if self._embedded else 6, 10, 4 if self._embedded else 10))
         footer.pack(side="bottom", fill="x")
-        ttk.Label(footer, textvariable=self.status_var).pack(side="left", fill="x", expand=True)
+        if not self._embedded:
+            ttk.Label(footer, textvariable=self.status_var).pack(side="left", fill="x", expand=True)
         ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
         self.export_button = ttk.Button(footer, text="导出到 LR", command=self._export_ai_ratings)
         self.export_button.pack(side="right", padx=8)
@@ -276,9 +333,15 @@ class ReviewDialog(tk.Toplevel):
         set_button_style(self.export_button, "primary")
 
     def _tab_changed(self, _event=None):
-        # Keep the preference panel in place across tabs so returning never
-        # repacks the API page or changes its available area.
-        if hasattr(self, "review_tree") and self.notebook.index(self.notebook.select()) == 2:
+        selected = self.notebook.index(self.notebook.select())
+        # The result view favors the photo and AI reply.  Preferences return
+        # to the exact same place when switching back to API or web submission.
+        if selected == 2:
+            if self.common_tasks.winfo_manager():
+                self.common_tasks.pack_forget()
+        elif not self.common_tasks.winfo_manager():
+            self.common_tasks.pack(fill="x", before=self.notebook)
+        if hasattr(self, "review_tree") and selected == 2:
             if not self._review_sashes_initialized:
                 self.after_idle(self._set_review_pane_positions)
             if self._review_dirty:
@@ -456,6 +519,7 @@ class ReviewDialog(tk.Toplevel):
         selected = list(self.web_tree.selection())
         self._set_preparing(True)
         self.status_var.set("正在准备网页联系表和清晰度细节图片…")
+        self._report_progress(0, "正在准备网页选片")
         def work():
             try:
                 submission = self.project.create_web_submission(task, selected)
@@ -526,9 +590,18 @@ class ReviewDialog(tk.Toplevel):
         results = [row.get("ai_focus_result") or {} for row in rows]
         blurred = sum(r.get("status") == "blur" and r.get("source") == "web" for r in results)
         pending = sum(row.get("focus_review") is True for row in rows)
-        logger = getattr(self.master, "_log", None)
-        if logger:
-            logger(f"网页回答已处理：AI 清晰度复查弃置 {blurred} 张；清晰度待确认 {pending} 张。")
+        message = f"网页回答已处理：AI 清晰度复查弃置 {blurred} 张；清晰度待确认 {pending} 张。"
+        if self._on_log is not None:
+            try:
+                self._on_log(message)
+            except Exception:
+                pass
+        else:
+            logger = getattr(self._host_parent, "_log", None)
+            if logger is None:
+                logger = getattr(self._host_parent.winfo_toplevel(), "_log", None)
+            if logger:
+                logger(message)
 
     def _show_web_raw(self) -> None:
         _, submission = self._current_web()
@@ -539,7 +612,7 @@ class ReviewDialog(tk.Toplevel):
         self.review_tab.columnconfigure(0, weight=1)
         self.review_tab.rowconfigure(1, weight=1)
         bar = ttk.Frame(self.review_tab)
-        bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        bar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
         ttk.Label(bar, text="筛选").pack(side="left")
         combo = ttk.Combobox(bar, textvariable=self.filter_var, values=("全部", "清晰度待确认", "待复核", "AI 建议弃置", "4～5 星", "回答缺失或异常"), state="readonly", width=18)
         combo.pack(side="left", padx=8)
@@ -570,7 +643,7 @@ class ReviewDialog(tk.Toplevel):
         self.review_tree.bind("<<TreeviewSelect>>", self._show_selected_photo)
         self.review_tree.bind("<Double-1>", lambda _e: self._open_original())
 
-        self.review_preview_panel = ttk.LabelFrame(self.review_workspace, text="照片预览", padding=8)
+        self.review_preview_panel = ttk.LabelFrame(self.review_workspace, text="照片预览", padding=6)
         preview_frame = tk.Frame(self.review_preview_panel, background=COLORS["photo"], highlightthickness=0)
         preview_frame.pack(fill="both", expand=True)
         self.preview_label = tk.Label(
@@ -583,12 +656,12 @@ class ReviewDialog(tk.Toplevel):
         )
         self.preview_label.pack(fill="both", expand=True)
         preview_actions = ttk.Frame(self.review_preview_panel)
-        preview_actions.pack(fill="x", pady=(8, 0))
+        preview_actions.pack(fill="x", pady=(4, 0))
         ttk.Button(preview_actions, text="上一张", command=lambda: self._navigate_photo(-1)).pack(side="left")
         ttk.Button(preview_actions, text="下一张", command=lambda: self._navigate_photo(1)).pack(side="left", padx=(8, 0))
         ttk.Button(preview_actions, text="打开原图", command=self._open_original).pack(side="right")
 
-        self.review_detail_panel = ttk.LabelFrame(self.review_workspace, text="AI 结果", padding=10)
+        self.review_detail_panel = ttk.LabelFrame(self.review_workspace, text="AI 结果", padding=7)
         self.review_caption_label = ttk.Label(
             self.review_detail_panel,
             textvariable=self.review_caption_var,
@@ -601,7 +674,7 @@ class ReviewDialog(tk.Toplevel):
             lambda event: self.review_caption_label.configure(wraplength=max(150, event.width - 30)),
             add="+",
         )
-        ttk.Separator(self.review_detail_panel).pack(fill="x", pady=(8, 10))
+        ttk.Separator(self.review_detail_panel).pack(fill="x", pady=(4, 5))
         summary = ttk.Frame(self.review_detail_panel)
         summary.pack(fill="x")
         for row, (label, variable) in enumerate((
@@ -614,7 +687,7 @@ class ReviewDialog(tk.Toplevel):
                 row=row, column=1, sticky="w", padx=(12, 0), pady=1
             )
         summary.columnconfigure(1, weight=1)
-        ttk.Label(self.review_detail_panel, text="AI 回复与检查信息", style="Heading.TLabel").pack(anchor="w", pady=(8, 4))
+        ttk.Label(self.review_detail_panel, text="AI 回复与检查信息", style="Heading.TLabel").pack(anchor="w", pady=(4, 3))
         details_frame = ttk.Frame(self.review_detail_panel)
         details_frame.pack(fill="both", expand=True)
         self.details = tk.Text(details_frame, height=5, width=22, wrap="word", state="disabled")
@@ -747,6 +820,7 @@ class ReviewDialog(tk.Toplevel):
         self._prepare_stop.clear()
         self._set_preparing(True)
         self.status_var.set("正在准备本轮联系表，请稍候…")
+        self._report_progress(0, "正在准备 AI 选片")
         def work():
             try:
                 # File fingerprint refresh can stat every source photo.  Keep it
@@ -862,7 +936,9 @@ class ReviewDialog(tk.Toplevel):
     def _refresh_profiles(self, *_args: Any) -> None:
         self._profile_labels.clear()
         try:
-            getter = getattr(self.master, "_selected_api_profile", None)
+            getter = getattr(self._host_parent, "_selected_api_profile", None)
+            if getter is None:
+                getter = getattr(self._host_parent.winfo_toplevel(), "_selected_api_profile", None)
             if getter:
                 profile = getter()
             else:
@@ -910,6 +986,9 @@ class ReviewDialog(tk.Toplevel):
         if not messagebox.askyesno("确认 API 提交范围", summary, parent=self):
             return
         self._api_pending = pending
+        self._api_total_batches = len(pending)
+        self._api_completed_batches = 0
+        self._report_api_progress()
         self._pause_requested = False
         self._api_active = True
         self.run_button.configure(state="disabled")
@@ -993,10 +1072,12 @@ class ReviewDialog(tk.Toplevel):
                 self._save_ui_settings()
                 self._destroy_now()
             elif event[0] == "web_prepared":
+                self._report_progress(100, "网页选片准备完成")
                 self._refresh_web(event[1])
                 self._copy_web_prompt()
                 self._open_web_folder()
             else:
+                self._report_progress(0, "网页选片准备失败")
                 self.status_var.set("准备失败：" + event[1])
                 messagebox.showerror("准备失败", event[1], parent=self)
             return
@@ -1007,6 +1088,7 @@ class ReviewDialog(tk.Toplevel):
                 self._destroy_now()
                 return
             if event[0] == "prepared_empty":
+                self._report_progress(100, "AI 选片准备完成")
                 self._refresh_tasks()
                 self._review_dirty = True
                 if self.notebook.index(self.notebook.select()) == 2:
@@ -1014,6 +1096,7 @@ class ReviewDialog(tk.Toplevel):
                 self._refresh_export_status()
                 self.status_var.set("没有可提交 AI 的照片；初筛弃置结果仍可导出到 LR。")
             elif event[0] == "prepared":
+                self._report_progress(100, "AI 选片准备完成")
                 reused = len(event) > 3 and bool(event[3])
                 if not reused:
                     self._refresh_tasks()
@@ -1023,6 +1106,7 @@ class ReviewDialog(tk.Toplevel):
                 self._refresh_export_status()
                 self.status_var.set("联系表未变化，已恢复上次任务和选片结果。" if reused else f"本轮已准备好，共 {len(event[1]['batches'])} 批。")
             else:
+                self._report_progress(0, "AI 选片准备失败")
                 self.status_var.set("准备失败：" + event[1])
                 if not self._closing_requested:
                     messagebox.showerror("准备 AI 选片失败", event[1], parent=self)
@@ -1060,6 +1144,8 @@ class ReviewDialog(tk.Toplevel):
                 self._update_batch_views(batch, select=True)
                 return
             self._update_batch_views(batch, select=True)
+            self._api_completed_batches += 1
+            self._report_api_progress()
             self._review_dirty = True
             if self.notebook.index(self.notebook.select()) == 2:
                 self._refresh_review()
@@ -1072,6 +1158,8 @@ class ReviewDialog(tk.Toplevel):
             batch["error"] = error
             self._safe_save()
             self._update_batch_views(batch, select=True)
+            self._api_completed_batches += 1
+            self._report_api_progress("AI 选片失败")
             self._finish_api(f"批次 {batch_id} 失败，已停止；修正后可继续未完成批次。")
             if not self._closing_requested:
                 hint = ""
@@ -1092,6 +1180,7 @@ class ReviewDialog(tk.Toplevel):
         self.pause_button.configure(state="disabled")
         self.resubmit_button.configure(state="normal")
         self.status_var.set(message)
+        self._report_api_progress("AI 选片")
         if self._closing_requested:
             self._save_ui_settings()
             self._destroy_now()
@@ -1356,11 +1445,27 @@ class ReviewDialog(tk.Toplevel):
         self._destroy_now()
 
     def _destroy_now(self) -> None:
+        if self._embedded:
+            self._closing_requested = False
+            if self._on_close is not None:
+                self._on_close()
+            return
+        self.dispose(save=False)
+
+    def dispose(self, *, save: bool = True) -> None:
+        """Permanently release a cached page when its workspace is replaced."""
+        if not self.winfo_exists():
+            return
+        if save:
+            self._save_ui_settings()
         if self._poll_token:
             try:
                 self.after_cancel(self._poll_token)
             except tk.TclError:
                 pass
             self._poll_token = None
+        if getattr(self, "_nav_bindtag", None):
+            self.unbind_class(self._nav_bindtag, "<Left>")
+            self.unbind_class(self._nav_bindtag, "<Right>")
         self.grab_release()
         super().destroy()

@@ -157,7 +157,7 @@ def test_busy_controls_and_stop(tmp_path):
         app._set_processing_busy(False)
         assert str(app.stop_button.cget('state'))=='disabled'
         app._set_progress(45)
-        assert app.progress_label.get()=='扫描图片进度：'
+        assert app.progress_label.get()=='进度：'
         assert app.progress_text.get()=='45%'
     finally:app._close()
 
@@ -168,14 +168,14 @@ def test_update_progress_temporarily_replaces_scan_progress_and_disables_scan(tm
         app._set_progress(45)
         app._set_update_busy(True)
         app._show_update_progress(23)
-        assert app.progress_label.get()=='更新进度：'
+        assert app.progress_label.get()=='进度：'
         assert app.progress_text.get()=='23%'
         assert str(app.scan_button.cget('state'))=='disabled'
         app._set_progress(60)
         assert app.progress_text.get()=='23%'
         app._restore_scan_progress()
         app._set_update_busy(False)
-        assert app.progress_label.get()=='扫描图片进度：'
+        assert app.progress_label.get()=='进度：'
         assert app.progress_text.get()=='60%'
         assert str(app.scan_button.cget('state'))=='normal'
     finally:app._close()

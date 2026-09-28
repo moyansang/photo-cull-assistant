@@ -109,6 +109,8 @@ def fit_window(
     resizable: tuple[bool, bool] = (True, True),
 ) -> WindowGeometry:
     """Size and center a window within the nearest monitor's usable area."""
+    if getattr(window, '_embedded', False):
+        return WindowGeometry(window.winfo_width(), window.winfo_height(), 0, 0)
     window.update_idletasks()
     anchor = parent if parent is not None and parent.winfo_exists() else window
     area = work_area_for(anchor)

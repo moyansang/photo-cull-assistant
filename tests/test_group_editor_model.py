@@ -103,6 +103,33 @@ def test_group_editor_fixed_actions_remain_visible_at_900_by_600(tmp_path, monke
         assert first_box[1] == second_box[1]
         assert fifth_box[1] > first_box[1]
         assert editor.detail_canvas.cget('yscrollcommand')
+
+        editor.close_page()
+        root.update()
+
+        host = ttk.Frame(root)
+        host.pack(fill='both', expand=True)
+        embedded_assets = [make_asset('EA', 1), make_asset('EB', 1)]
+        for asset in embedded_assets:
+            asset.preview_path = path
+            asset.primary_path = path
+        embedded = GroupEditor(host, embedded_assets, lambda: None, embedded=True)
+        embedded.pack(fill='both', expand=True)
+        root.update()
+
+        assert embedded.master is host
+        assert embedded.winfo_toplevel() is root
+        assert not hasattr(embedded, '_page_chrome')
+        assert embedded.winfo_manager() == 'pack'
+
+        embedded_assets[1].group_id = 2
+        embedded.on_activate()
+        assert [group_id for group_id, _members in embedded._groups] == [1, 2]
+        assert [asset.stem for asset in embedded._members_by_group[2]] == ['EB']
+
+        embedded.close_page()
+        assert embedded.winfo_exists()
+        assert embedded.winfo_manager() == ''
     finally:
         root.destroy()
 

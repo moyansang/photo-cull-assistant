@@ -130,6 +130,44 @@ def test_review_layout_has_fixed_footer_and_no_outer_scroll_surface(ui):
     assert not any(isinstance(widget, tk.Canvas) for widget in descendants(dialog))
 
 
+def test_review_can_embed_and_forward_status_progress_and_close(tk_root, monkeypatch, tmp_path):
+    project, assets, _task, _batch = setup_project(tmp_path)
+    profile = {'id': 'test', 'name': '主页配置', 'base_url': 'https://example.invalid/v1', 'model': 'vision'}
+    monkeypatch.setattr(tk_root, '_selected_api_profile', lambda: profile, raising=False)
+    host = ttk.Frame(tk_root)
+    host.pack(fill='both', expand=True)
+    progress = []
+    logs = []
+    closed = []
+    dialog = ReviewDialog(
+        host, project, assets, CropSettings(), tmp_path,
+        embedded=True,
+        on_close=lambda: closed.append(True),
+        on_progress=lambda percent, label: progress.append((percent, label)),
+        on_log=logs.append,
+    )
+    dialog.pack(fill='both', expand=True)
+    try:
+        drive(tk_root, dialog)
+        assert dialog._embedded is True and dialog._host_window is None
+        assert dialog.master is host
+        assert dialog._page_id == 'review'
+        assert dialog.profile_var.get() == '主页配置 · vision'
+        assert progress[0] == (0, '正在准备 AI 选片')
+        assert progress[-1][0] == 100
+        dialog.status_var.set('测试状态同步')
+        assert logs[-1] == '测试状态同步'
+        dialog._close()
+        assert closed == [True]
+        assert dialog.winfo_exists()
+        dialog.dispose()
+        assert not dialog.winfo_exists()
+    finally:
+        if dialog.winfo_exists():
+            dialog.dispose()
+        host.destroy()
+
+
 def test_raw_and_paste_dialogs_keep_text_scroll_local(tk_root):
     paste = PasteResponseDialog(tk_root, lambda _value: True)
     try:
@@ -309,8 +347,9 @@ def test_tab_round_trip_keeps_api_layout(ui):
                 (dialog.common_tasks,dialog.notebook,dialog.batch_tree,dialog.run_button)]
     before=layout()
     dialog.notebook.select(2);root.update()
-    assert dialog.common_tasks.winfo_manager()=='pack'
+    assert dialog.common_tasks.winfo_manager()==''
     dialog.notebook.select(0);root.update()
+    assert dialog.common_tasks.winfo_manager()=='pack'
     assert layout()==before
     root.withdraw()
 

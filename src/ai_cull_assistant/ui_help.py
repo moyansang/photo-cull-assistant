@@ -222,7 +222,7 @@ def show_page_help(window, page_id):
     help_window.withdraw()
     window._page_help_window = help_window
     help_window.title(title + ' · 帮助')
-    help_window.transient(window)
+    help_window.transient(window.winfo_toplevel())
     footer = ttk.Frame(help_window, padding=10)
     footer.pack(side='bottom', fill='x')
     previous = window.grab_current()
@@ -255,6 +255,8 @@ def _home(window):
     if app is None:
         return
     if window is app:
+        if hasattr(app, '_show_workspace_page'):
+            app._show_workspace_page('home')
         app.lift()
         return
     # Nested pages return through their owners, preserving each close contract.
@@ -275,6 +277,12 @@ def _home(window):
 
 
 def install_page_chrome(window, page_id):
+    if getattr(window, '_embedded', False):
+        window._page_id = page_id
+        from .ui_style import initialize
+        initialize(window)
+        app = _app_for(window)
+        return getattr(app, '_page_chrome', None)
     if hasattr(window, '_page_chrome'):
         return window._page_chrome
     window._page_id = page_id
@@ -321,12 +329,12 @@ def install_page_chrome(window, page_id):
             button._always_available = True
         buttons[action] = button
         window.bind('<Alt-Key-' + shortcut[-1] + '>', lambda _e, a=action: (go(a), 'break')[1], add='+')
-    help_button = ttk.Button(utility, text='帮助', command=lambda: show_page_help(window, page_id))
+    help_button = ttk.Button(utility, text='帮助', command=lambda: show_page_help(window, getattr(window, '_page_id', page_id)))
     help_button._always_available = True
     help_button.pack(side='left')
     help_button._control_tooltip = ToolTip(help_button, '当前页面使用帮助（F1）')
     bar.help_button = help_button
-    window.bind('<F1>', lambda _e: (show_page_help(window, page_id), 'break')[1], add='+')
+    window.bind('<F1>', lambda _e: (show_page_help(window, getattr(window, '_page_id', page_id)), 'break')[1], add='+')
     bar.buttons = buttons
     bar.workflow_buttons = {}
     bar.workflow_markers = {}
@@ -336,6 +344,9 @@ def install_page_chrome(window, page_id):
         navigation.pack(fill='x')
         def navigate(target):
             app = _app_for(window)
+            if app is not None and window is app and hasattr(app, '_navigate_workspace'):
+                app._navigate_workspace(target)
+                return
             if app is None or target == page_id:
                 return
             if getattr(app, '_processing_busy', False) or getattr(getattr(app, 'updates', None), 'busy', False):
@@ -354,6 +365,7 @@ def install_page_chrome(window, page_id):
             tab = ttk.Frame(navigation, style='Toolbar.TFrame')
             tab.pack(side='left', padx=(0, 8))
             button = ttk.Button(tab, text=label, command=lambda t=target: navigate(t))
+            button._always_available = True
             button.pack(fill='x')
             marker = tk.Frame(tab, height=2, borderwidth=0, highlightthickness=0)
             marker.pack(fill='x')

@@ -21,7 +21,7 @@ class UpdateController:
 
     def check(self, manual=False):
         if self.busy: return
-        if self.app._processing_busy:
+        if self.app._processing_busy or getattr(self.app, '_review_busy', lambda: False)():
             if manual: messagebox.showinfo('检查更新','请先完成当前照片处理。',parent=self.app)
             return
         self._set_busy(True)

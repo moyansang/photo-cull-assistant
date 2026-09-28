@@ -33,7 +33,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         super().__init__(parent)
         self.withdraw()
         self.title(f"补齐人脸 · 参考人物 {reference.stem}")
-        self.transient(parent)
+        self.transient(parent.winfo_toplevel())
         self.reference = reference
         self.detection_confidence = detection_confidence
         self.reference_box = tuple(float(value) for value in reference_box)
