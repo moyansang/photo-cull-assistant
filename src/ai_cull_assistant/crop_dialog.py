@@ -154,10 +154,10 @@ class CropDialog(WorkspacePage):
                 state="readonly", width=7,
             )
             self.ratio_picker.pack(side="left", padx=(6, 0))
-            self.restore_face_button = ttk.Button(settings_line, text="恢复本张自动选脸", command=self.auto_face)
-            self.restore_face_button.pack(side="right", padx=(6, 0))
             self.clear_faces_button = ttk.Button(settings_line, text="去除所有框选", command=self.clear_face_selection)
-            self.clear_faces_button.pack(side="right", padx=(6, 0))
+            self.clear_faces_button.pack(side="left", padx=(16, 0))
+            self.restore_face_button = ttk.Button(settings_line, text="恢复本张自动选脸", command=self.auto_face)
+            self.restore_face_button.pack(side="left", padx=(6, 0))
             def fit_photo_columns(event):
                 self._fit_preview_layout(event.width)
                 self.restore_face_button.configure(text="恢复自动选脸" if event.width < 1000 else "恢复本张自动选脸")
@@ -924,14 +924,15 @@ class CropDialog(WorkspacePage):
                 crop = face_crop(original, getattr(subject, 'face', None), head, self.settings())
                 detail_width = max(100, self.detail_canvas.winfo_width())
                 detail_height = max(30, self.detail_canvas.winfo_height())
-                tile_size = (max(1, detail_width - 16), max(1, detail_height - 28))
+                head_only = not getattr(subject, 'face', None)
+                tile_size = (max(1, detail_width - 16), max(1, detail_height - (28 if head_only else 8)))
                 tile = Image.new("RGB", tile_size, COLORS["bg"])
                 crop = ImageOps.contain(crop, tile_size)
                 tile.paste(crop, ((tile.width-crop.width)//2, (tile.height-crop.height)//2))
                 self.photos.append(ImageTk.PhotoImage(tile, master=self))
-                self.detail_canvas.create_image(detail_width / 2, detail_height / 2 + 8, image=self.photos[-1])
-                inset_label = f"裁切预览 · {self.ratio.get()}" if getattr(subject, 'face', None) else "头部定位，清晰度待确认"
-                self.detail_canvas.create_text(detail_width / 2, 12, text=inset_label, fill=COLORS['text'])
+                self.detail_canvas.create_image(detail_width / 2, detail_height / 2 + (8 if head_only else 0), image=self.photos[-1])
+                if head_only:
+                    self.detail_canvas.create_text(detail_width / 2, 12, text="头部定位，清晰度待确认", fill=COLORS['text'])
             else:
                 self.detail_canvas.create_text(
                     max(60, self.detail_canvas.winfo_width() / 2),
