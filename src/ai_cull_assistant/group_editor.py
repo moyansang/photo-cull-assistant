@@ -201,8 +201,8 @@ class ThumbnailLoader:
 
 class GroupEditor(WorkspacePage):
     ROW_H = 62
-    DETAIL_THUMB = (160, 120)
-    DETAIL_CELL_W = 180
+    DETAIL_THUMB = (192, 120)
+    DETAIL_CELL_W = 212
     DETAIL_CELL_H = 162
     THUMB_CACHE_SIZE = 160
     THUMB_POLL_MS = 20
@@ -269,8 +269,8 @@ class GroupEditor(WorkspacePage):
 
         actions = ttk.Frame(self, padding=(10, 4, 10, 8))
         actions.pack(side="bottom", fill="x")
-        if not self._embedded:
-            ttk.Button(actions, text="关闭", command=self.close_page).pack(side="right")
+        ttk.Button(actions, text="返回主页" if self._embedded else "关闭",
+                   command=self.return_home).pack(side="right")
         ttk.Button(actions, text="从所选照片拆分", command=self._split_selected).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="与上一组合并", command=lambda: self._merge_neighbor(-1)).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="与下一组合并", command=lambda: self._merge_neighbor(1)).pack(side="left", padx=(0, 8))

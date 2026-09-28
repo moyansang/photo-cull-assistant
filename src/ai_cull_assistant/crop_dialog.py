@@ -119,14 +119,12 @@ class CropDialog(WorkspacePage):
         # Fixed footer and compact controls leave the preview all remaining
         # height.  This dialog intentionally has no outer scrolling surface.
         page_pad = 10 if embedded else 16
-        actions = ttk.Frame(self, padding=(page_pad, 6 if embedded else 8))
-        actions.pack(side="bottom", fill="x")
-        ttk.Button(actions, text="关闭", command=self.destroy).pack(side="right", padx=6)
-        ttk.Button(
-            actions,
-            text="重新扫描修改过的图片" if self.assets else "保存设置",
-            command=self.save,
-        ).pack(side="right")
+        if not embedded:
+            actions = ttk.Frame(self, padding=(page_pad, 8))
+            actions.pack(side="bottom", fill="x")
+            ttk.Button(actions, text="关闭", command=self.destroy).pack(side="right", padx=6)
+            ttk.Button(actions, text="重新扫描修改过的图片" if self.assets else "保存设置",
+                       command=self.save).pack(side="right")
         body = ttk.Frame(self, padding=(page_pad, 5 if embedded else 8))
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
@@ -135,10 +133,12 @@ class CropDialog(WorkspacePage):
         body.rowconfigure(preview_row, weight=1)
         preview_header = ttk.Frame(body)
         preview_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        self.caption = ttk.Label(preview_header, style="Heading.TLabel")
+        self.caption = ttk.Label(preview_header, style="Heading.TLabel", width=1)
         self.caption.pack(side="left", fill="x", expand=True)
         ttk.Button(preview_header, text="恢复本张自动选脸", command=self.auto_face).pack(side="right", padx=(6, 0))
         ttk.Button(preview_header, text="去除所有框选", command=self.clear_face_selection).pack(side="right", padx=(6, 0))
+        self.caption.pack_forget()
+        self.caption.pack(side="left", fill="x", expand=True)
 
         if embedded:
             settings_line = ttk.Frame(body)
@@ -176,13 +176,19 @@ class CropDialog(WorkspacePage):
 
         side = ttk.Frame(body)
         side.grid(row=preview_row, column=1, sticky="nsew")
+        if embedded:
+            side_actions = ttk.Frame(side)
+            side_actions.pack(side="bottom", fill="x", pady=(6, 0))
+            ttk.Button(side_actions, text="重新扫描" if self.assets else "保存设置",
+                       command=self.save).pack(fill="x", pady=(0, 6))
+            ttk.Button(side_actions, text="返回主页", command=self.return_home).pack(fill="x")
         detail = ttk.LabelFrame(side, text="人脸细节", padding=8)
-        detail.pack(fill="x")
+        detail.pack(fill="both", expand=True)
         self.detail_canvas = tk.Canvas(
             detail, width=178 if embedded else 190, height=86 if embedded else 100,
             background=COLORS["photo"], highlightthickness=0,
         )
-        self.detail_canvas.pack(fill="x")
+        self.detail_canvas.pack(fill="both", expand=True)
 
         if not embedded:
             detection = ttk.Frame(side)
@@ -241,6 +247,11 @@ class CropDialog(WorkspacePage):
         self.render()
         install_control_help(self, "faces")
         apply_page(self)
+        if embedded:
+            ttk.Style(self).configure('Compact.secondary.Outline.TButton', padding=(8, 3))
+            for container in (navigation, side_actions):
+                for button in container.winfo_children():
+                    button.configure(style='Compact.secondary.Outline.TButton')
         if not self._embedded:
             self.grab_set()
 
@@ -844,8 +855,8 @@ class CropDialog(WorkspacePage):
                 self._current_head = head
                 crop = face_crop(original, getattr(subject, 'face', None), head, self.settings())
                 detail_width = max(100, self.detail_canvas.winfo_width())
-                detail_height = max(80, self.detail_canvas.winfo_height())
-                tile_size = (min(160, detail_width - 16), min(120, detail_height - 28))
+                detail_height = max(30, self.detail_canvas.winfo_height())
+                tile_size = (min(160, detail_width - 16), max(1, min(120, detail_height - 28)))
                 tile = Image.new("RGB", tile_size, "white")
                 crop = ImageOps.contain(crop, tile_size)
                 tile.paste(crop, ((tile.width-crop.width)//2, (tile.height-crop.height)//2))
@@ -856,7 +867,7 @@ class CropDialog(WorkspacePage):
             else:
                 self.detail_canvas.create_text(
                     max(60, self.detail_canvas.winfo_width() / 2),
-                    max(40, self.detail_canvas.winfo_height() / 2),
+                    self.detail_canvas.winfo_height() / 2,
                     text="未检测到可靠人脸\n本张不显示小窗", justify="center",
                     fill=COLORS['photo_text'],
                 )

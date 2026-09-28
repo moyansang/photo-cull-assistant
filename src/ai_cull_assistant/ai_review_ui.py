@@ -304,14 +304,19 @@ class ReviewDialog(WorkspacePage):
     # ---- layout ---------------------------------------------------------
     def _build_ui(self) -> None:
         install_page_chrome(self, "review")
-        footer = ttk.Frame(self, padding=(10, 3 if self._embedded else 6, 10, 4 if self._embedded else 10))
-        footer.pack(side="bottom", fill="x")
-        if not self._embedded:
+        outer = self._outer = ttk.Frame(self, padding=(10, 6, 10, 0))
+        if self._embedded:
+            self.page_actions = ttk.Frame(self)
+            ttk.Button(self.page_actions, text="返回主页", command=self.return_home).pack(side="right")
+            self.export_button = ttk.Button(self.page_actions, text="导出到 LR", command=self._export_ai_ratings)
+            self.export_button.pack(side="right", padx=(0, 8))
+        else:
+            footer = ttk.Frame(self, padding=(10, 6, 10, 10))
+            footer.pack(side="bottom", fill="x")
             ttk.Label(footer, textvariable=self.status_var).pack(side="left", fill="x", expand=True)
-        ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
-        self.export_button = ttk.Button(footer, text="导出到 LR", command=self._export_ai_ratings)
-        self.export_button.pack(side="right", padx=8)
-        outer = ttk.Frame(self, padding=(10, 6, 10, 0))
+            ttk.Button(footer, text="关闭", command=self._close).pack(side="right")
+            self.export_button = ttk.Button(footer, text="导出到 LR", command=self._export_ai_ratings)
+            self.export_button.pack(side="right", padx=8)
         outer.pack(fill="both", expand=True)
         self.common_tasks = ttk.Frame(outer)
         self.common_tasks.pack(fill="x")
@@ -327,6 +332,8 @@ class ReviewDialog(WorkspacePage):
         self._build_task_tab()
         self._build_web_tab()
         self._build_review_tab()
+        if self._embedded:
+            self.bind("<Configure>", self._fit_preferences, add="+")
         install_control_help(self, "review")
         apply_page(self)
         set_button_style(self.run_button, "primary")
@@ -334,6 +341,13 @@ class ReviewDialog(WorkspacePage):
 
     def _tab_changed(self, _event=None):
         selected = self.notebook.index(self.notebook.select())
+        if self._embedded:
+            self.page_actions.grid_forget()
+            self.page_actions.pack_forget()
+            if selected == 0:
+                self.page_actions.grid(in_=self.api_actions, row=0, column=4, sticky="e", padx=(8, 0))
+            else:
+                self.page_actions.pack(in_=self._outer, fill="x", before=self.notebook, pady=(0, 4))
         # The result view favors the photo and AI reply.  Preferences return
         # to the exact same place when switching back to API or web submission.
         if selected == 2:
@@ -348,6 +362,27 @@ class ReviewDialog(WorkspacePage):
                 self._refresh_review()
             else:
                 self._show_selected_photo()
+
+    def _toggle_compact_preferences(self):
+        self._prefs_expanded = not getattr(self, '_prefs_expanded', False)
+        self._fit_preferences()
+
+    def _fit_preferences(self, _event=None):
+        compact = self.winfo_height() < 460
+        if compact:
+            self.prefs_toggle.pack_forget()
+            if self.prefs.winfo_manager():
+                self.prefs_toggle.pack(fill="x", before=self.prefs)
+            else:
+                self.prefs_toggle.pack(fill="x")
+        else:
+            self.prefs_toggle.pack_forget()
+        expanded = not compact or getattr(self, '_prefs_expanded', False)
+        self.prefs_toggle.configure(text="收起选片偏好" if expanded else "展开选片偏好")
+        if expanded:
+            self.prefs.pack(fill="x", pady=(0, 6))
+        else:
+            self.prefs.pack_forget()
 
     def _set_review_pane_positions(self) -> None:
         """Give the photo preview useful room before the user adjusts dividers."""
@@ -364,7 +399,8 @@ class ReviewDialog(WorkspacePage):
         tab = self.task_tab
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(1, weight=1)
-        prefs = ttk.LabelFrame(self.common_tasks, text="本轮选片偏好", padding=(8, 6))
+        prefs = self.prefs = ttk.LabelFrame(self.common_tasks, text="本轮选片偏好", padding=(8, 6))
+        self.prefs_toggle = ttk.Button(self.common_tasks, text="展开选片偏好", command=self._toggle_compact_preferences)
         prefs.pack(fill="x", pady=(0, 6))
         fields = (
             (0, 0, "选片力度", "intensity", ("少量精选", "均衡保留", "多留备选")),
@@ -393,8 +429,9 @@ class ReviewDialog(WorkspacePage):
         ttk.Label(api, text="主页面 API").grid(row=0, column=0, sticky="w")
         ttk.Label(api, textvariable=self.profile_var).grid(row=0, column=1, sticky="w", padx=8)
         api.columnconfigure(1, weight=1)
-        actions = ttk.Frame(api)
-        actions.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        actions = self.api_actions = ttk.Frame(api)
+        actions.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        actions.columnconfigure(4, weight=1)
         self.run_button = ttk.Button(actions, text="开始 / 继续未完成批次", command=self._start_api)
         self.run_button.grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.resubmit_button = ttk.Button(actions, text="重新提交", command=self._resubmit_api)
@@ -403,6 +440,14 @@ class ReviewDialog(WorkspacePage):
         self.pause_button.grid(row=0, column=2, sticky="w", padx=(8, 8))
         self.split_button = ttk.Button(actions, text="拆分所选批次重试", command=self._split_selected_batch)
         self.split_button.grid(row=0, column=3, sticky="w")
+        if self._embedded:
+            def fit_actions(event):
+                short = event.width < 960
+                self.run_button.configure(text="开始 / 继续" if short else "开始 / 继续未完成批次")
+                self.pause_button.configure(text="本批后暂停" if short else "完成当前批后暂停")
+                self.split_button.configure(text="拆分批次重试" if short else "拆分所选批次重试")
+            actions.bind("<Configure>", fit_actions)
+
 
         batches = ttk.Frame(tab, padding=8)
         batches.grid(row=1, column=0, sticky="nsew")

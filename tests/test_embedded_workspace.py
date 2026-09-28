@@ -47,6 +47,11 @@ def test_main_tabs_preserve_drafts_and_shared_footer(tmp_path, monkeypatch):
         while review._preparing_task and time.time()<deadline:
             app.update(); time.sleep(.01)
         assert not review._preparing_task
+        app.geometry('900x700'); app.update()
+        assert review.export_button.winfo_viewable()
+        assert review.export_button.winfo_rooty() == review.split_button.winfo_rooty()
+        assert review.export_button.winfo_rootx() > review.split_button.winfo_rootx()
+        assert review.batch_tree.winfo_height() > 40
         app._show_workspace_page('home')
         review.status_var.set('background selection status')
         app._review_progress(62, 'AI 选片')
@@ -78,5 +83,44 @@ def test_busy_page_navigation_does_not_discard_active_task(tmp_path, monkeypatch
         app._page_chrome.workflow_buttons['home'].invoke()
         assert app._visible_page == 'home'
         assert app._processing_busy
+    finally:
+        app.destroy()
+
+
+def test_page_space_and_return_actions(tmp_path, monkeypatch):
+    from tkinter import ttk
+    project, assets, _, _ = setup_project(tmp_path)
+    app = App(settings_dir=tmp_path/'settings')
+    monkeypatch.setattr(app, '_sync_selected_workspace', lambda: True)
+    monkeypatch.setattr(app, '_ensure_selected_session', lambda: None)
+    app.scan_result = SimpleNamespace(assets=assets, workspace_dir=project.workspace,
+                                     main_pages=[], rejected_pages=[])
+    def buttons(widget):
+        found=[]
+        for child in widget.winfo_children():
+            if isinstance(child, ttk.Button): found.append(child)
+            found.extend(buttons(child))
+        return found
+    try:
+        app.geometry('1100x780'); app.update()
+        small_log = app.log_text.winfo_height()
+        app.geometry('1200x940'); app.update()
+        assert app.log_text.winfo_height() > small_log + 30
+        for name in ('focus', 'groups', 'faces'):
+            app._navigate_workspace(name); app.update()
+            page = app._workspace_pages[name]
+            home = next(b for b in buttons(page) if b.cget('text') == '返回主页')
+            assert home.winfo_viewable()
+            if name == 'focus':
+                resume = next(b for b in buttons(page) if b.cget('text') == '继续处理')
+                assert home.winfo_rooty() == resume.winfo_rooty()
+            if name == 'faces':
+                scan = next(b for b in buttons(page) if b.cget('text') == '重新扫描')
+                assert scan.winfo_rooty() < home.winfo_rooty()
+                assert page.canvas.winfo_height() > 250
+                assert not any(b.cget('text') in ('关闭', '重新扫描修改过的图片') for b in buttons(page))
+            home.invoke(); app.update()
+            assert app._visible_page == 'home'
+            assert app._workspace_pages[name] is page
     finally:
         app.destroy()

@@ -30,6 +30,14 @@ class WorkspacePage(tk.Frame):
         """Return the real window hosting this page."""
         return self._host_window or self.winfo_toplevel()
 
+    def return_home(self) -> None:
+        """Hide an embedded editor without discarding its draft."""
+        owner = self.winfo_toplevel()
+        if self._embedded and hasattr(owner, '_show_workspace_page'):
+            owner._show_workspace_page('home')
+        else:
+            self.close_page()
+
     def close_page(self) -> None:
         """Close a standalone page; hide an embedded page without discarding it."""
         if self._embedded:

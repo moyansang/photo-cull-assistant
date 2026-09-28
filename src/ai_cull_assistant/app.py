@@ -408,10 +408,11 @@ class App(tk.Tk):
     def _build_ui(self) -> None:
         toolbar = install_page_chrome(self, "home")
         self.update_button = toolbar.buttons["update"]
-        frame = ttk.Frame(self, padding=(20, 12))
+        frame = self._workspace_layout = ttk.Frame(self, padding=(20, 12))
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=0)
+        frame.rowconfigure(4, weight=1)
         self._page_host = ttk.Frame(frame)
         self._page_host.grid(row=0, column=0, sticky='nsew')
         self._page_host.columnconfigure(0, weight=1)
@@ -509,6 +510,7 @@ class App(tk.Tk):
         self.log_text.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self.log_text.pack(side="left", fill="both", expand=True)
+        frame.bind("<Configure>", self._resize_shared_log, add="+")
         install_control_help(self, "home")
         apply_page(self)
         self.next_step_label.configure(style="Muted.TLabel")
@@ -1060,6 +1062,16 @@ class App(tk.Tk):
         return bool(page and page.winfo_exists() and
                     (getattr(page, '_api_active', False) or getattr(page, '_preparing_task', False)))
 
+    def _resize_shared_log(self, _event=None):
+        # Short forms use their natural height and give surplus space to logs.
+        # Photo editors reserve most height for images, with a bounded log area.
+        compact = self._visible_page in ('home', 'focus')
+        self._workspace_layout.rowconfigure(0, weight=0 if compact else 1)
+        self._workspace_layout.rowconfigure(4, weight=1 if compact else 0)
+        lines = 3 if compact else max(1, min(5, (self._workspace_layout.winfo_height() - 360) // 100))
+        if int(self.log_text.cget('height')) != lines:
+            self.log_text.configure(height=lines)
+
     def _show_workspace_page(self, name):
         page = self._home_page if name == 'home' else self._workspace_pages.get(name)
         if page is None or not page.winfo_exists():
@@ -1073,6 +1085,7 @@ class App(tk.Tk):
         if activate:
             activate()
         self._visible_page = self._page_id = name
+        self._resize_shared_log()
         from .ui_style import style_page_chrome
         style_page_chrome(self)
         return True
@@ -1128,9 +1141,6 @@ class App(tk.Tk):
         if self._show_workspace_page('focus'):
             return
         page = self._focus_page = tk.Frame(self._page_host)
-        footer = ttk.Frame(page, padding=(20, 12))
-        footer.pack(side='bottom', fill='x')
-        ttk.Button(footer, text='返回主页', command=lambda: self._show_workspace_page('home')).pack(side='right')
         body = ttk.Frame(page, padding=(20, 16))
         body.pack(fill='both', expand=True)
         ttk.Label(body, text='AI 清晰度复核', style='Heading.TLabel').pack(anchor='w', pady=(0, 16))
@@ -1143,7 +1153,8 @@ class App(tk.Tk):
         actions.pack(anchor='w')
         for title, callback in [('开始 AI 复核', self._run_focus_review),
                                 ('停止处理', self._stop_processing),
-                                ('继续处理', self._continue_processing)]:
+                                ('继续处理', self._continue_processing),
+                                ('返回主页', lambda: self._show_workspace_page('home'))]:
             ttk.Button(actions, text=title, command=callback).pack(side='left', padx=(0, 8))
         apply_page(page)
         install_control_help(page, 'focus')
