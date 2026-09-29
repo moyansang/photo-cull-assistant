@@ -698,14 +698,7 @@ class App(tk.Tk):
             messagebox.showinfo("提示", "请等待当前处理结束。", parent=self)
             return
         try:
-            existing = self._api_config_window
-            if existing is not None and existing.winfo_exists():
-                existing.reveal()
-                return
-            from .ai_api_dialog import ApiConfigDialog
-            self._api_config_window = ApiConfigDialog(
-                self, self.settings_dir, on_saved=self._api_profiles_saved
-            )
+            self._open_tool_page('api')
         except Exception as exc:
             messagebox.showerror("配置 API", str(exc), parent=self)
 
@@ -1457,66 +1450,22 @@ class App(tk.Tk):
         except Exception as exc:
             messagebox.showerror("AI 选片",str(exc),parent=self)
 
-    def _setup_aux_page(self, page):
-        page._previous_grab = self.grab_current()
-        def closed(event):
-            if event.widget is not page:
-                return
-            previous = page._previous_grab
-            if previous is not None and previous.winfo_exists() and self.grab_current() is None:
-                previous.grab_set()
-        page.bind('<Destroy>', closed, add='+')
-        page.grab_set()
+    def _open_tool_page(self, page_id, *, help_context=None):
+        from .tool_window import ToolWindow
+        window = getattr(self, '_tool_window', None)
+        if window is None or not window.winfo_exists():
+            window = self._tool_window = ToolWindow(self)
+        window.show_page(page_id, help_context=help_context)
+        return window
 
     def _open_update_page(self):
-        old = getattr(self, '_update_page', None)
-        if old is not None and old.winfo_exists():
-            old.lift()
-            return
-        page = self._update_page = tk.Toplevel(self)
-        page.withdraw()
-        page.title('更新与版本')
-        page.transient(self)
-        self._setup_aux_page(page)
-        install_page_chrome(page, 'update')
-        footer = ttk.Frame(page, padding=(18, 8, 18, 12))
-        footer.pack(side='bottom', fill='x')
-        ttk.Button(footer, text='关闭', command=page.destroy).pack(side='right')
-        body = ttk.Frame(page, padding=18)
-        body.pack(fill='both', expand=True)
-        ttk.Label(body, text=f'当前版本：v{VERSION} · 构建 {BUILD}').pack(anchor='w', pady=8)
-        ttk.Checkbutton(body, text='不再自动检查更新', variable=self.no_updates_var,
-                        command=self._save_preferences).pack(anchor='w', pady=12)
-        def check():
-            page.destroy()
-            self.updates.check(True)
-        ttk.Button(body, text='立即检查', command=check).pack(anchor='w', pady=12)
-        ttk.Label(body, text='下载进度显示在主页面共用进度条。').pack(anchor='w')
-        apply_page(page)
-        page.update_idletasks()
-        required = (max(640, page.winfo_reqwidth()), max(310, page.winfo_reqheight()))
-        fit_window(page, (max(700, required[0]), required[1]), minimum_size=required, parent=self)
-        install_control_help(page, 'update')
+        self._update_page = self._open_tool_page('update')
 
     def _open_lr_page(self):
-        old = getattr(self, '_lr_page', None)
-        if old is not None and old.winfo_exists():
-            old.lift()
-            return
-        page = self._lr_page = tk.Toplevel(self)
-        page.withdraw()
-        page.title('Lightroom 插件')
-        page.transient(self)
-        self._setup_aux_page(page)
-        install_page_chrome(page, 'lr')
-        body = ttk.Frame(page, padding=18)
-        body.pack(fill='both', expand=True)
-        ttk.Label(body, text='1. 在 Lightroom 增效工具管理器中添加插件。\n\n2. 从 AI 选片与导出页导出结果。\n\n3. 在 Lightroom 插件中导入结果文件。').pack(anchor='w', pady=12)
-        ttk.Button(body, text='打开插件目录', command=self._open_lr_plugin).pack(anchor='w', pady=8)
-        ttk.Button(body, text='关闭', command=page.destroy).pack(side='bottom', anchor='e')
-        apply_page(page)
-        fit_window(page, (700, 340), minimum_size=(640, 280), parent=self)
-        install_control_help(page, 'lr')
+        self._lr_page = self._open_tool_page('lr')
+
+    def _open_help_page(self, page_id='home'):
+        self._open_tool_page('help', help_context=page_id)
 
     def _open_lr_plugin(self):
         import os

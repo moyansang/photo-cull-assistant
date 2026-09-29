@@ -18,6 +18,7 @@ from .settings import read_values, save_values
 from .ui_help import install_control_help, install_page_chrome
 from .ui_style import set_button_style, apply_page
 from .window_layout import fit_window
+from .ui_page import WorkspacePage
 
 
 def _test_image():
@@ -34,7 +35,7 @@ _DEFAULT_PRESET_ID = "qwen-vl-plus"
 _DIALOG_SETTINGS_KEY = "ai_api_dialog"
 
 
-class ApiConfigDialog(tk.Toplevel):
+class ApiConfigDialog(WorkspacePage):
     """Manage named API profiles and test one request without blocking Tk."""
 
     def __init__(
@@ -42,8 +43,12 @@ class ApiConfigDialog(tk.Toplevel):
         parent: tk.Misc,
         settings_dir: Path,
         on_saved: Callable[[], None] | None = None,
+        *,
+        embedded: bool = False,
+        on_close: Callable[[], None] | None = None,
     ) -> None:
-        super().__init__(parent)
+        super().__init__(parent, embedded=embedded)
+        self._on_close = on_close
         self.withdraw()
         self.title("AI API 配置")
         self.transient(parent)
@@ -105,11 +110,12 @@ class ApiConfigDialog(tk.Toplevel):
         self._poll_token = self.after(100, self._poll_events)
         # The editor is an owned, modeless window. A hidden child must never
         # hold a grab that makes the selection window impossible to operate.
-        self._previous_grab = self.grab_current()
+        self._previous_grab = None if embedded else self.grab_current()
         if self._previous_grab is not None:
             self._previous_grab.grab_release()
         self.bind("<Destroy>", self._on_destroy, add="+")
-        self.reveal()
+        if not embedded:
+            self.reveal()
 
     def _build_ui(self) -> None:
         install_page_chrome(self, "api")
@@ -455,8 +461,11 @@ class ApiConfigDialog(tk.Toplevel):
     def reveal(self) -> None:
         if self._closed:
             return
+        if self._embedded:
+            self.winfo_toplevel().show_page('api')
+            return
         self.deiconify()
-        self.lift()
+        self.window.lift()
         self.focus_set()
 
     def _on_destroy(self, event) -> None:
@@ -485,6 +494,9 @@ class ApiConfigDialog(tk.Toplevel):
             self.status_var.set("操作正在进行，完成后将自动关闭窗口。")
             return
         if self._closed:
+            return
+        if self._on_close is not None and not getattr(self.winfo_toplevel(), '_tearing_down', False):
+            self._on_close()
             return
         self._remember_ui_state()
         self._closed = True

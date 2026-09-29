@@ -213,6 +213,10 @@ def _app_for(window):
 
 
 def show_page_help(window, page_id):
+    app = _app_for(window)
+    if callable(getattr(app, '_open_help_page', None)):
+        app._open_help_page(page_id)
+        return
     old = getattr(window, '_page_help_window', None)
     if old is not None and old.winfo_exists():
         old.lift()
@@ -258,6 +262,9 @@ def _home(window):
         if hasattr(app, '_show_workspace_page'):
             app._show_workspace_page('home')
         app.lift()
+        return
+    if callable(getattr(window, 'return_home', None)) and hasattr(window, 'pages'):
+        window.return_home()
         return
     # Nested pages return through their owners, preserving each close contract.
     if getattr(window, '_page_id', '') in ('faces', 'assist', 'api'):
@@ -313,7 +320,7 @@ def install_page_chrome(window, page_id):
         app = _app_for(window)
         if app is None:
             return
-        if action == 'api' and page_id == 'api':
+        if action == 'api' and getattr(window, '_page_id', page_id) == 'api':
             window.lift()
             return
         method = {'api': '_open_api_config', 'update': '_open_update_page', 'lr': '_open_lr_page'}[action]
