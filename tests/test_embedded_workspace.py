@@ -57,6 +57,13 @@ def test_main_tabs_preserve_drafts_and_shared_footer(tmp_path, monkeypatch):
         assert review.export_button.winfo_rooty() == review.split_button.winfo_rooty()
         assert review.export_button.winfo_rootx() > review.split_button.winfo_rootx()
         assert review.batch_tree.winfo_height() > 40
+        review.notebook.select(review.web_tab); app.update()
+        assert str(review.page_actions.grid_info()['in']) == str(review.web_actions)
+        assert review.export_button.winfo_viewable()
+        assert review.web_tree.winfo_height() > 40
+        assert review.export_button.winfo_rootx() + review.export_button.winfo_width() < app.winfo_rootx() + app.winfo_width()
+        review.notebook.select(review.task_tab); app.update()
+        assert str(review.page_actions.grid_info()['in']) == str(review.api_actions)
         app._show_workspace_page('home')
         review.status_var.set('background selection status')
         app._review_progress(62, 'AI 选片')

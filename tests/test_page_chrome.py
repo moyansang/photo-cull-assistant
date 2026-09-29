@@ -94,3 +94,25 @@ def test_workflow_navigation_only_enters_focus_page_without_submitting(tmp_path)
         assert not calls
     finally:
         app.destroy()
+
+
+def test_update_window_reserves_close_button_after_theme_layout(tmp_path):
+    from ai_cull_assistant.app import App
+    from tkinter import ttk
+    app = App(settings_dir=tmp_path)
+    try:
+        app._open_update_page()
+        page = app._update_page
+        app.update()
+        def children(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from children(child)
+        close = next(w for w in children(page) if isinstance(w, ttk.Button) and w.cget('text') == '关闭')
+        for width, height in ((700,310), (640,260), (820,440)):
+            page.geometry(f'{width}x{height}')
+            app.update()
+            assert close.winfo_height() >= close.winfo_reqheight()
+            assert close.winfo_rooty() + close.winfo_height() <= page.winfo_rooty() + page.winfo_height()
+    finally:
+        app.destroy()

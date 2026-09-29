@@ -293,7 +293,7 @@ def test_next_unmarked_wraps_skips_hidden_and_preserves_edits(monkeypatch, tmp_p
     assets[0].subject_features=SimpleNamespace(face=(.2,.2,.2,.2),head=None)
     assets[3].subject_features=SimpleNamespace(face=None,head=(.2,.1,.3,.4))
     CropDialog.next_unmarked(dialog)
-    assert '没有待补选' in calls[-1]
+    assert '没有未标记' in calls[-1]
     settings.photos[settings.key(assets[0])]={'selected_faces': []}
     dialog.index=3
     CropDialog.next_unmarked(dialog)

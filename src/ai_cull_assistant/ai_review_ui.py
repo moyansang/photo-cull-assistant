@@ -346,6 +346,8 @@ class ReviewDialog(WorkspacePage):
             self.page_actions.pack_forget()
             if selected == 0:
                 self.page_actions.grid(in_=self.api_actions, row=0, column=4, sticky="e", padx=(8, 0))
+            elif selected == 1:
+                self.page_actions.grid(in_=self.web_actions, row=0, column=3, sticky="e", padx=(8, 0))
             else:
                 self.page_actions.pack(in_=self._outer, fill="x", before=self.notebook, pady=(0, 4))
         # The result view favors the photo and AI reply.  Preferences return
@@ -479,13 +481,14 @@ class ReviewDialog(WorkspacePage):
         ttk.Label(tab, text="勾选批次，准备网页提示词与联系表；Ctrl / Shift 可多选。", foreground="#555555").grid(
             row=0, column=0, sticky="w"
         )
-        actions = ttk.Frame(tab)
+        actions = self.web_actions = ttk.Frame(tab)
         actions.grid(row=1, column=0, sticky="ew", pady=8)
-        ttk.Button(actions, text="全选未完成批次", command=self._web_select_pending).pack(side="left")
-        ttk.Button(actions, text="全选", command=lambda: self.web_tree.selection_set(self.web_tree.get_children())).pack(side="left", padx=8)
-        ttk.Button(actions, text="合并准备所选批次", command=self._prepare_web).pack(side="left")
+        actions.columnconfigure(3, weight=1)
+        ttk.Button(actions, text="全选未完成批次", command=self._web_select_pending).grid(row=0, column=0, sticky="w")
+        ttk.Button(actions, text="全选", command=lambda: self.web_tree.selection_set(self.web_tree.get_children())).grid(row=0, column=1, padx=8)
+        ttk.Button(actions, text="合并准备所选批次", command=self._prepare_web).grid(row=0, column=2, sticky="w")
         self.web_summary = tk.StringVar()
-        ttk.Label(actions, textvariable=self.web_summary).pack(side="left", padx=12)
+        ttk.Label(actions, textvariable=self.web_summary).grid(row=1, column=0, columnspan=4, sticky="w", pady=(4, 0))
         frame = ttk.Frame(tab)
         frame.grid(row=2, column=0, sticky="nsew")
         self.web_tree = ttk.Treeview(frame, columns=("status", "photos", "images"), show="tree headings", selectmode="extended", height=7)

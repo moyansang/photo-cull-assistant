@@ -552,7 +552,7 @@ class CropDialog(WorkspacePage):
         """Upgrade old single-subject records using previews on a worker, not RAW."""
         if self._review_future is not None:
             return False
-        confidence = self.confidence.get()
+        confidence = self._confidence_value()
         jobs = []
         settings = self.global_settings()
         for asset in self.assets:
@@ -575,7 +575,7 @@ class CropDialog(WorkspacePage):
                 jobs.append((asset, signature))
         if not jobs:
             return True
-        self.caption.configure(text='正在用预览图检查多个人脸，完成后继续；不调用 API。')
+        self.caption.configure(text='正在查找未标记照片，请稍候。')
         def inspect():
             results = []
             for _, signature in jobs:
@@ -585,8 +585,8 @@ class CropDialog(WorkspacePage):
                     with Image.open(signature[0]) as source:
                         image = np.asarray(ImageOps.exif_transpose(source).convert('RGB'))
                     count = len(detect(cv2.cvtColor(image, cv2.COLOR_RGB2BGR), confidence))
-                except (OSError, ValueError, cv2.error):
-                    count = None
+                except (OSError, ValueError, TypeError, cv2.error) as exc:
+                    count = exc
                 results.append((signature, count))
             return results
         self._review_future = self._review_executor.submit(inspect)
@@ -602,12 +602,15 @@ class CropDialog(WorkspacePage):
                 results = dict(self._review_future.result())
             except Exception as exc:
                 self._review_future = None
-                self.caption.configure(text=f'多脸检查未完成：{exc}；可稍后重试。')
+                self._review_index_error(exc)
                 return
             self._review_future = None
+            failures = []
             for asset, signature in jobs:
-                self._review_attempted.add(signature)
                 count = results.get(signature)
+                if isinstance(count, Exception):
+                    failures.append(f'{asset.stem}: {count}')
+                    continue
                 try:
                     stat = Path(signature[0]).stat()
                     valid = (str(asset.preview_path) == signature[0]
@@ -615,12 +618,28 @@ class CropDialog(WorkspacePage):
                 except OSError:
                     valid = False
                 if valid and count is not None and asset.subject_features is not None:
+                    self._review_attempted.add(signature)
                     asset.subject_features = replace(asset.subject_features, candidate_count=count,
                                                      candidate_confidence=confidence)
-            if self.index == anchor and self.confidence.get() == confidence:
+            if failures:
+                self._review_index_error('; '.join(failures))
+                return
+            if self.index == anchor and self._confidence_value() == confidence:
                 callback()
         self._review_poll = self.after(50, poll)
         return False
+
+    def _review_index_error(self, error):
+        self.caption.configure(text='未标记照片检查未完成，请稍后重试；不能确认是否还有未标记照片。')
+        from .ui_help import _app_for
+        from .workspace_log import append_log, DETAIL_PREFIX
+        app = _app_for(self)
+        workspace = app.workspace_var.get().strip() if app is not None else ''
+        if workspace:
+            try:
+                append_log(Path(workspace), DETAIL_PREFIX + '未标记照片检查失败：' + str(error).replace('\n', ' '))
+            except OSError:
+                pass
 
     def next_unmarked(self, direction=1):
         if not self.assets:
@@ -659,7 +678,7 @@ class CropDialog(WorkspacePage):
                 label = '多个人脸，待人工确认主体' if needs_person_review(asset, entry) else '待补选人脸'
                 self.caption.configure(text=f"{index+1}/{len(self.assets)}  ·  {asset.stem}  ·  {label}")
                 return
-        self.caption.configure(text="没有待补选的人脸：已标记和手动隐藏的照片会自动跳过。")
+        self.caption.configure(text="没有未标记的照片：已标记和手动隐藏的照片已跳过。")
 
     def choose_assist_groups(self):
         self.assist_group_faces()

@@ -1479,6 +1479,9 @@ class App(tk.Tk):
         page.transient(self)
         self._setup_aux_page(page)
         install_page_chrome(page, 'update')
+        footer = ttk.Frame(page, padding=(18, 8, 18, 12))
+        footer.pack(side='bottom', fill='x')
+        ttk.Button(footer, text='关闭', command=page.destroy).pack(side='right')
         body = ttk.Frame(page, padding=18)
         body.pack(fill='both', expand=True)
         ttk.Label(body, text=f'当前版本：v{VERSION} · 构建 {BUILD}').pack(anchor='w', pady=8)
@@ -1489,9 +1492,10 @@ class App(tk.Tk):
             self.updates.check(True)
         ttk.Button(body, text='立即检查', command=check).pack(anchor='w', pady=12)
         ttk.Label(body, text='下载进度显示在主页面共用进度条。').pack(anchor='w')
-        ttk.Button(body, text='关闭', command=page.destroy).pack(side='bottom', anchor='e')
         apply_page(page)
-        fit_window(page, (700, 310), minimum_size=(640, 260), parent=self)
+        page.update_idletasks()
+        required = (max(640, page.winfo_reqwidth()), max(310, page.winfo_reqheight()))
+        fit_window(page, (max(700, required[0]), required[1]), minimum_size=required, parent=self)
         install_control_help(page, 'update')
 
     def _open_lr_page(self):

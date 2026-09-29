@@ -873,8 +873,11 @@ def test_legacy_multiple_faces_index_then_choose_replaces_auto(monkeypatch,tmp_p
         item=assets[1]
         item.subject_features=SubjectFeatures('','',None,(.1,.1,.1,.1),(.08,.08,.15,.2))
         item.subject_checked=True;item.subject_confidence=.8
-        monkeypatch.setattr(crop_dialog_module,'detect',lambda *a,**k:[
-            FaceDetection((40,60,40,60),(),.99), FaceDetection((200,120,40,60),(),.9)])
+        def detect_with_numeric_threshold(image, threshold):
+            assert isinstance(threshold, float)
+            assert threshold == .8
+            return [FaceDetection((40,60,40,60),(),.99), FaceDetection((200,120,40,60),(),.9)]
+        monkeypatch.setattr(crop_dialog_module, 'detect', detect_with_numeric_threshold)
         dialog.next_unmarked()
         assert dialog._review_future is not None  # worker, no synchronous preview inference
         pump(root,lambda:dialog._review_future is None)
@@ -890,3 +893,30 @@ def test_legacy_multiple_faces_index_then_choose_replaces_auto(monkeypatch,tmp_p
         assert not saved
     finally:
         dialog.destroy();root.destroy()
+
+
+def test_unmarked_index_failure_is_not_reported_as_empty_and_can_retry(monkeypatch, tmp_path):
+    from ai_cull_assistant.subject import SubjectFeatures
+    root, dialog, assets, saved, ui = open_dialog_with_manual_face(monkeypatch, tmp_path)
+    try:
+        wait_preview(dialog)
+        item = assets[1]
+        item.subject_features = SubjectFeatures('', '', None, (.1,.1,.1,.1), (.08,.08,.15,.2))
+        item.subject_checked = True
+        item.subject_confidence = .8
+        dialog.edits[dialog.global_settings().key(assets[2])] = {'hidden': True}
+        def broken(*args):
+            raise TypeError("Argument 'score_threshold' cannot be treated as a float")
+        monkeypatch.setattr(crop_dialog_module, 'detect', broken)
+        dialog.next_unmarked()
+        pump(root, lambda: dialog._review_future is None)
+        assert '检查未完成' in dialog.caption.cget('text')
+        assert 'score_threshold' not in dialog.caption.cget('text')
+        assert item.subject_features.candidate_count is None
+        monkeypatch.setattr(crop_dialog_module, 'detect', lambda image, threshold: [FaceDetection((40,60,40,60),(),.99)])
+        dialog.next_unmarked()
+        pump(root, lambda: dialog._review_future is None)
+        assert item.subject_features.candidate_count == 1
+        assert '没有未标记' in dialog.caption.cget('text')
+    finally:
+        dialog.destroy(); root.destroy()
