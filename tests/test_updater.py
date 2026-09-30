@@ -242,3 +242,58 @@ def test_api_discovers_same_version_repair_build_before_deciding(monkeypatch):
     payload[0]=json.dumps(info).encode()
     data['assets'][1]['size']=len(payload[0])
     assert u.api_release() is None
+
+
+def test_metadata_disconnect_retries_complete_read(monkeypatch):
+    import io
+    from http.client import RemoteDisconnected
+    calls=[]
+    class Broken(io.BytesIO):
+        def read(self,*args):raise RemoteDisconnected('Remote end closed connection without response')
+    broken=Broken()
+    def request(url):
+        calls.append(url)
+        return broken if len(calls)==1 else io.BytesIO(b'{"ok": true}')
+    monkeypatch.setattr(u,'request',request)
+    monkeypatch.setattr(u.time,'sleep',lambda _:None)
+    assert u._release_info('https://example.test')=={'ok':True}
+    assert len(calls)==2 and broken.closed
+
+
+def test_disconnect_fallback_does_not_poison_cache(monkeypatch,tmp_path):
+    from http.client import RemoteDisconnected
+    calls=[]
+    def broken(url):
+        calls.append(url)
+        raise RemoteDisconnected('Remote end closed connection without response')
+    monkeypatch.setattr(u,'request',broken)
+    monkeypatch.setattr(u.time,'sleep',lambda _:None)
+    cache=tmp_path/'cache.json';cache.write_text('old-cache')
+    with pytest.raises(ConnectionError,match='无法连接 GitHub'):
+        u.latest_release(cache,force=True)
+    assert len(calls)==4
+    assert 'api.github.com' in calls[0] and '/latest/download/update.json' in calls[-1]
+    assert cache.read_text()=='old-cache'
+
+
+def test_disconnect_then_public_fallback_succeeds(monkeypatch):
+    import io
+    from http.client import RemoteDisconnected
+    info=dict(version='v99.0.0',url=f'https://github.com/{u.REPO}/releases/download/v99.0.0/AI-Photo-Cull-v99.0.0-Windows-x64-portable.zip',sha256='a'*64,size=20)
+    calls=[]
+    def request(url):
+        calls.append(url)
+        if 'api.github.com' in url:raise RemoteDisconnected('closed')
+        return io.BytesIO(json.dumps(info).encode())
+    monkeypatch.setattr(u,'request',request)
+    monkeypatch.setattr(u.time,'sleep',lambda _:None)
+    assert u.latest_release()['version']=='v99.0.0'
+    assert len(calls)==3
+
+
+def test_malformed_metadata_not_retried_or_bypassed(monkeypatch):
+    import io
+    calls=[]
+    monkeypatch.setattr(u,'request',lambda url:calls.append(url) or io.BytesIO(b'not json'))
+    with pytest.raises(ValueError):u.latest_release()
+    assert len(calls)==1

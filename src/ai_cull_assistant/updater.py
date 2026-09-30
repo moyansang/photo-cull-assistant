@@ -1,5 +1,6 @@
 """Verified, manifest-only portable updates. User files are never update targets."""
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -42,11 +43,31 @@ def request(url):
 
 
 def _release_info(url, expected_size=None):
-    with request(url) as response:
-        payload=response.read(1024*1024+1)
+    payload = _read_update_metadata(url)
     if len(payload)>1024*1024 or (expected_size is not None and len(payload)!=expected_size):
         raise ValueError('更新信息文件大小异常')
     return json.loads(payload)
+
+
+NETWORK_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead)
+
+
+def _read_update_metadata(url):
+    # Retry the complete GET, including response reads. Never reuse partial JSON.
+    for attempt in range(2):
+        try:
+            with request(url) as response:
+                return response.read(1024 * 1024 + 1)
+        except NETWORK_ERRORS as exc:
+            if isinstance(exc, urllib.error.HTTPError):
+                transient = exc.code in (408, 500, 502, 503, 504)
+                exc.close()
+            else:
+                reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+                transient = isinstance(reason, (TimeoutError, ConnectionError, http.client.IncompleteRead))
+            if attempt or not transient:
+                raise
+            time.sleep(.5)
 
 
 def _validated_release(info):
@@ -64,8 +85,7 @@ def _validated_release(info):
 
 
 def api_release():
-    with request(f'https://api.github.com/repos/{REPO}/releases/latest') as response:
-        data = json.load(response)
+    data = _release_info(f'https://api.github.com/repos/{REPO}/releases/latest')
     if data.get('draft') or data.get('prerelease'):
         return None
     tag=data['tag_name']
@@ -104,9 +124,14 @@ def latest_release(cache_path=None, force=False):
         except (OSError,ValueError,KeyError,TypeError): pass
     try:
         release=api_release()
-    except (urllib.error.URLError,TimeoutError):
+    except NETWORK_ERRORS:
         # Public release assets use the GitHub web/CDN route, not REST quota.
-        release=checked_release(_release_info(f'https://github.com/{REPO}/releases/latest/download/update.json'))
+        try:
+            release=checked_release(_release_info(f'https://github.com/{REPO}/releases/latest/download/update.json'))
+        except NETWORK_ERRORS as exc:
+            raise ConnectionError('无法连接 GitHub 更新服务，已尝试备用更新地址。'
+                                  '请稍后重试，或检查代理与网络连接；当前程序和工作区未修改。'
+                                  f'\n网络错误：{exc}') from exc
     if cache_path:
         try:
             path=Path(cache_path)
