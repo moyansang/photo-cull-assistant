@@ -115,6 +115,7 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.updates = UpdateController(self)
         self._restore_processing_job()
+        self._log_workspace_summary()
         self.after(100, self._poll_processing)
         if self._workspace_blocked:
             self.after(50, self._show_workspace_error)
@@ -278,6 +279,7 @@ class App(tk.Tk):
         self._clear_log()
         self._restore_session(restore_log=False)
         self._restore_processing_job()
+        self._log_workspace_summary()
         if (previous_workspace and not previous_blocked
                 and Path(previous_workspace).resolve() != workspace.resolve()):
             self._compact_completed_workspace(previous_workspace)
@@ -701,6 +703,19 @@ class App(tk.Tk):
             self._open_tool_page('api')
         except Exception as exc:
             messagebox.showerror("配置 API", str(exc), parent=self)
+
+    def _log_workspace_summary(self):
+        if self._workspace_blocked or not self.workspace_var.get().strip():
+            return
+        from .workspace_summary import restoration_summary
+        settings = dict(grouping=self.preset_var.get(), per_page=self.per_page_var.get(),
+                        columns=self.columns_var.get(), screening=self.screening_var.get(),
+                        body_screening=self.body_screening_var.get(),
+                        confidence=self.crop_settings.detection_confidence)
+        for line in restoration_summary(Path(self.workspace_var.get()),
+                                        self.scan_result.assets if self.scan_result else None,
+                                        settings, self._sheets_ready(), self._processing_job):
+            self._log(line)
 
     def _restore_processing_job(self):
         if self._workspace_blocked or not self.input_var.get().strip() or not self.workspace_var.get().strip():
