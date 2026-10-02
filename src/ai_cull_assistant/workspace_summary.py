@@ -17,23 +17,16 @@ def restoration_summary(workspace, assets, settings, sheets_ready, job=None):
                  'regenerate': '重新扫描修改过的图片', 'focus': 'AI 清晰度复核',
                  'sheets': '生成联系表'}.get(mode, '处理')
         lines.append(f"未完成任务：{label}，进度约 {int(job.percent)}%；可点击“继续处理”。")
+    if job and getattr(job, 'assets', None) is not None:
+        assets = job.assets
     if assets is None:
         lines.append('扫描图片：尚无可恢复的扫描结果。')
         return lines
     lines.append(f'扫描图片：已恢复 {len(assets)} 张照片的分析记录。')
-    reviewed = pending = uncertain = dirty = 0
-    for asset in assets:
-        if getattr(asset, 'ai_focus_dirty', False):
-            dirty += 1
-            continue
-        value = getattr(asset, 'ai_focus_result', None)
-        valid = (isinstance(value, dict) and value.get('status') in {'clear', 'blur', 'uncertain'}
-                 and isinstance(value.get('reason'), str) and bool(value['reason'].strip()))
-        if valid:
-            reviewed += 1
-            uncertain += value['status'] == 'uncertain'
-        elif focus_review_status(asset) is True:
-            pending += 1
+    counts = focus_counts(assets)
+    reviewed, pending, uncertain, dirty = (counts[k] for k in ('reviewed', 'pending', 'uncertain', 'dirty'))
+    lines.append(f"AI 复核未完成原因：待提交 {pending} 张；请求失败 {counts['failed']} 张；修改后失效 {dirty} 张；主动跳过 {counts['skipped']} 张。")
+    pending += counts['failed'] + counts['skipped']
     if pending or dirty:
         lines.append(f'AI 清晰度复核：未完成；已复核 {reviewed} 张，尚未取得有效结论 {pending} 张，修改后待重新处理 {dirty} 张。')
     elif reviewed:
@@ -53,6 +46,9 @@ def restoration_summary(workspace, assets, settings, sheets_ready, job=None):
         task = next((t for t in tasks if t['id'] == data.get('current_task_id')), tasks[-1] if tasks else None)
         batches = task['batches'] if task else []
         completed = sum(str(b.get('status')).lower() in {'complete', 'completed', 'done', '已完成'} for b in batches)
+        from collections import Counter
+        states = Counter(str(b.get('status', 'pending')).lower() for b in batches)
+        lines.append(f"AI 选片未完成原因：待提交 {states['pending']} 批；请求失败 {states['failed']} 批；部分返回 {states['partial']} 批；请求中断/进行中 {states['running']} 批；主动跳过 {states['skipped']} 批。")
         stale = sum(bool(p.get('stale')) for p in data.get('photos', {}).values())
         if not batches:
             lines.append('AI 选片：尚无可提交批次。')
@@ -69,3 +65,56 @@ def restoration_summary(workspace, assets, settings, sheets_ready, job=None):
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         lines.append('AI 选片及 LR 导出：保存记录无法读取，暂不能确认进度。')
     return lines
+
+
+def focus_counts(assets):
+    counts = dict(reviewed=0, pending=0, uncertain=0, dirty=0, failed=0, skipped=0)
+    for asset in assets or []:
+        if getattr(asset, 'ai_focus_dirty', False):
+            counts['dirty'] += 1
+            continue
+        value = getattr(asset, 'ai_focus_result', None)
+        if (isinstance(value, dict) and value.get('status') in {'clear', 'blur', 'uncertain'}
+                and isinstance(value.get('reason'), str) and value['reason'].strip()):
+            counts['reviewed'] += 1
+            counts['uncertain'] += value['status'] == 'uncertain'
+        elif focus_review_status(asset) is True:
+            state = getattr(asset, 'ai_focus_attempt', None)
+            counts[state if state in {'failed', 'skipped'} else 'pending'] += 1
+    return counts
+
+
+def recommended_next_step(workspace, assets, sheets_ready, job=None):
+    if job:
+        mode = getattr(job, 'mode', None) or getattr(job, 'kind', 'scan')
+        label = {'scan': '扫描图片', 'rescan': '重新扫描修改过的图片', 'regenerate': '重新扫描修改过的图片',
+                 'focus': 'AI 复核', 'sheets': '生成联系表'}.get(mode, '任务')
+        return f'继续{label}（点击“继续处理”）'
+    if assets is None:
+        return '扫描图片'
+    counts = focus_counts(assets)
+    if counts['dirty']:
+        return '检测/调整人脸框 → 重新扫描修改过的图片'
+    if counts['pending'] or counts['failed']:
+        return '继续 AI 复核' if counts['reviewed'] or counts['failed'] else 'AI 复核'
+    if not sheets_ready:
+        return '生成联系表'
+    path = workspace / 'ai_project.json'
+    if not path.exists():
+        return 'AI 选片与导出 → 开始 AI 选片'
+    try:
+        data = json.loads(path.read_text('utf-8'))
+        tasks = data['tasks']
+        task = next((t for t in tasks if t['id'] == data.get('current_task_id')), tasks[-1] if tasks else None)
+        if any(p.get('stale') for p in data.get('photos', {}).values()):
+            return 'AI 选片与导出 → 重新提交失效结果'
+        batches = task['batches'] if task else []
+        if batches and any(str(b.get('status')).lower() not in {'complete', 'completed', 'done', '已完成'} for b in batches):
+            return 'AI 选片与导出 → 继续 AI 选片'
+        if not batches and not all(getattr(a, 'auto_rejected', False) or focus_review_status(a) is True for a in assets):
+            return 'AI 选片与导出 → 开始 AI 选片'
+        if not data.get('last_export_id') or data.get('export_dirty'):
+            return 'AI 选片与导出 → 导出 LR'
+        return '本工作区处理已完成；可在 Lightroom 应用导出结果'
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return 'AI 选片与导出 → 检查保存记录'

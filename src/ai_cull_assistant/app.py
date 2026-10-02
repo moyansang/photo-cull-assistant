@@ -716,6 +716,7 @@ class App(tk.Tk):
                                         self.scan_result.assets if self.scan_result else None,
                                         settings, self._sheets_ready(), self._processing_job):
             self._log(line)
+        self._log(self.next_step_var.get())
 
     def _restore_processing_job(self):
         if self._workspace_blocked or not self.input_var.get().strip() or not self.workspace_var.get().strip():
@@ -739,7 +740,7 @@ class App(tk.Tk):
             self._processing_mode = self._job_mode(self._processing_job)
             self._set_progress(self._processing_job.percent)
         self.next_step_var.set("推荐下一步：" + (
-            "继续处理" if self._processing_job else self._next_step_after_restore()
+            self._next_step_after_restore()
         ))
 
     @staticmethod
@@ -777,9 +778,10 @@ class App(tk.Tk):
         return bool(self.scan_result.main_pages or self.scan_result.rejected_pages)
 
     def _next_step_after_restore(self) -> str:
-        if not self.scan_result:
-            return "扫描图片"
-        return "AI 选片与导出" if self._sheets_ready() else "检测/调整人脸框"
+        from .workspace_summary import recommended_next_step
+        return recommended_next_step(Path(self.workspace_var.get()),
+                                     self.scan_result.assets if self.scan_result else None,
+                                     self._sheets_ready(), self._processing_job)
 
     def _mode_label(self, mode: str | None = None) -> str:
         return {
@@ -1040,7 +1042,7 @@ class App(tk.Tk):
                             next_step = "AI 选片与导出"
                     self._set_processing_busy(False)
                     self.next_step_var.set("推荐下一步：" + (
-                        "继续处理" if self._processing_job else next_step
+                        self._next_step_after_restore()
                     ))
                     if self._close_after_stop:
                         self._close_after_stop = False
@@ -1143,6 +1145,8 @@ class App(tk.Tk):
         activate = getattr(page, 'on_activate', None)
         if activate:
             activate()
+        if name == "home" and not self._processing_busy and not self._workspace_blocked:
+            self.next_step_var.set("推荐下一步：" + self._next_step_after_restore())
         self._visible_page = self._page_id = name
         self._resize_shared_log()
         from .ui_style import style_page_chrome

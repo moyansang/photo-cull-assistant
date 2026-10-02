@@ -148,6 +148,7 @@ def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: 
     result["reason"] = reason.strip()
     # Fail before changing the asset if the result cannot be checkpointed.
     json.dumps(result, ensure_ascii=False)
+    asset.ai_focus_attempt = None
     asset.ai_focus_result = result
     asset.auto_rejected = status == "blur"
     asset.screening_reason = f"ai_focus_{status}"
@@ -459,6 +460,8 @@ class ProcessingJob:
         skipped = self._data.get("focus_review_skipped", [])
         if not isinstance(skipped, list):
             skipped = []
+        for row in self.pending_focus_errors:
+            self.assets[int(row["index"])].ai_focus_attempt = "skipped"
         skipped.extend(dict(row) for row in self.pending_focus_errors)
         self._data["focus_review_skipped"] = skipped
         self._data["focus_review_errors"] = []
@@ -713,6 +716,7 @@ class ProcessingJob:
                     # photo's earlier paid verdict.  The new local result decides
                     # whether a later focus stage needs to submit it again.
                     asset.ai_focus_result = None
+                    asset.ai_focus_attempt = None
                     asset.ai_focus_dirty = False
                 elif self.kind == "regenerate" and asset.ai_focus_result and not asset.ai_focus_dirty:
                     # Layout/face edits reuse the completed AI verdict. They are
@@ -795,6 +799,7 @@ class ProcessingJob:
                         # the asset pending, even if it carried an older paid
                         # result before a face edit, and move on to the next photo.
                         asset.ai_focus_result = None
+                        asset.ai_focus_attempt = "failed"
                         asset.ai_focus_dirty = False
                         asset.auto_rejected = False
                         # Preserve a current local pending reason.  A stale

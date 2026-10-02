@@ -51,9 +51,45 @@ def test_app_restore_hooks_and_log_summary(tmp_path):
     app=NS(_workspace_blocked=False,workspace_var=Var(str(tmp_path)),preset_var=Var('宽松'),
            per_page_var=Var(24),columns_var=Var(6),screening_var=Var(True),body_screening_var=Var(False),
            crop_settings=NS(detection_confidence=.7),scan_result=None,_processing_job=None,
-           _sheets_ready=lambda:False,_log=lines.append)
+           _sheets_ready=lambda:False,_log=lines.append,next_step_var=Var("推荐下一步：扫描图片"))
     App._log_workspace_summary(app)
     assert any('身体清晰度检查（实验）关闭' in line for line in lines)
     for method in (App.__init__,App._activate_workspace):
         source=inspect.getsource(method)
         assert source.index('self._restore_processing_job()') < source.index('self._log_workspace_summary()')
+
+
+def test_recommendations_and_reason_counts(tmp_path):
+    from ai_cull_assistant.workspace_summary import recommended_next_step as next_step, focus_counts
+    clear=NS(screening_reason='subject_not_obviously_blurred')
+    pending=NS(screening_reason='face_focus_uncertain')
+    failed=NS(screening_reason='face_focus_uncertain',ai_focus_attempt='failed')
+    skipped=NS(screening_reason='face_focus_uncertain',ai_focus_attempt='skipped')
+    dirty=NS(ai_focus_dirty=True)
+    assert next_step(tmp_path,None,False)=='扫描图片'
+    assert next_step(tmp_path,[pending],False)=='AI 复核'
+    assert next_step(tmp_path,[failed],False)=='继续 AI 复核'
+    assert '重新扫描' in next_step(tmp_path,[dirty],False)
+    assert next_step(tmp_path,[skipped],False)=='生成联系表'
+    counts=focus_counts([pending,failed,skipped,dirty])
+    assert [counts[k] for k in ('pending','failed','skipped','dirty')]==[1,1,1,1]
+    assert '继续AI 复核' in next_step(tmp_path,[clear],False,NS(mode='focus'))
+    p=tmp_path/'ai_project.json'
+    data=dict(tasks=[dict(id='a',batches=[dict(status='failed')])],photos={})
+    p.write_text(json.dumps(data))
+    assert '继续 AI 选片' in next_step(tmp_path,[clear],True)
+    data['tasks'][0]['batches'][0]['status']='complete';p.write_text(json.dumps(data))
+    assert '导出 LR' in next_step(tmp_path,[clear],True)
+    data['last_export_id']='e';p.write_text(json.dumps(data))
+    assert '处理已完成' in next_step(tmp_path,[clear],True)
+    data['photos']['p']={'stale':True};p.write_text(json.dumps(data))
+    assert '失效' in next_step(tmp_path,[clear],True)
+
+
+def test_focus_attempt_survives_serialization():
+    from datetime import datetime
+    from pathlib import Path
+    from ai_cull_assistant.models import PhotoAsset
+    from ai_cull_assistant.processing_job import _asset_to_dict, _asset_from_dict
+    a=PhotoAsset('p',Path('p.jpg'),Path('p.jpg'),None,Path('p.jpg'),datetime.now(),'.jpg',ai_focus_attempt='skipped')
+    assert _asset_from_dict(_asset_to_dict(a)).ai_focus_attempt=='skipped'

@@ -33,6 +33,7 @@ class PhotoAsset:
     subject_confidence: float = .8
     ai_focus_result: dict | None = None
     ai_focus_dirty: bool = False
+    ai_focus_attempt: str | None = None  # failed / skipped; no saved request contents
     # Absent on old sessions: opening them must not silently reclassify photos.
     clarity_version: str | None = None
     clarity_evidence: dict | None = None

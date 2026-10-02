@@ -764,6 +764,7 @@ def test_staged_focus_can_skip_failed_photos_and_keep_them_pending(tmp_path, mon
     assert calls == ["P0000", "P0001"]
 
     restored = load_job(workspace, photos)
+    assert restored.assets[0].ai_focus_attempt == "failed"
     restored.skip_failed()
     result = restored.run(
         _options(), CropSettings(), Event(), None, focus_profile=None
@@ -772,6 +773,7 @@ def test_staged_focus_can_skip_failed_photos_and_keep_them_pending(tmp_path, mon
     assert calls == ["P0000", "P0001"]
     failed = result.assets[0]
     assert failed.ai_focus_result is None
+    assert failed.ai_focus_attempt == "skipped"
     assert failed.screening_reason == "face_focus_uncertain"
     assert failed.auto_rejected is False
     assert result.assets[1].ai_focus_result["status"] == "clear"
