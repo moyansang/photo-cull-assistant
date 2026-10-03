@@ -13,7 +13,7 @@ from .settings import application_dir, read_values, save_values
 
 WORKSPACE_NAMES = (
     'workspace-identity.json', '.source-location.json',
-    'scan-session.json', 'ai_project.json', 'groups.json', 'screening_results.json',
+    'assist-feedback.json', 'scan-session.json', 'ai_project.json', 'groups.json', 'screening_results.json',
     'processing-settings.json', 'workspace-settings.json', 'lightroom_results.json',
     'session.log', 'previews', 'contact_sheets', 'ai_tasks', '.analysis-cache', '.processing',
     'exports', 'logs', 'cache', 'focus-evidence',

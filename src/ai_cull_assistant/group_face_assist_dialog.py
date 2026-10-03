@@ -29,7 +29,7 @@ LEVEL_LABELS = {'reliable': '可靠', 'review': '待确认', 'missing': '未找�
 class GroupFaceAssistDialog(tk.Toplevel):
     def __init__(self, parent, reference, reference_box, targets, apply_items, on_close=None,
                  group_id=None, detection_confidence=.8, target_assets=None,
-                 preview_cache_dir=None, on_target_prepared=None):
+                 preview_cache_dir=None, on_target_prepared=None, workspace=None, input_dir=None):
         super().__init__(parent)
         self.withdraw()
         self.title(f"补齐人脸 · 参考人物 {reference.stem}")
@@ -41,6 +41,13 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.target_assets = dict(target_assets or {})
         self.preview_cache_dir = Path(preview_cache_dir) if preview_cache_dir else None
         self.on_target_prepared = on_target_prepared
+        self._feedback = None
+        self._feedback_ids = {}
+        self._feedback_signatures = {}
+        self._feedback_error = None
+        self._feedback_save_token = None
+        self._feedback_dirty_keys = set()
+        self._feedback_position = None
         self.apply_items = apply_items
         self.on_close_callback = on_close
         self._closed = False
@@ -65,6 +72,9 @@ class GroupFaceAssistDialog(tk.Toplevel):
             'box': None, 'accepted': False, 'status': '排队中',
         } for target in self.targets}
 
+        self._init_feedback(workspace, input_dir)
+        self._reference_samples = self._feedback.samples() if self._feedback else []
+        self._negative_samples = self._feedback.rejected() if self._feedback else []
         install_page_chrome(self, "assist")
         # Reserve header and footer before the resizable body so every action
         # remains visible on a 720-pixel-high desktop.
@@ -76,6 +86,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.progress_label.pack(side='left', padx=18)
         self.stop_button = ttk.Button(header, text='停止查找', command=self.stop_search)
         self.stop_button.pack(side='right')
+        ttk.Button(header, text='重新查找未确认', command=self._retry_unconfirmed).pack(side='right', padx=6)
 
         footer = ttk.Frame(self, padding=(12, 4, 12, 10))
         footer.pack(side='bottom', fill='x')
@@ -100,6 +111,14 @@ class GroupFaceAssistDialog(tk.Toplevel):
         left_rail.columnconfigure(0, weight=1)
         reference_frame = ttk.LabelFrame(left_rail, text='参考人物', padding=6)
         reference_frame.grid(row=0, column=0, sticky='ew')
+        ttk.Label(reference_frame, text='确认框自动积累，下轮使用', style='Muted.TLabel').pack(fill='x')
+        self.sample_picker = ttk.Combobox(reference_frame, state='readonly', width=22)
+        self.sample_picker.pack(fill='x')
+        sample_actions = ttk.Frame(reference_frame)
+        sample_actions.pack(fill='x')
+        ttk.Button(sample_actions, text='移除此参考', command=self._remove_reference).pack(side='left')
+        ttk.Button(sample_actions, text='清空积累', command=self._clear_references).pack(side='left')
+        self._refresh_references()
         self.reference_preview = tk.Canvas(
             reference_frame, width=190, height=210, background=COLORS['photo'], highlightthickness=0)
         self.reference_preview.pack(fill='x')
@@ -153,6 +172,11 @@ class GroupFaceAssistDialog(tk.Toplevel):
         for target in self.targets:
             self.tree.insert('', 'end', iid=target.key, text='', values=('☐', target.stem, '排队中'))
         first = self.targets[0].key if self.targets else None
+        if self._feedback:
+            cursor = self._feedback.get_position()
+            first = next((key for key, identity in self._feedback_ids.items() if identity == cursor and key in self.rows), first)
+        for key in self.rows:
+            self._update_row(key)
         if first:
             self.tree.selection_set(first)
         self.update_idletasks()
@@ -168,8 +192,153 @@ class GroupFaceAssistDialog(tk.Toplevel):
             self.preview.create_text(160, 100, text="没有待补齐的照片", fill=COLORS["photo_text"])
         self.grab_set()
         self._start_worker()
+        if self._feedback_error:
+            self.after(0, lambda: messagebox.showwarning("补框进度", self._feedback_error, parent=self))
+
+    def _init_feedback(self, workspace, input_dir):
+        if workspace is None or input_dir is None:
+            return
+        try:
+            from .assist_feedback import AssistFeedback
+            root = Path(input_dir).resolve()
+            for key, asset in self.target_assets.items():
+                source = Path(asset.primary_path).resolve()
+                try:
+                    identity = source.relative_to(root).as_posix().casefold()
+                    stat = source.stat()
+                except (ValueError, OSError):
+                    continue
+                self._feedback_ids[key] = identity
+                self._feedback_signatures[key] = [stat.st_size, stat.st_mtime_ns]
+            key = self.reference.key
+            if key not in self._feedback_ids:
+                return
+            self._feedback = AssistFeedback(workspace, self._feedback_ids[key], self.reference_box,
+                                            self._feedback_signatures[key])
+            saved_rows = self._feedback.rows()
+            for key, row in self.rows.items():
+                saved = saved_rows.get(self._feedback_ids.get(key))
+                if not saved or saved['signature'] != self._feedback_signatures.get(key):
+                    continue
+                box = saved.get('box')
+                if box is not None and not group_face_assist.normalized_box_ok(box):
+                    continue
+                row.update(box=box, accepted=saved.get('accepted', False), restored_decision=True,
+                           original_box=saved.get('original_box'),
+                           status={'confirmed':'已确认','rejected':'不是这个人','skipped':'跳过',
+                                   'edited':'手动调整'}.get(saved.get('status'), '待确认'))
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            self._feedback = None
+            self._feedback_error = f'补框进度未能恢复，原记录保留。本次反馈不会保存：{exc}'
+
+    def _matching_references(self):
+        def collect(samples):
+            result = []
+            root_asset = self.target_assets.get(self.reference.key)
+            ordered = list(reversed(samples))
+            ordered.sort(key=lambda sample: next((getattr(self.target_assets[k], "group_id", None) != getattr(root_asset, "group_id", None) for k, v in self._feedback_ids.items() if v == sample["id"]), True))
+            for sample in ordered:
+                key = next((k for k, v in self._feedback_ids.items() if v == sample['id']), None)
+                if key is None or sample['signature'] != self._feedback_signatures.get(key):
+                    continue
+                if key == self.reference.key or self._stop.is_set():
+                    continue
+                asset = self.target_assets[key]
+                try:
+                    from .preview import ensure_preview
+                    path = ensure_preview(asset, self.preview_cache_dir)
+                    result.append((group_face_assist.AssistImage(key, asset.stem, str(path)), sample['box']))
+                except (OSError, ValueError):
+                    continue
+                if len(result) >= 5:
+                    break
+            return result
+        return dict(additional_references=collect(self._reference_samples),
+                    negative_references=collect(self._negative_samples))
+
+    def _refresh_references(self):
+        samples = self._feedback.samples() if self._feedback else []
+        self._sample_ids = [sample['id'] for sample in samples]
+        self.sample_picker.configure(values=self._sample_ids or ('暂无积累参考',))
+        self.sample_picker.current(0)
+
+    def _remove_reference(self):
+        if self._feedback and self.sample_picker.get() in self._sample_ids:
+            self._feedback.remove_sample(self.sample_picker.get())
+            self._refresh_references()
+
+    def _clear_references(self):
+        if self._feedback:
+            self._feedback.clear_references()
+            self._refresh_references()
+
+    def _save_feedback(self, key):
+        if not getattr(self, "_feedback", None) or key not in self._feedback_ids:
+            return
+        row = self.rows[key]
+        proposal = row.get('proposal')
+        original = row.get('original_box') or (proposal.box if proposal else None)
+        status = 'confirmed' if row['accepted'] else {'不是这个人':'rejected','跳过':'skipped',
+                 '手动调整':'edited'}.get(row['status'], 'pending')
+        try:
+            self._feedback.save_row(self._feedback_ids[key], self._feedback_signatures[key],
+                                    row['box'], status, row['accepted'], original_box=original)
+            self._feedback_dirty_keys.discard(key)
+            self._refresh_references()
+        except (OSError, ValueError) as exc:
+            self._feedback = None
+            messagebox.showwarning('补框进度未保存', str(exc), parent=self)
+
+    def _schedule_feedback(self, key):
+        if not getattr(self, "_feedback", None):
+            return
+        self._feedback_dirty_keys.add(key)
+        if self._feedback_save_token:
+            self.after_cancel(self._feedback_save_token)
+        self._feedback_save_token = self.after(300, self._flush_feedback)
+
+    def _flush_feedback(self):
+        if not hasattr(self, "_feedback_dirty_keys"):
+            return
+        if self._feedback_save_token:
+            self.after_cancel(self._feedback_save_token)
+            self._feedback_save_token = None
+        for key in list(self._feedback_dirty_keys):
+            self._save_feedback(key)
+
+    def _save_position(self):
+        if not getattr(self, "_feedback", None):
+            return
+        key = self._current_key()
+        identity = self._feedback_ids.get(key)
+        if self._feedback and identity and identity != self._feedback_position:
+            try:
+                self._feedback.set_position(identity)
+                self._feedback_position = identity
+            except (OSError, ValueError):
+                pass
 
     # ------------------------------------------------------------------ worker
+
+    def _retry_unconfirmed(self):
+        if self._worker and self._worker.is_alive():
+            messagebox.showinfo('补齐人脸', '请先停止查找并等待当前检查结束，再开始新一轮。', parent=self)
+            return
+        self._flush_feedback()
+        self._reference_samples = self._feedback.samples() if self._feedback else []
+        self._negative_samples = self._feedback.rejected() if self._feedback else []
+        for key, row in self.rows.items():
+            row['restored_decision'] = bool(row['accepted'])
+            if not row['accepted']:
+                row.update(box=None, proposal=None, status='排队中')
+                self._update_row(key)
+        self._stop.clear()
+        self._finished = False
+        self.stop_button.configure(state='normal')
+        if self._poll_token:
+            self.after_cancel(self._poll_token)
+            self._poll_token = None
+        self._start_worker()
 
     def _start_worker(self):
         self._worker = threading.Thread(
@@ -185,7 +354,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
                     break
                 self._messages.put(('preparing', index, len(self.targets)))
                 prepared = self._prepare_target(target)
-                prepared_targets.append(prepared)
+                if not self.rows[target.key].get("restored_decision"):
+                    prepared_targets.append(prepared)
                 if prepared is not target:
                     self._messages.put(('target_prepared', prepared))
             group_face_assist.propose_person_faces(
@@ -193,6 +363,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
                 on_progress=lambda done, total, proposal: self._messages.put(
                     ('proposal', done, total, proposal)),
                 detection_confidence=self.detection_confidence,
+                **self._matching_references(),
             )
             self._messages.put(('done', None))
         except Exception as exc:  # noqa: BLE001 - surfaced on the main thread
@@ -238,6 +409,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
             if row is None:
                 return
             row['proposal'] = proposal
+            if row.get('original_box') is None:
+                row['original_box'] = proposal.box
             # A manually adjusted box always wins over a late proposal.
             if row['box'] is None:
                 row['box'] = proposal.box
@@ -498,6 +671,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
         if row is None or row['box'] is None:
             return
         row['accepted'] = not row['accepted']
+        row['status'] = '已确认' if row['accepted'] else '待确认'
+        self._save_feedback(row_id)
         self._update_row(row_id)
         self.show_current()
 
@@ -512,6 +687,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
             messagebox.showinfo('补齐人脸', '本张还没有可用候选框，请直接在图片上拖拽画框。', parent=self)
             return
         row['accepted'] = True
+        row['status'] = '已确认'
+        self._save_feedback(key)
         self._selected_box_key = None
         self._update_row(key)
         self._advance_after_review(key)
@@ -536,6 +713,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
             self.tree.selection_set(next_key)
             self.tree.focus(next_key)
             self.tree.see(next_key)
+        self._save_position()
         self.show_current()
 
     def skip_current(self):
@@ -547,6 +725,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         row = self.rows[key]
         row['accepted'] = False
         row['status'] = '跳过'
+        self._save_feedback(key)
         self._update_row(key)
         self._advance_after_review(key)
 
@@ -559,6 +738,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         row = self.rows[key]
         row['accepted'] = False
         row['status'] = '不是这个人'
+        self._save_feedback(key)
         self._update_row(key)
         self._advance_after_review(key)
 
@@ -631,6 +811,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         row['box'] = box
         row['accepted'] = False
         row['status'] = '手动调整'
+        self._schedule_feedback(key)
         self._selected_box_key = key
         self._update_row(key)
         self.show_current()
@@ -712,6 +893,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
     def destroy(self):
         if self._closed:
             return
+        self._flush_feedback()
+        self._save_position()
         self._closed = True
         self._stop.set()
         self._thumbnail_executor.shutdown(wait=False, cancel_futures=True)

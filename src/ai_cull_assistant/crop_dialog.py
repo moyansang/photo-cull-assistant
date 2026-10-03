@@ -724,7 +724,9 @@ class CropDialog(WorkspacePage):
             return
         siblings = list(self.assets)
         targets = collect_targets(asset, siblings, self.edits, settings.key, allow_cross_group=True)
-        if not targets:
+        session = getattr(self.winfo_toplevel(), "scan_result", None)
+        has_feedback = bool(session and (session.workspace_dir / "assist-feedback.json").is_file())
+        if not targets and not has_feedback:
             messagebox.showinfo("补齐人脸", "整个工作区没有需要补齐的人脸。", parent=self)
             return
         self._assist_assets = {settings.key(a): a for a in siblings}
@@ -739,6 +741,7 @@ class CropDialog(WorkspacePage):
         # window and take it back when that window closes.
         if not self._embedded:
             self.grab_release()
+        session = getattr(self.winfo_toplevel(), "scan_result", None)
         self._assist_dialog = GroupFaceAssistDialog(
             self, reference, tuple(box), targets,
             apply_items=self.apply_assist_proposals,
@@ -747,6 +750,8 @@ class CropDialog(WorkspacePage):
             target_assets={key: deepcopy(value) for key, value in self._assist_assets.items()},
             preview_cache_dir=self._assist_preview_cache_dir,
             on_target_prepared=self._assist_target_prepared,
+            workspace=session.workspace_dir if session else None,
+            input_dir=session.input_dir if session else None,
         )
 
     def _assist_target_prepared(self, key, preview_path):

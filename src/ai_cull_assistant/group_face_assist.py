@@ -391,6 +391,8 @@ def propose_person_faces(
     stop_event: threading.Event,
     on_progress=None,
     detection_confidence=DETECT_MIN_SCORE,
+    additional_references=(),
+    negative_references=(),
 ) -> list[FaceProposal]:
     """Find appearance-similar person locations across preview images.
 
@@ -400,7 +402,12 @@ def propose_person_faces(
     :func:`propose_group_faces` so UI workers can switch modes without a
     separate lifecycle.
     """
-    from .person_match import build_reference, rank_candidates
+    from .person_match import (
+        MAX_PERSON_REFERENCES,
+        build_reference,
+        rank_candidates,
+        rank_candidates_multi,
+    )
 
     if not reference.preview_path or not Path(reference.preview_path).is_file():
         raise ValueError('参考照片预览不可读，无法查找人物')
@@ -411,6 +418,46 @@ def propose_person_faces(
         appearance_reference = build_reference(reference_rgb, reference_box, stop_event)
     except InterruptedError:
         return []
+
+    appearance_references = [appearance_reference]
+    for extra_image, extra_box in additional_references or ():
+        if len(appearance_references) >= MAX_PERSON_REFERENCES:
+            break
+        if stop_event.is_set():
+            return []
+        try:
+            if (not extra_image.preview_path
+                    or not Path(extra_image.preview_path).is_file()
+                    or not normalized_box_ok(extra_box)):
+                continue
+            extra_rgb = load_rgb(extra_image.preview_path)
+            appearance_references.append(build_reference(extra_rgb, extra_box, stop_event))
+        except InterruptedError:
+            return []
+        except Exception:  # noqa: BLE001 - an optional example must not invalidate the root
+            continue
+
+    exclusion_references = []
+    for extra_image, extra_box in negative_references or ():
+        if len(exclusion_references) >= MAX_PERSON_REFERENCES:
+            break
+        if stop_event.is_set():
+            return []
+        try:
+            if (not extra_image.preview_path
+                    or not Path(extra_image.preview_path).is_file()
+                    or not normalized_box_ok(extra_box)):
+                continue
+            extra_rgb = load_rgb(extra_image.preview_path)
+            exclusion_references.append(build_reference(extra_rgb, extra_box, stop_event))
+        except InterruptedError:
+            return []
+        except Exception:  # noqa: BLE001 - optional negative evidence is best effort
+            continue
+
+    reference_summary = f'基于 {len(appearance_references)} 张已确认正向参考'
+    if exclusion_references:
+        reference_summary += f'和 {len(exclusion_references)} 张反向参考'
     proposals: list[FaceProposal] = []
     total = len(targets)
     for done, target in enumerate(targets, 1):
@@ -425,12 +472,21 @@ def propose_person_faces(
         else:
             try:
                 image_rgb = load_rgb(target.preview_path)
-                candidates = rank_candidates(
-                    image_rgb,
-                    appearance_reference,
-                    stop_event,
-                    detection_confidence=detection_confidence,
-                )
+                if len(appearance_references) == 1 and not exclusion_references:
+                    candidates = rank_candidates(
+                        image_rgb,
+                        appearance_reference,
+                        stop_event,
+                        detection_confidence=detection_confidence,
+                    )
+                else:
+                    candidates = rank_candidates_multi(
+                        image_rgb,
+                        appearance_references,
+                        exclusion_references,
+                        stop_event,
+                        detection_confidence=detection_confidence,
+                    )
                 if stop_event.is_set():
                     break
                 if not candidates:
@@ -450,7 +506,7 @@ def propose_person_faces(
                         'review',
                         round(best.score, 3),
                         round(best.detector_score, 3) if best.detector_score is not None else None,
-                        f'{source_text}结合脸/头部/上身颜色与纹理排序{ambiguity}；'
+                        f'{reference_summary}；{source_text}结合脸/头部/上身颜色与纹理排序{ambiguity}；'
                         '请人工确认，不代表身份识别',
                     )
             except Exception as exc:  # noqa: BLE001 - one damaged preview must not stop the batch

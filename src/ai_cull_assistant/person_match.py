@@ -18,8 +18,10 @@ import numpy as np
 MAX_WORKING_EDGE = 960
 MAX_WORKING_PIXELS = 900_000
 MAX_DETECTOR_CANDIDATES = 8
+MAX_PERSON_REFERENCES = 6
 MIN_APPEARANCE_SCORE = .46
 AMBIGUOUS_MARGIN = .065
+MAX_NEGATIVE_PENALTY = .15
 TEMPLATE_SCALES = (.55, .75, 1.0, 1.3, 1.7)
 
 
@@ -321,26 +323,68 @@ def rank_candidates(
     detection_confidence: float = .8,
 ) -> list[PersonCandidate]:
     """Rank plausible locations; callers must require manual confirmation."""
+    return rank_candidates_multi(
+        image_rgb,
+        (reference,),
+        (),
+        stop_event,
+        detection_confidence=detection_confidence,
+    )
+
+
+def rank_candidates_multi(
+    image_rgb: np.ndarray,
+    references,
+    negative_references=(),
+    stop_event: threading.Event | None = None,
+    *,
+    detection_confidence: float = .8,
+) -> list[PersonCandidate]:
+    """Rank candidates against several manually verified appearance examples.
+
+    Detection runs once per target.  Positive references contribute their best
+    appearance score and their own capped template fallbacks.  A close match to
+    a negative reference can lower ordering slightly, but never removes a
+    candidate that passed the positive evidence threshold.
+    """
+    positive_references = tuple(references)[:MAX_PERSON_REFERENCES]
+    negative_references = tuple(negative_references)[:MAX_PERSON_REFERENCES]
+    if not positive_references:
+        raise ValueError("at least one person reference is required")
     working, _sx, _sy = _resize_bounded(image_rgb)
     if _stopped(stop_event):
         return []
     anchors = _detector_anchors(working, detection_confidence)
     if _stopped(stop_event):
         return []
-    anchors.extend(_template_anchors(working, reference, stop_event))
+    for reference in positive_references:
+        anchors.extend(_template_anchors(working, reference, stop_event))
+        if _stopped(stop_event):
+            return []
     if _stopped(stop_event):
         return []
     ranked: list[PersonCandidate] = []
     for anchor in anchors:
         if _stopped(stop_event):
             return []
-        appearance = _appearance_similarity(working, reference, anchor)
+        appearance = max(
+            _appearance_similarity(working, reference, anchor)
+            for reference in positive_references
+        )
         if anchor.detector_score is not None:
-            score = .90 * appearance + .10 * max(0.0, min(1.0, anchor.detector_score))
+            positive_score = .90 * appearance + .10 * max(0.0, min(1.0, anchor.detector_score))
         else:
             template_evidence = max(0.0, min(1.0, ((anchor.template_score or 0.0) + 1) / 2))
-            score = .76 * appearance + .24 * template_evidence
-        if score >= MIN_APPEARANCE_SCORE:
+            positive_score = .76 * appearance + .24 * template_evidence
+        # Negative examples only adjust ordering.  Eligibility remains based on
+        # the positive evidence, so this cannot hard-reject a possible person.
+        if positive_score >= MIN_APPEARANCE_SCORE:
+            negative_similarity = max(
+                (_appearance_similarity(working, reference, anchor)
+                 for reference in negative_references),
+                default=0.0,
+            )
+            score = max(0.0, positive_score - MAX_NEGATIVE_PENALTY * negative_similarity)
             ranked.append(PersonCandidate(
                 box=anchor.box,
                 score=float(score),

@@ -67,6 +67,149 @@ def test_processing_is_bounded_and_normalized_geometry_survives_resize(monkeypat
     assert ranked[0].box == pytest.approx((.625, .20, .12, .18))
 
 
+def test_multi_reference_uses_best_positive_and_runs_detector_once(monkeypatch):
+    root = SimpleNamespace(name='root')
+    additional = SimpleNamespace(name='additional')
+    left = person_match._Anchor((.12, .10, .12, .18), 'face', .9)
+    right = person_match._Anchor((.70, .10, .12, .18), 'face', .9)
+    detector_calls = []
+    template_calls = []
+
+    def detector(_image, _confidence):
+        detector_calls.append(True)
+        return [left, right]
+
+    def templates(_image, reference, _stop):
+        template_calls.append(reference.name)
+        return []
+
+    scores = {
+        ('root', left.box): .72,
+        ('root', right.box): .30,
+        ('additional', left.box): .45,
+        ('additional', right.box): .91,
+    }
+    monkeypatch.setattr(person_match, '_detector_anchors', detector)
+    monkeypatch.setattr(person_match, '_template_anchors', templates)
+    monkeypatch.setattr(
+        person_match,
+        '_appearance_similarity',
+        lambda _image, reference, anchor: scores[(reference.name, anchor.box)],
+    )
+
+    ranked = person_match.rank_candidates_multi(
+        np.zeros((100, 160, 3), dtype=np.uint8),
+        [root, additional],
+        stop_event=threading.Event(),
+    )
+
+    assert ranked[0].box == right.box
+    assert ranked[0].appearance_score == pytest.approx(.91)
+    assert detector_calls == [True]
+    assert template_calls == ['root', 'additional']
+
+
+def test_negative_reference_reranks_without_rejecting_candidate(monkeypatch):
+    positive = SimpleNamespace(name='positive')
+    negative = SimpleNamespace(name='negative')
+    left = person_match._Anchor((.12, .10, .12, .18), 'face', .9)
+    right = person_match._Anchor((.70, .10, .12, .18), 'face', .9)
+    scores = {
+        ('positive', left.box): .82,
+        ('positive', right.box): .75,
+        ('negative', left.box): 1.0,
+        ('negative', right.box): 0.0,
+    }
+    monkeypatch.setattr(person_match, '_detector_anchors', lambda *_args: [left, right])
+    monkeypatch.setattr(person_match, '_template_anchors', lambda *_args: [])
+    monkeypatch.setattr(
+        person_match,
+        '_appearance_similarity',
+        lambda _image, reference, anchor: scores[(reference.name, anchor.box)],
+    )
+
+    ranked = person_match.rank_candidates_multi(
+        np.zeros((100, 160, 3), dtype=np.uint8),
+        [positive],
+        [negative],
+        threading.Event(),
+    )
+
+    assert [candidate.box for candidate in ranked] == [right.box, left.box]
+    assert len(ranked) == 2
+    assert ranked[1].score == pytest.approx(.82 * .9 + .9 * .1 - .15)
+
+
+def test_multi_reference_deduplicates_and_marks_close_result_ambiguous(monkeypatch):
+    reference = SimpleNamespace(name='positive')
+    primary = person_match._Anchor((.10, .10, .16, .20), 'face', .9)
+    duplicate = person_match._Anchor((.11, .11, .16, .20), 'face', .9)
+    rival = person_match._Anchor((.68, .10, .16, .20), 'face', .9)
+    scores = {primary.box: .80, duplicate.box: .79, rival.box: .77}
+    monkeypatch.setattr(person_match, '_detector_anchors', lambda *_args: [primary, duplicate, rival])
+    monkeypatch.setattr(person_match, '_template_anchors', lambda *_args: [])
+    monkeypatch.setattr(
+        person_match,
+        '_appearance_similarity',
+        lambda _image, _reference, anchor: scores[anchor.box],
+    )
+
+    ranked = person_match.rank_candidates_multi(
+        np.zeros((100, 160, 3), dtype=np.uint8),
+        [reference],
+        stop_event=threading.Event(),
+    )
+
+    assert [candidate.box for candidate in ranked] == [primary.box, rival.box]
+    assert ranked[0].ambiguous
+
+
+def test_person_assist_builds_optional_references_once_and_skips_unreadable(monkeypatch, tmp_path):
+    root_path = tmp_path / 'root.png'
+    extra_path = tmp_path / 'extra.png'
+    negative_path = tmp_path / 'negative.png'
+    for path, colour in ((root_path, 30), (extra_path, 90), (negative_path, 150)):
+        Image.fromarray(np.full((120, 120, 3), colour, dtype=np.uint8)).save(path)
+    target_path = tmp_path / 'target.png'
+    Image.fromarray(np.full((120, 120, 3), 60, dtype=np.uint8)).save(target_path)
+
+    built = []
+    captured = {}
+
+    def build(image, box, _stop):
+        descriptor = SimpleNamespace(value=int(image[0, 0, 0]), box=tuple(box))
+        built.append(descriptor)
+        return descriptor
+
+    def rank(_image, references, negatives, _stop, **_kwargs):
+        captured['positive'] = list(references)
+        captured['negative'] = list(negatives)
+        return [person_match.PersonCandidate((.2, .2, .2, .2), .8, .9, 'face', .8)]
+
+    monkeypatch.setattr(person_match, 'build_reference', build)
+    monkeypatch.setattr(person_match, 'rank_candidates_multi', rank)
+    proposal = group_face_assist.propose_person_faces(
+        AssistImage('root', 'root', str(root_path)),
+        REFERENCE_BOX,
+        [AssistTarget('target', 'target', str(target_path))],
+        threading.Event(),
+        additional_references=(
+            (AssistImage('missing', 'missing', str(tmp_path / 'missing.png')), REFERENCE_BOX),
+            *((AssistImage(f'extra-{index}', f'extra-{index}', str(extra_path)), REFERENCE_BOX)
+              for index in range(7)),
+        ),
+        negative_references=((AssistImage('negative', 'negative', str(negative_path)), REFERENCE_BOX),),
+    )[0]
+
+    assert [item.value for item in built] == [30, 90, 90, 90, 90, 90, 150]
+    assert len(captured['positive']) == person_match.MAX_PERSON_REFERENCES
+    assert len(captured['negative']) == 1
+    assert proposal.source_key == 'root'
+    assert proposal.level == 'review'
+    assert '6 张已确认正向参考' in proposal.reason
+    assert '1 张反向参考' in proposal.reason
+
+
 def test_person_assist_continues_after_missing_preview_and_never_marks_reliable(monkeypatch, tmp_path):
     reference_path = tmp_path / 'reference.png'
     target_path = tmp_path / 'target.png'
