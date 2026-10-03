@@ -217,6 +217,8 @@ class ReviewProject:
                 raise InterruptedError("已取消任务准备")
             group_fingerprints.setdefault(asset.group_id,[]).append((photo_id(asset),fingerprint(asset,crop_settings)))
         for asset in self._assets:
+            from .participant_review import needs_person_review
+            asset.person_review_pending = needs_person_review(asset, crop_settings.photos.get(crop_settings.key(asset), {}))
             pid=photo_id(asset)
             if pid in active:raise ValueError('重复原照片路径')
             fp=hashlib.sha256(json.dumps(sorted(group_fingerprints[asset.group_id])).encode()).hexdigest()
@@ -235,6 +237,7 @@ class ReviewProject:
             row.update(id=pid,stem=asset.stem,path=str(asset.primary_path.resolve()),
                 target_paths=[str(p.resolve()) for p in asset.rating_target_paths],
                 preview_path=str(asset.preview_path) if asset.preview_path else '',group_id=asset.group_id,
+                person_review_pending=asset.person_review_pending,
                 fingerprint=fp,technical_rejected=bool(asset.auto_rejected),
                 technical_reason=asset.screening_reason if asset.auto_rejected else '',
                 screening_reason=asset.screening_reason or '',
@@ -443,6 +446,7 @@ class ReviewProject:
 
     @classmethod
     def _photo_is_admitted(cls,photo):
+        if photo.get("person_review_pending"):return False
         if cls._technical_rejected(photo):return False
         if photo.get('clarity_version')!=CLARITY_POLICY_VERSION:return True
         if photo.get('focus_review') is True:return False
@@ -450,6 +454,7 @@ class ReviewProject:
 
     @classmethod
     def _asset_is_admitted(cls,asset):
+        if getattr(asset,"person_review_pending",False):return False
         if bool(getattr(asset,'auto_rejected',False)):return False
         version=getattr(asset,'clarity_version',None)
         if version!=CLARITY_POLICY_VERSION:return True

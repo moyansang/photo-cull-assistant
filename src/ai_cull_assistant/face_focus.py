@@ -53,6 +53,11 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
     settings = crop_settings or CropSettings()
     try:
         entry = settings.photos.get(settings.key(asset), {})
+        from .participant_review import needs_person_review
+        asset.person_review_pending = needs_person_review(asset, entry)
+        if asset.person_review_pending:
+            return ScreeningResult(False, 'person_selection_pending', False, analysis_version=VERSION,
+                                   focus_evidence={'state': 'uncertain', 'reasons': ['person_selection_pending']})
         # Keep the exact legacy detector call for untouched photos. This is
         # both faster and preserves existing single-primary-face cache keys.
         if 'selected_faces' in entry:

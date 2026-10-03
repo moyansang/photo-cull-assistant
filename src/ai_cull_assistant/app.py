@@ -876,6 +876,8 @@ class App(tk.Tk):
                 messagebox.showinfo("继续处理", "没有可继续的中断任务。", parent=self)
                 return
             mode = self._job_mode(interrupted)
+        if mode == "focus" and self._warn_unconfirmed_people():
+            return
         focus_work_exists = True
         if mode == "focus" and self.scan_result:
             from .lightroom_results import focus_review_status
@@ -1443,7 +1445,19 @@ class App(tk.Tk):
             self._restore_session()
             self._restore_processing_job()
 
+    def _warn_unconfirmed_people(self):
+        from .participant_review import needs_person_review
+        assets = self.scan_result.assets if self.scan_result else []
+        pending = [a for a in assets if needs_person_review(a, self.crop_settings.photos.get(self.crop_settings.key(a), {}))]
+        if not pending:
+            return False
+        messagebox.showinfo('人物待确认', f'{len(pending)} 张照片有多个人脸，尚未确认主体。请进入“检测/调整人脸框”，使用“下一张未标记”选择所有合影成员，再重新扫描修改过的图片。', parent=self)
+        self.next_step_var.set('推荐下一步：检测/调整人脸框 → 确认合影主体')
+        return True
+
     def _open_ai_review(self):
+        if self._warn_unconfirmed_people():
+            return
         if self._show_workspace_page('review'):
             return
         if self.updates.busy or (getattr(self, '_scan_thread', None) and self._scan_thread.is_alive()):

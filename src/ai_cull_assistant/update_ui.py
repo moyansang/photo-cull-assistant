@@ -12,6 +12,7 @@ class UpdateController:
     def __init__(self, app):
         self.app=app
         self.busy=False
+        self.checking=False
         self.events=queue.Queue()
         self.app.after(200,self.poll)
 
@@ -20,14 +21,15 @@ class UpdateController:
         self.app._set_update_busy(busy)
 
     def check(self, manual=False):
-        if self.busy: return
+        if self.busy or self.checking: return
         if self.app._processing_busy or getattr(self.app, '_review_busy', lambda: False)():
             if manual: messagebox.showinfo('检查更新','请先完成当前照片处理。',parent=self.app)
             return
-        self._set_busy(True)
+        # Metadata checks must not disable scanning or other main-window work.
+        self.checking=True
         def work():
-            try: self.events.put(('release',updater.latest_release(self.app.settings_dir / "update-cache.json", force=manual),manual))
-            except Exception as exc: self.events.put(('error',str(exc),manual))
+            try: self.events.put(('check_release',updater.latest_release(self.app.settings_dir / "update-cache.json", force=manual),manual))
+            except Exception as exc: self.events.put(('check_error',str(exc),manual))
         threading.Thread(target=work,daemon=True).start()
 
     def poll(self):
@@ -36,12 +38,15 @@ class UpdateController:
                 kind,value,manual=self.events.get_nowait()
             except queue.Empty:
                 break
-            if kind!='progress': self._set_busy(False)
-            if kind=='error':
+            if kind in ('check_release','check_error'):
+                self.checking=False
+            elif kind in ('download_error','ready'):
+                self._set_busy(False)
+            if kind in ('check_error','download_error'):
                 self.app._restore_scan_progress()
                 if manual: messagebox.showerror('检查/下载更新失败',value,parent=self.app)
                 else: self.app._log('自动检查更新失败，可稍后手动检查：'+value)
-            elif kind=='release':
+            elif kind=='check_release':
                 if value:
                     if not manual and self.app.no_updates_var.get():
                         continue
@@ -68,7 +73,8 @@ class UpdateController:
             self.app._restore_scan_progress()
             messagebox.showinfo('更新','源码运行模式不自动替换，请使用 Windows 便携版。',parent=self.app); return
         worker=getattr(self.app,'_scan_thread',None)
-        if (worker and worker.is_alive()) or any(isinstance(c,Toplevel) for c in self.app.winfo_children()):
+        if (self.app._processing_busy or getattr(self.app, '_review_busy', lambda: False)()
+                or (worker and worker.is_alive()) or any(isinstance(c,Toplevel) for c in self.app.winfo_children())):
             self.app._restore_scan_progress()
             messagebox.showinfo('更新','请先完成扫描并关闭编辑窗口，再更新。',parent=self.app); return
         self._set_busy(True)
@@ -81,5 +87,5 @@ class UpdateController:
                     last[0]=percent
                     self.events.put(('progress',percent,True))
             try: self.events.put(('ready',updater.prepare_update(release,application_dir(),progress),True))
-            except Exception as exc: self.events.put(('error',str(exc),True))
+            except Exception as exc: self.events.put(('download_error',str(exc),True))
         threading.Thread(target=work,daemon=True).start()

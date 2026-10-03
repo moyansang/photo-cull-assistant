@@ -25,10 +25,7 @@ from .ui_style import apply_page, set_button_style, COLORS
 from .window_layout import fit_window
 
 
-def needs_person_review(asset, entry):
-    if entry.get('hidden') or entry.get('manual_face') or 'selected_faces' in entry:
-        return False
-    return (getattr(getattr(asset, 'subject_features', None), 'candidate_count', None) or 0) > 1
+from .participant_review import needs_person_review, participant_labels
 
 
 def same_face_box(first, second):
@@ -190,6 +187,8 @@ class CropDialog(WorkspacePage):
             detail, width=1 if embedded else 190, height=86 if embedded else 100,
             background=COLORS["bg"], highlightthickness=0,
         )
+        self.participant_status = ttk.Label(self.detail_canvas.master, wraplength=230, justify="left")
+        self.participant_status.pack(fill="x")
         self.detail_canvas.pack(fill="both", expand=True)
         self.detail_canvas.bind("<Configure>", self.schedule_crop_preview)
 
@@ -846,6 +845,7 @@ class CropDialog(WorkspacePage):
         self._crop_rect = None
         self._current_head = None
         self.canvas.delete("all")
+        self.participant_status.configure(text="")
         self.detail_canvas.delete("all")
         self.photos = []
         if not self.assets:
@@ -960,6 +960,8 @@ class CropDialog(WorkspacePage):
                     fill=COLORS['text'],
                 )
             selected_count = len(self._selected_boxes)
+            saved_entry = self._original_photos.get(self.global_settings().key(asset), {})
+            self.participant_status.configure(text="\n".join(participant_labels(asset, entry, saved_entry, selected_count)))
             if 'selected_faces' in entry:
                 self.caption.configure(text=(
                     f"{self.index+1}/{len(self.assets)}  ·  {asset.stem}  ·  G{asset.group_id:03d}"

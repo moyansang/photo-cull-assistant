@@ -345,6 +345,9 @@ def review_focus(
 ) -> dict[str, Any]:
     """Ask the configured model for one photo's focus state, with safe caching."""
     settings = crop_settings or CropSettings()
+    from .participant_review import needs_person_review
+    if needs_person_review(asset, settings.photos.get(settings.key(asset), {})):
+        raise ValueError('人物待确认：请先选择合影主体并重新扫描，再进行 AI 复核。')
     participants = _subject_faces(asset, settings)
     if len(participants) > 1:
         results = []

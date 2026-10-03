@@ -7,12 +7,13 @@ def _value(item, key, default=None):
 
 
 def focus_review_status(asset):
+    if _value(asset, 'person_review_pending', False):return True
     rejected=bool(_value(asset,'auto_rejected',_value(asset,'technical_rejected',False)))
     reason=_value(asset,'screening_reason','') or _value(asset,'technical_reason','')
     if rejected or reason in {'subject_not_obviously_blurred', 'ai_focus_clear', 'ai_focus_blur'}:
         return False
     if reason in {
-        'ai_focus_uncertain', 'face_focus_uncertain', 'body_focus_uncertain', 'face_too_small_for_focus', 'no_reliable_face', 'head_only_localized',
+        'person_selection_pending', 'ai_focus_uncertain', 'face_focus_uncertain', 'body_focus_uncertain', 'face_too_small_for_focus', 'no_reliable_face', 'head_only_localized',
         'source_preview_geometry_mismatch', 'source_unreadable_for_focus',
         'preview_unreadable', 'preview_unavailable',
     }:
@@ -49,6 +50,7 @@ def focus_review_reason(photo):
     if details:return ' '.join(dict.fromkeys(details))
     reason=_value(photo,'screening_reason','') or _value(photo,'technical_reason','')
     labels={
+        'person_selection_pending':'检测到多个人脸，请先确认合影主体并重新扫描。',
         'ai_focus_uncertain':'AI 清晰度复核仍无法确定。',
         'face_focus_uncertain':'本地人脸清晰度证据不足或相互冲突。',
         'body_focus_uncertain':'身体清晰度实验检查无法确认主体主要部位清晰，请检查原图。',

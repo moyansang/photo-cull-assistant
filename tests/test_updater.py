@@ -260,6 +260,36 @@ def test_metadata_disconnect_retries_complete_read(monkeypatch):
     assert len(calls)==2 and broken.closed
 
 
+@pytest.mark.parametrize('wrapped', [False, True])
+def test_ssl_eof_retries_complete_read_without_weakening_tls(monkeypatch, wrapped):
+    import io
+    import ssl
+    import urllib.error
+    calls=[]
+    eof=ssl.SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol')
+    def request(url):
+        calls.append(url)
+        if len(calls)==1:
+            raise urllib.error.URLError(eof) if wrapped else eof
+        return io.BytesIO(b'{"ok": true}')
+    monkeypatch.setattr(u,'request',request)
+    monkeypatch.setattr(u.time,'sleep',lambda _:None)
+    assert u._release_info('https://example.test')=={'ok':True}
+    assert len(calls)==2
+
+
+def test_ssl_eof_failure_preserves_raw_diagnostics(monkeypatch):
+    import ssl
+    eof=ssl.SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol')
+    monkeypatch.setattr(u,'request',lambda url: (_ for _ in ()).throw(eof))
+    monkeypatch.setattr(u.time,'sleep',lambda _:None)
+    with pytest.raises(ConnectionError) as captured:
+        u.latest_release(force=True)
+    message=str(captured.value)
+    assert '原始诊断' in message
+    assert 'UNEXPECTED_EOF_WHILE_READING' in message
+
+
 def test_disconnect_fallback_does_not_poison_cache(monkeypatch,tmp_path):
     from http.client import RemoteDisconnected
     calls=[]

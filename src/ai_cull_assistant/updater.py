@@ -6,6 +6,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import ssl
 import stat
 import subprocess
 import tempfile
@@ -49,7 +50,8 @@ def _release_info(url, expected_size=None):
     return json.loads(payload)
 
 
-NETWORK_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead)
+NETWORK_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError,
+                  http.client.IncompleteRead, ssl.SSLEOFError)
 
 
 def _read_update_metadata(url):
@@ -64,7 +66,8 @@ def _read_update_metadata(url):
                 exc.close()
             else:
                 reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
-                transient = isinstance(reason, (TimeoutError, ConnectionError, http.client.IncompleteRead))
+                transient = isinstance(reason, (TimeoutError, ConnectionError,
+                                                 http.client.IncompleteRead, ssl.SSLEOFError))
             if attempt or not transient:
                 raise
             time.sleep(.5)
@@ -124,14 +127,15 @@ def latest_release(cache_path=None, force=False):
         except (OSError,ValueError,KeyError,TypeError): pass
     try:
         release=api_release()
-    except NETWORK_ERRORS:
+    except NETWORK_ERRORS as primary_exc:
         # Public release assets use the GitHub web/CDN route, not REST quota.
         try:
             release=checked_release(_release_info(f'https://github.com/{REPO}/releases/latest/download/update.json'))
         except NETWORK_ERRORS as exc:
-            raise ConnectionError('无法连接 GitHub 更新服务，已尝试备用更新地址。'
-                                  '请稍后重试，或检查代理与网络连接；当前程序和工作区未修改。'
-                                  f'\n网络错误：{exc}') from exc
+            raise ConnectionError('无法连接 GitHub 更新服务；已重试并尝试备用地址。'
+                                  '当前程序和工作区未修改。'
+                                  f'\n原始诊断（主地址）：{type(primary_exc).__name__}: {primary_exc}'
+                                  f'\n原始诊断（备用地址）：{type(exc).__name__}: {exc}') from exc
     if cache_path:
         try:
             path=Path(cache_path)

@@ -92,6 +92,8 @@ def recommended_next_step(workspace, assets, sheets_ready, job=None):
         return f'继续{label}（点击“继续处理”）'
     if assets is None:
         return '扫描图片'
+    if any(getattr(a, 'person_review_pending', False) for a in assets):
+        return '检测/调整人脸框 → 确认合影主体'
     counts = focus_counts(assets)
     if counts['dirty']:
         return '检测/调整人脸框 → 重新扫描修改过的图片'
