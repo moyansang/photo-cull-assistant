@@ -23,7 +23,7 @@ from .ui_help import install_control_help, install_page_chrome
 from .ui_style import set_button_style, apply_page, COLORS
 from .window_layout import fit_window
 
-LEVEL_LABELS = {'reliable': '可靠', 'review': '待确认', 'missing': '未找到'}
+LEVEL_LABELS = {'reliable': '可靠', 'review': '待确认', 'uncertain': '不确定', 'missing': '无可靠候选'}
 
 
 class GroupFaceAssistDialog(tk.Toplevel):
@@ -163,6 +163,10 @@ class GroupFaceAssistDialog(tk.Toplevel):
         inset.grid(row=0, column=2, sticky='nsew')
         self.inset = tk.Canvas(inset, width=180, height=190, background=COLORS['photo'], highlightthickness=0)
         self.inset.pack(fill='x')
+        self.candidate_picker = ttk.Combobox(inset, state='disabled', width=22)
+        self.candidate_picker.pack(fill='x', pady=(8, 0))
+        self.candidate_picker.bind('<<ComboboxSelected>>', self._choose_candidate)
+        self._candidate_picker_key = None
         self.reason_label = ttk.Label(inset, text='', wraplength=180, style='Muted.TLabel', justify='left')
         self.reason_label.pack(fill='x', pady=(10, 0))
         inset.bind('<Configure>', lambda e: self.reason_label.configure(wraplength=max(150, e.width-18)))
@@ -223,10 +227,15 @@ class GroupFaceAssistDialog(tk.Toplevel):
                 box = saved.get('box')
                 if box is not None and not group_face_assist.normalized_box_ok(box):
                     continue
-                row.update(box=box, accepted=saved.get('accepted', False), restored_decision=True,
-                           original_box=saved.get('original_box'),
+                decision = saved.get('status')
+                confirmed = decision == 'confirmed' and saved.get('accepted', False)
+                if decision == 'pending':
+                    box = None
+                row.update(box=box, accepted=confirmed,
+                           restored_decision=decision in ('confirmed', 'rejected', 'skipped', 'edited'),
+                           original_box=saved.get('original_box') if box is not None else None,
                            status={'confirmed':'已确认','rejected':'不是这个人','skipped':'跳过',
-                                   'edited':'手动调整'}.get(saved.get('status'), '待确认'))
+                                   'edited':'手动调整'}.get(decision, '待重新核对'))
         except (OSError, ValueError, KeyError, TypeError) as exc:
             self._feedback = None
             self._feedback_error = f'补框进度未能恢复，原记录保留。本次反馈不会保存：{exc}'
@@ -277,7 +286,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
             return
         row = self.rows[key]
         proposal = row.get('proposal')
-        original = row.get('original_box') or (proposal.box if proposal else None)
+        original = (row.get('original_box') or (proposal.box if proposal else None)) if row['box'] is not None else None
         status = 'confirmed' if row['accepted'] else {'不是这个人':'rejected','跳过':'skipped',
                  '手动调整':'edited'}.get(row['status'], 'pending')
         try:
@@ -412,7 +421,9 @@ class GroupFaceAssistDialog(tk.Toplevel):
             if row.get('original_box') is None:
                 row['original_box'] = proposal.box
             # A manually adjusted box always wins over a late proposal.
-            if row['box'] is None:
+            if (row['box'] is None and not row['accepted']
+                    and row['status'] not in ('手动调整', '跳过', '不是这个人')
+                    and not row.get('restored_decision')):
                 row['box'] = proposal.box
             self._update_row(proposal.target_key)
             if self.tree.selection() and self.tree.selection()[0] == proposal.target_key:
@@ -593,7 +604,15 @@ class GroupFaceAssistDialog(tk.Toplevel):
         if hasattr(self.tree, '_filename_tip'):
             self.tree._filename_tip.text = target.stem
         proposal = row['proposal']
-        reason = proposal.reason if proposal else '尚未计算'
+        choices = proposal.candidate_boxes if proposal else ()
+        self._candidate_picker_key = key
+        self.candidate_picker.configure(
+            values=tuple(f'待核对候选 {index + 1}' for index in range(len(choices))),
+            state='readonly' if choices and not self._awaiting_done else 'disabled',
+        )
+        self.candidate_picker.set('选择候选后仍需确认' if choices else '可直接在图上画框')
+        reason = proposal.reason if proposal else (
+            '恢复的未确认候选需要重新核对；目标可能不在本图' if row.get('status') == '待重新核对' else '尚未计算')
         if row['accepted']:
             reason = '已确认；点击采用选中候选后写入人脸编辑草稿'
         elif row['status'] == '手动调整':
@@ -675,6 +694,17 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self._save_feedback(row_id)
         self._update_row(row_id)
         self.show_current()
+
+    def _choose_candidate(self, _event=None):
+        key = self._current_key()
+        if self._awaiting_done or key is None or key != self._candidate_picker_key:
+            return
+        proposal = self.rows[key].get('proposal')
+        index = self.candidate_picker.current()
+        if proposal is None or not 0 <= index < len(proposal.candidate_boxes):
+            return
+        # Inspection is never a confirmation or a new positive reference.
+        self._set_manual_box(proposal.candidate_boxes[index])
 
     def confirm_current(self):
         if self._awaiting_done:

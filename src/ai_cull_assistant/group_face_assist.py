@@ -37,10 +37,11 @@ class FaceProposal:
     target_key: str
     source_key: str
     box: tuple[float, float, float, float] | None
-    level: str  # reliable / review / missing
+    level: str  # reliable / review / uncertain / missing
     match_score: float | None
     detector_score: float | None
     reason: str
+    candidate_boxes: tuple[tuple[float, float, float, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -397,8 +398,8 @@ def propose_person_faces(
     """Find appearance-similar person locations across preview images.
 
     This is a bounded, offline review aid rather than identity recognition.
-    Every candidate remains ``review`` even when detector and appearance
-    evidence are strong.  The signature intentionally matches
+    Candidates remain ``review`` or ``uncertain`` and never establish identity.
+    Uncertain proposals retain inspectable alternatives without a default box.  The signature intentionally matches
     :func:`propose_group_faces` so UI workers can switch modes without a
     separate lifecycle.
     """
@@ -490,7 +491,7 @@ def propose_person_faces(
                 if stop_event.is_set():
                     break
                 if not candidates:
-                    proposal = missing('未找到足够强的外观相似候选')
+                    proposal = missing('没有可靠候选：未找到足够的外观证据；目标可能不在本图，也可能漏检，请手动核对')
                 else:
                     best = candidates[0]
                     source_text = {
@@ -498,16 +499,35 @@ def propose_person_faces(
                         'head': '头部检测',
                         'template': '局部模板',
                     }.get(best.source, '候选检测')
-                    ambiguity = '；有分数接近的其他候选' if best.ambiguous else ''
+                    reason_text = {
+                        'reference_achromatic': '参考缺少可区分的颜色信息',
+                        'candidate_achromatic': '候选缺少可区分的颜色信息',
+                        'reference_low_texture': '参考纹理不足',
+                        'candidate_low_texture': '候选纹理不足',
+                        'near_threshold': '外观证据接近候选门槛',
+                        'negative_conflict': '候选与已排除的参考同样或更相似',
+                        'template_only': '只有局部模板证据，缺少独立检测支持',
+                        'ambiguous': '多个候选分数接近',
+                    }
+                    reasons = tuple(getattr(best, 'review_reasons', ()))
+                    if best.ambiguous and 'ambiguous' not in reasons:
+                        reasons += ('ambiguous',)
+                    uncertain = bool(reasons)
+                    explanation = '；'.join(reason_text.get(reason, reason) for reason in reasons)
+                    guidance = (
+                        f'不确定：{explanation}；目标可能不在本图。请从待核对候选中手动选择或直接画框，再确认'
+                        if uncertain else '目标仍可能不在本图，请逐张核对'
+                    )
                     proposal = FaceProposal(
                         target.key,
                         reference.key,
-                        best.box,
-                        'review',
+                        None if uncertain else best.box,
+                        'uncertain' if uncertain else 'review',
                         round(best.score, 3),
                         round(best.detector_score, 3) if best.detector_score is not None else None,
-                        f'{reference_summary}；{source_text}结合脸/头部/上身颜色与纹理排序{ambiguity}；'
-                        '请人工确认，不代表身份识别',
+                        f'{reference_summary}；{source_text}结合脸/头部/上身颜色与纹理排序；'
+                        f'{guidance}；分数不是身份概率，请人工确认，不代表身份识别',
+                        tuple(candidate.box for candidate in candidates),
                     )
             except Exception as exc:  # noqa: BLE001 - one damaged preview must not stop the batch
                 proposal = missing(f'本张检查失败：{exc}')

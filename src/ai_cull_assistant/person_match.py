@@ -7,7 +7,7 @@ only a short, ranked list for human review.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 import threading
 
@@ -39,6 +39,7 @@ class PersonReference:
     upper_body: RegionDescriptor | None
     template_gray: np.ndarray
     template_edge: np.ndarray
+    quality_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class PersonCandidate:
     appearance_score: float
     template_score: float | None = None
     ambiguous: bool = False
+    review_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -170,6 +172,26 @@ def _gradient(gray: np.ndarray) -> np.ndarray:
     return cv2.magnitude(gx, gy)
 
 
+def _information_flags(image_rgb: np.ndarray, box) -> tuple[str, ...]:
+    """Describe missing evidence, never estimate an identity probability.
+
+    Two digital levels tolerate rounding in replicated grayscale. The texture
+    floor follows the existing group-assist flat-template check. These are
+    review diagnostics, not thresholds fitted to an identity test set.
+    """
+    regions = [_crop(image_rgb, _relative_box(box, kind=kind))
+               for kind in ("head", "upper_body")]
+    regions = [region for region in regions if region is not None]
+    if not regions:
+        return ("low_texture",)
+    flags = []
+    if all(int(np.ptp(region.astype(np.int16), axis=2).max()) <= 2 for region in regions):
+        flags.append("achromatic")
+    if all(float(cv2.cvtColor(region, cv2.COLOR_RGB2GRAY).std()) < 2 for region in regions):
+        flags.append("low_texture")
+    return tuple(flags)
+
+
 def build_reference(
     image_rgb: np.ndarray,
     reference_box,
@@ -196,6 +218,7 @@ def build_reference(
         upper_body=_descriptor(working, _relative_box(box, kind="upper_body")),
         template_gray=gray,
         template_edge=_gradient(gray),
+        quality_flags=_information_flags(working, box),
     )
 
 
@@ -367,10 +390,12 @@ def rank_candidates_multi(
     for anchor in anchors:
         if _stopped(stop_event):
             return []
-        appearance = max(
+        similarities = [
             _appearance_similarity(working, reference, anchor)
             for reference in positive_references
-        )
+        ]
+        best_index = max(range(len(similarities)), key=similarities.__getitem__)
+        appearance = similarities[best_index]
         if anchor.detector_score is not None:
             positive_score = .90 * appearance + .10 * max(0.0, min(1.0, anchor.detector_score))
         else:
@@ -385,6 +410,15 @@ def rank_candidates_multi(
                 default=0.0,
             )
             score = max(0.0, positive_score - MAX_NEGATIVE_PENALTY * negative_similarity)
+            reasons = ["reference_" + flag for flag in
+                       getattr(positive_references[best_index], "quality_flags", ())]
+            reasons.extend("candidate_" + flag for flag in _information_flags(working, anchor.box))
+            if positive_score < MIN_APPEARANCE_SCORE + AMBIGUOUS_MARGIN:
+                reasons.append("near_threshold")
+            if negative_references and negative_similarity >= appearance:
+                reasons.append("negative_conflict")
+            if anchor.detector_score is None:
+                reasons.append("template_only")
             ranked.append(PersonCandidate(
                 box=anchor.box,
                 score=float(score),
@@ -392,6 +426,7 @@ def rank_candidates_multi(
                 source=anchor.source,
                 appearance_score=float(appearance),
                 template_score=anchor.template_score,
+                review_reasons=tuple(reasons),
             ))
     deduplicated: list[PersonCandidate] = []
     for candidate in sorted(ranked, key=lambda item: item.score, reverse=True):
@@ -404,13 +439,8 @@ def rank_candidates_multi(
     ambiguous = len(deduplicated) > 1 and deduplicated[1].score >= deduplicated[0].score - AMBIGUOUS_MARGIN
     if ambiguous:
         first = deduplicated[0]
-        deduplicated[0] = PersonCandidate(
-            box=first.box,
-            score=first.score,
-            detector_score=first.detector_score,
-            source=first.source,
-            appearance_score=first.appearance_score,
-            template_score=first.template_score,
-            ambiguous=True,
+        deduplicated[0] = replace(
+            first, ambiguous=True,
+            review_reasons=first.review_reasons + ("ambiguous",),
         )
     return deduplicated

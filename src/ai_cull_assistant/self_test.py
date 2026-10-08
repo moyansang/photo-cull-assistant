@@ -228,9 +228,69 @@ def run(report_path: str) -> None:
             assert {a.stem for a in restored.assets} == set(before)
             report['added_only_scan_and_deleted_photo_restore'] = True
 
+        _person_review_check(report)
         report.update(ok=True, opencv=cv2.__version__, rawpy=rawpy.__version__)
     except Exception:
         report.update(ok=False, error=traceback.format_exc())
     Path(report_path).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if not report["ok"]:
         raise SystemExit(1)
+
+
+def _person_review_check(report):
+    """Exercise the shipped review UI with generated files and isolated feedback."""
+    from datetime import datetime
+    import tkinter as tk
+    import numpy as np
+    from PIL import Image
+    from . import person_match
+    from .group_face_assist import AssistImage, AssistTarget, FaceProposal
+    from .group_face_assist_dialog import GroupFaceAssistDialog
+    from .models import PhotoAsset
+
+    class ManualWorkerDialog(GroupFaceAssistDialog):
+        def _start_worker(self):
+            pass  # Deterministic proposal delivery, no live worker in this UI check.
+
+    ui = tk.Tk()
+    ui.withdraw()
+    try:
+        with tempfile.TemporaryDirectory(prefix='aicull-person-review-') as folder:
+            root = Path(folder)
+            assets = {}
+            for key in ('ref', 'target'):
+                path = root / (key + '.png')
+                Image.new('RGB', (160, 160), 'gray').save(path)
+                assets[key] = PhotoAsset(key, path, path, None, path, datetime.now(), '.png', preview_path=path)
+            box = (.2, .1, .25, .25)
+            ref = person_match.build_reference(np.full((160, 160, 3), 120, dtype=np.uint8), box)
+            assert set(ref.quality_flags) == {'achromatic', 'low_texture'}
+            applied = []
+            def create():
+                return ManualWorkerDialog(ui, AssistImage('ref', 'ref', str(assets['ref'].primary_path)), box,
+                    [AssistTarget('target', 'target', str(assets['target'].primary_path))],
+                    lambda *items: (applied.append(items) or (1, [])), target_assets=assets,
+                    workspace=root / 'workspace', input_dir=root)
+            dialog = create()
+            dialog._handle_message(('proposal', 1, 1, FaceProposal('target', 'ref', None, 'uncertain',
+                .9, .9, '不确定；目标可能不在本图', (box,))))
+            dialog.update()
+            assert dialog.rows['target']['box'] is None and not dialog.rows['target']['accepted']
+            assert not dialog._feedback.samples() and not applied
+            dialog.candidate_picker.current(0)
+            dialog._choose_candidate()
+            assert dialog.rows['target']['box'] == box and not dialog.rows['target']['accepted']
+            dialog.confirm_current()
+            assert len(dialog._feedback.samples()) == 1 and not applied
+            dialog.destroy()
+            dialog = create()
+            assert dialog.rows['target']['accepted'] and len(dialog._feedback.samples()) == 1
+            dialog._finished = True
+            dialog.accept_selected()
+            assert len(applied) == 1
+            report['person_review_uncertainty_choice_confirmation_restore'] = True
+    finally:
+        for child in ui.winfo_children():
+            if isinstance(child, tk.Toplevel):
+                child.destroy()
+        ui.destroy()
