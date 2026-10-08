@@ -398,7 +398,11 @@ class App(tk.Tk):
         if self._active_workspace and not self._workspace_cleared and not self._workspace_blocked:
             self._compact_completed_workspace(self._active_workspace)
         for timer in self.tk.splitlist(self.tk.call('after', 'info')):
-            self.after_cancel(timer)
+            # Timers may belong to children (for example hover tooltips).
+            # Root.after_cancel deletes their Tcl command without updating
+            # the child's registry, causing a second deletion at destroy.
+            # Cancel scheduling only; each owning widget frees its command.
+            self.tk.call('after', 'cancel', timer)
         self.destroy()
 
     def _compact_completed_workspace(self, workspace):

@@ -381,3 +381,17 @@ def test_clear_failure_restores_controls(tmp_path, monkeypatch):
         assert str(app.clear_log_button.cget('state')) == 'normal'
     finally:
         app._close()
+
+
+def test_close_cancels_child_timer_without_deleting_its_command_twice(tmp_path):
+    import ttkbootstrap as bootstrap
+    app = make_app(tmp_path)
+    called = []
+    button = tk.ttk.Button(app, text='pending child timer')
+    button.after(60000, lambda: called.append(True))
+    command = button._tclCommands[-1]
+    assert app.tk.call('info', 'commands', command)
+    app._close()
+    assert not called
+    assert bootstrap.Style.instance is None
+    assert button._tclCommands is None

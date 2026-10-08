@@ -114,6 +114,10 @@ def test_page_space_and_return_actions(tmp_path, monkeypatch):
             found.extend(buttons(child))
         return found
     try:
+        # Hosted desktops may be 1024x768; Tk's default maxsize clamps
+        # both requested heights. This test checks layout growth, while
+        # screen fitting is independently tested in test_window_layout.
+        app.maxsize(max(1200, app.maxsize()[0]), max(940, app.maxsize()[1]))
         app.geometry('1100x780'); app.update()
         small_log = app.log_text.winfo_height()
         app.geometry('1200x940'); app.update()
