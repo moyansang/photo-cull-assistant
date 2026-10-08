@@ -146,6 +146,8 @@ class AssistFeedback:
             session = cluster.get("session")
             if not isinstance(session, dict):
                 raise ValueError("session must be an object")
+            if session.get("matching_mode", "appearance") not in ("appearance", "identity"):
+                raise ValueError("invalid matching mode")
             position = session.get("position")
             if position is not None:
                 _identifier(position, label="position")
@@ -323,6 +325,15 @@ class AssistFeedback:
         self._cluster["negative_exclusions"] = exclusions
         self._save()
         return {"samples": positive_count, "rejected": len(exclusions)}
+
+    def matching_mode(self):
+        return self._cluster['session'].get('matching_mode', 'appearance')
+
+    def set_matching_mode(self, mode):
+        if mode not in ('appearance', 'identity'):
+            raise ValueError('invalid matching mode')
+        self._cluster['session']['matching_mode'] = mode
+        self._save()
 
     def get_position(self):
         return self._cluster["session"]["position"]

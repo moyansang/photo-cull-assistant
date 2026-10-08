@@ -20,6 +20,7 @@ def run(report_path: str) -> None:
 
         assert detect(np.zeros((320, 320, 3), np.uint8)) == []
         report["yunet_model_inference"] = True
+        _identity_model_check(report)
         import sys
         if getattr(sys, 'frozen', False):
             from .body_focus import _get_models
@@ -272,6 +273,8 @@ def _person_review_check(report):
                     lambda *items: (applied.append(items) or (1, [])), target_assets=assets,
                     workspace=root / 'workspace', input_dir=root)
             dialog = create()
+            dialog.mode_var.set('人脸特征（实验性）')
+            dialog._mode_changed()
             dialog._handle_message(('proposal', 1, 1, FaceProposal('target', 'ref', None, 'uncertain',
                 .9, .9, '不确定；目标可能不在本图', (box,))))
             dialog.update()
@@ -285,12 +288,37 @@ def _person_review_check(report):
             dialog.destroy()
             dialog = create()
             assert dialog.rows['target']['accepted'] and len(dialog._feedback.samples()) == 1
+            assert dialog.mode_var.get() == '人脸特征（实验性）'
             dialog._finished = True
             dialog.accept_selected()
             assert len(applied) == 1
             report['person_review_uncertainty_choice_confirmation_restore'] = True
+            report['identity_mode_review_choice_confirmation_restore'] = True
     finally:
         for child in ui.winfo_children():
             if isinstance(child, tk.Toplevel):
                 child.destroy()
         ui.destroy()
+
+
+def _identity_model_check(report):
+    """Real CPU SFace inference; optional local-only photo verifies YuNet alignment."""
+    import os
+    import numpy as np
+    from .face_identity import IdentityEngine, MODEL_SHA256
+    engine = IdentityEngine()
+    try:
+        feature = engine.recognizer.feature(np.zeros((112, 112, 3), np.uint8)).copy()
+        assert feature.size == 128 and np.isfinite(feature).all() and np.linalg.norm(feature) > 0
+        report['sface_cpu_model_inference'] = True
+        report['sface_model_sha256'] = MODEL_SHA256
+        sample = os.environ.get('AI_CULL_SELF_TEST_FACE_IMAGE')
+        if sample:
+            from .group_face_assist import load_rgb
+            rgb = load_rgb(sample)
+            reference = engine.reference(rgb, (0., 0., 1., 1.))
+            faces = engine.faces(rgb)
+            assert len(faces) == 1 and float(np.dot(reference, faces[0].vector)) > .99
+            report['sface_real_photo_detection_alignment_cpu'] = True
+    finally:
+        engine.clear()

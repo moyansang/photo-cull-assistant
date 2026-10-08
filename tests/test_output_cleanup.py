@@ -24,7 +24,8 @@ def _redirect_directory(link: Path, target: Path) -> None:
     created = subprocess.run(
         ["cmd", "/c", "mklink", "/J", str(link), str(target)],
         capture_output=True,
-        text=True,
+        # cmd uses the Windows console code page, not Python UTF-8 mode.
+        # Keep diagnostic bytes intact; assertions only need the return code.
     )
     if created.returncode:
         pytest.skip(f"directory junctions unavailable: {created.stderr or created.stdout}")

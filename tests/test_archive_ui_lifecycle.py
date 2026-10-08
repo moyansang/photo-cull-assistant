@@ -93,7 +93,9 @@ def test_close_after_scan_only_restores_groups_and_face_settings(tmp_path):
         assert reopened.scan_result.assets[0].subject_features.face == (0.2, 0.1, 0.4, 0.5)
         assert reopened.crop_settings.scale_factor == 1.35
         assert reopened.crop_settings.shift_factor == -0.2
-        assert reopened._next_step_after_restore() == "检测/调整人脸框"
+        from ai_cull_assistant.workspace_summary import focus_counts
+        assert focus_counts(reopened.scan_result.assets)['pending'] == 1
+        assert reopened._next_step_after_restore() == "AI 复核"
     finally:
         reopened._close()
 

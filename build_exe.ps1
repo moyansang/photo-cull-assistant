@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = "Stop"
+﻿param([switch]$UseExistingEnvironment)
+$ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 . "$PSScriptRoot/release_version.ps1"
@@ -28,12 +29,24 @@ if (-not (Test-Path .venv)) {
 }
 
 . .\.venv\Scripts\Activate.ps1
+if (-not $UseExistingEnvironment) {
 python -m pip install --upgrade pip setuptools wheel
 if ($LASTEXITCODE -ne 0) { throw "更新构建依赖失败" }
 pip install -e ".[raw]"
 if ($LASTEXITCODE -ne 0) { throw "安装应用依赖失败" }
 pip install "pyinstaller>=6.10"
 if ($LASTEXITCODE -ne 0) { throw "安装 PyInstaller 失败" }
+}
+
+# Optional complete Tcl/Tk runtimes for locally repaired Python installations.
+$RuntimeData = @()
+if ($env:TCL_LIBRARY -and $env:TK_LIBRARY) {
+    if (-not (Test-Path (Join-Path $env:TCL_LIBRARY "init.tcl"))) { throw "Invalid TCL_LIBRARY" }
+    if (-not (Test-Path (Join-Path $env:TK_LIBRARY "tk.tcl"))) { throw "Invalid TK_LIBRARY" }
+    $RuntimeData += @("--add-data", "$($env:TCL_LIBRARY);_tcl_data", "--add-data", "$($env:TK_LIBRARY);_tk_data")
+    $TclModules = Join-Path (Split-Path $env:TCL_LIBRARY -Parent) "tcl8"
+    if (Test-Path $TclModules) { $RuntimeData += @("--add-data", "$TclModules;tcl8") }
+}
 
 # PyInstaller handles replacement of its own output with --noconfirm.
 # Resolve and verify optional body-model assets at build time, never during scans.
@@ -57,6 +70,7 @@ pyinstaller `
     --collect-binaries rawpy `
     --hidden-import rawpy `
     --hidden-import exifread `
+    @RuntimeData `
     launcher.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 构建失败" }
 

@@ -23,6 +23,8 @@ from .ui_help import install_control_help, install_page_chrome
 from .ui_style import set_button_style, apply_page, COLORS
 from .window_layout import fit_window
 
+MODE_LABELS = {'外观（颜色/纹理）': 'appearance', '人脸特征（实验性）': 'identity'}
+
 LEVEL_LABELS = {'reliable': '可靠', 'review': '待确认', 'uncertain': '不确定', 'missing': '无可靠候选'}
 
 
@@ -72,7 +74,11 @@ class GroupFaceAssistDialog(tk.Toplevel):
             'box': None, 'accepted': False, 'status': '排队中',
         } for target in self.targets}
 
+        self._generation = 0
+        self._run_mode = 'appearance'
         self._init_feedback(workspace, input_dir)
+        saved_mode = self._feedback.matching_mode() if self._feedback else 'appearance'
+        self.mode_var = tk.StringVar(self, next(label for label, mode in MODE_LABELS.items() if mode == saved_mode))
         self._reference_samples = self._feedback.samples() if self._feedback else []
         self._negative_samples = self._feedback.rejected() if self._feedback else []
         install_page_chrome(self, "assist")
@@ -87,6 +93,17 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.stop_button = ttk.Button(header, text='停止查找', command=self.stop_search)
         self.stop_button.pack(side='right')
         ttk.Button(header, text='重新查找未确认', command=self._retry_unconfirmed).pack(side='right', padx=6)
+
+        mode_bar = ttk.Frame(self, padding=(12, 4))
+        mode_bar.pack(side='top', fill='x')
+        ttk.Label(mode_bar, text='查找方式').pack(side='left', padx=(0, 8))
+        self.mode_picker = ttk.Combobox(mode_bar, textvariable=self.mode_var,
+                                       values=tuple(MODE_LABELS), state='readonly', width=22)
+        self.mode_picker.pack(side='left')
+        self.mode_picker.bind('<<ComboboxSelected>>', self._mode_changed)
+        self.mode_help = ttk.Label(mode_bar, wraplength=700, style='Muted.TLabel', justify='left')
+        self.mode_help.pack(side='left', padx=10, fill='x', expand=True)
+        self._update_mode_help()
 
         footer = ttk.Frame(self, padding=(12, 4, 12, 10))
         footer.pack(side='bottom', fill='x')
@@ -327,6 +344,25 @@ class GroupFaceAssistDialog(tk.Toplevel):
             except (OSError, ValueError):
                 pass
 
+    def _update_mode_help(self):
+        identity = MODE_LABELS[self.mode_var.get()] == 'identity'
+        self.mode_help.configure(text=(
+            '离线比对人脸特征；需清晰人脸。门槛为实验默认值，近分/低分需手选；选择不等于确认。'
+            if identity else '按颜色、纹理和头部位置查找；衣服相似可能混淆，逐张确认后才采用。'))
+
+    def _mode_changed(self, _event=None):
+        if self._worker and self._worker.is_alive():
+            self.mode_var.set(next(label for label, mode in MODE_LABELS.items() if mode == self._run_mode))
+            messagebox.showinfo('补齐人脸', '请等待当前查找停止，再切换方式。', parent=self)
+            return
+        self._update_mode_help()
+        if self._feedback:
+            try:
+                self._feedback.set_matching_mode(MODE_LABELS[self.mode_var.get()])
+            except (OSError, ValueError) as exc:
+                messagebox.showwarning('查找方式未保存', str(exc), parent=self)
+        self._retry_unconfirmed()
+
     # ------------------------------------------------------------------ worker
 
     def _retry_unconfirmed(self):
@@ -339,7 +375,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         for key, row in self.rows.items():
             row['restored_decision'] = bool(row['accepted'])
             if not row['accepted']:
-                row.update(box=None, proposal=None, status='排队中')
+                row.update(box=None, proposal=None, original_box=None, status='排队中')
                 self._update_row(key)
         self._stop.clear()
         self._finished = False
@@ -350,33 +386,45 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self._start_worker()
 
     def _start_worker(self):
+        if self._worker and self._worker.is_alive():
+            return
+        self._generation += 1
+        self._run_mode = MODE_LABELS[self.mode_var.get()]
+        self.mode_picker.configure(state='disabled')
         self._worker = threading.Thread(
             target=self._work, name='group-face-assist', daemon=True)
         self._worker.start()
         self._poll_token = self.after(80, self._poll)
 
     def _work(self):
+        generation = self._generation
+        def emit(message):
+            self._messages.put(('run', generation, message))
         try:
             prepared_targets = []
             for index, target in enumerate(self.targets, 1):
                 if self._stop.is_set():
                     break
-                self._messages.put(('preparing', index, len(self.targets)))
+                emit(('preparing', index, len(self.targets)))
                 prepared = self._prepare_target(target)
                 if not self.rows[target.key].get("restored_decision"):
                     prepared_targets.append(prepared)
                 if prepared is not target:
-                    self._messages.put(('target_prepared', prepared))
-            group_face_assist.propose_person_faces(
+                    emit(('target_prepared', prepared))
+            matcher = group_face_assist.propose_person_faces
+            if self._run_mode == 'identity':
+                from .face_identity import propose_identity_faces
+                matcher = propose_identity_faces
+            matcher(
                 self.reference, self.reference_box, prepared_targets, self._stop,
-                on_progress=lambda done, total, proposal: self._messages.put(
+                on_progress=lambda done, total, proposal: emit(
                     ('proposal', done, total, proposal)),
                 detection_confidence=self.detection_confidence,
                 **self._matching_references(),
             )
-            self._messages.put(('done', None))
+            emit(('done', None))
         except Exception as exc:  # noqa: BLE001 - surfaced on the main thread
-            self._messages.put(('error', str(exc)))
+            emit(('error', str(exc)))
 
     def _prepare_target(self, target):
         if target.preview_path and Path(target.preview_path).is_file():
@@ -407,6 +455,10 @@ class GroupFaceAssistDialog(tk.Toplevel):
             self._poll_token = self.after(80, self._poll)
 
     def _handle_message(self, message):
+        if message[0] == 'run':
+            if message[1] != self._generation:
+                return
+            message = message[2]
         kind = message[0]
         if kind == 'preparing':
             _, done, total = message
@@ -453,6 +505,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
             if self.tree.exists(key):
                 self.tree.item(key, image=photo or '')
         elif kind == 'done':
+            if hasattr(self, 'mode_picker'):self.mode_picker.configure(state='readonly')
             self._finished = True
             self.stop_button.configure(state='disabled')
             for key, row in self.rows.items():
@@ -463,6 +516,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
                 self._awaiting_done = False
                 self._finish_accept()
         elif kind == 'error':
+            if hasattr(self, 'mode_picker'):self.mode_picker.configure(state='readonly')
             self._finished = True
             self.stop_button.configure(state='disabled')
             if not self._closed:

@@ -18,6 +18,14 @@ jobs:
         shell: pwsh
         run: |
           .\make_portable_zip.ps1
+      - name: Run complete regression suite
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe -m pip install pytest lupa
+          if ($LASTEXITCODE -ne 0) { throw 'Test dependency installation failed' }
+          $env:PYTHONPATH = Join-Path $env:GITHUB_WORKSPACE 'src'
+          .\.venv\Scripts\python.exe -m pytest tests -q --junitxml=regression-tests.xml
+          if ($LASTEXITCODE -ne 0) { throw 'Regression suite failed' }
       - name: Verify portable executable
         shell: pwsh
         run: |
@@ -39,6 +47,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             smoke-test.json
+            regression-tests.xml
             build/AI选片助手/warn-*.txt
       - uses: actions/upload-artifact@v4
         with:

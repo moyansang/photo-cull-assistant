@@ -295,6 +295,7 @@ def test_existing_ai_task_opens_even_when_homepage_sheets_missing(tmp_path,monke
                           _sheets_ready=lambda:False, _show_workspace_page=lambda name:False,
                           _page_host=None, _mount_workspace_page=lambda *args:None,
                           _review_progress=lambda *args:None, _log=lambda *args:None)
+    owner._warn_unconfirmed_people = lambda: App._warn_unconfirmed_people(owner)
     App._open_ai_review(owner)
     assert opened==[task['id']] and not notices
 

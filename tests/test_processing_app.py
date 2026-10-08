@@ -236,7 +236,9 @@ def test_continue_from_saved_job_updates_main_window(tmp_path):
         assert not app._processing_busy
         assert app.scan_result and len(app.scan_result.assets)==1
         assert app.progress_var.get()==100
-        assert app.next_step_var.get()=='推荐下一步：AI 选片与导出'
+        from ai_cull_assistant.workspace_summary import focus_counts
+        assert focus_counts(app.scan_result.assets)['pending'] == 1
+        assert app.next_step_var.get()=='推荐下一步：AI 复核'
         log=app.log_text.get('1.0','end')
         assert '初筛技术模糊/抖动弃置 0 张' in log
         assert '剩余可进入 AI 选片 0 张' in log
@@ -320,7 +322,9 @@ def test_staged_scan_then_contact_sheet_flow(tmp_path):
             app.update();time.sleep(.01)
         assert app.scan_result and not app.scan_result.main_pages
         assert not app._sheets_ready()
-        assert app.next_step_var.get()=='推荐下一步：检测/调整人脸框'
+        from ai_cull_assistant.workspace_summary import focus_counts
+        assert focus_counts(app.scan_result.assets)['pending'] == 1
+        assert app.next_step_var.get()=='推荐下一步：AI 复核'
 
         app._generate_contact_sheets()
         deadline=time.monotonic()+15
@@ -328,7 +332,9 @@ def test_staged_scan_then_contact_sheet_flow(tmp_path):
             app.update();time.sleep(.01)
         assert app.scan_result.main_pages
         assert app._sheets_ready()
-        assert app.next_step_var.get()=='推荐下一步：AI 选片与导出'
+        from ai_cull_assistant.workspace_summary import focus_counts
+        assert focus_counts(app.scan_result.assets)['pending'] == 1
+        assert app.next_step_var.get()=='推荐下一步：AI 复核'
     finally:app._close()
 def test_homepage_reopens_one_api_editor_and_restores_owner_grab(tmp_path):
     app = make_app(tmp_path)
