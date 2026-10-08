@@ -35,7 +35,7 @@ from .window_layout import fit_window
 from .ui_help import install_page_chrome, install_control_help
 from .ui_style import set_button_style, apply_page
 from .workspace_layout import workspace_path
-from .workspace_log import append_log, visible_log
+from .workspace_log import append_log, visible_log, HISTORY_BOUNDARY
 from dataclasses import asdict, replace
 from .workflow import (
     ScanResult,
@@ -135,11 +135,23 @@ class App(tk.Tk):
             return
         workspace = Path(self.workspace_var.get())
         logfile = workspace_path(workspace, 'session.log')
-        if restore_log and logfile.exists():
+        log_context = (str(logfile.resolve()), self._log_epoch)
+        if restore_log and getattr(self, '_restored_log_context', None) != log_context:
             try:
-                self.log_text.configure(state="normal")
-                self.log_text.insert("end", visible_log(logfile.read_text('utf-8')))
-                self.log_text.configure(state="disabled")
+                history = visible_log(logfile.read_text('utf-8')) if logfile.exists() else ''
+                if history.strip():
+                    # Display-only boundary: persisted history stays unchanged.
+                    # Insert synchronously before queued restoration summaries.
+                    self.log_text.configure(state="normal")
+                    self.log_text.insert("end", history)
+                    if not history.endswith('\n'):
+                        self.log_text.insert("end", "\n")
+                    if history.rstrip().splitlines()[-1] != HISTORY_BOUNDARY:
+                        self.log_text.insert("end", HISTORY_BOUNDARY + "\n")
+                    self.log_text.configure(state="disabled")
+                # Even empty history is restored only once in this display epoch;
+                # new session messages must not later become historical content.
+                self._restored_log_context = log_context
             except OSError:
                 pass
         try:

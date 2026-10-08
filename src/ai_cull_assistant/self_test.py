@@ -21,6 +21,7 @@ def run(report_path: str) -> None:
         assert detect(np.zeros((320, 320, 3), np.uint8)) == []
         report["yunet_model_inference"] = True
         _identity_model_check(report)
+        _history_log_check(report)
         import sys
         if getattr(sys, 'frozen', False):
             from .body_focus import _get_models
@@ -322,3 +323,30 @@ def _identity_model_check(report):
             report['sface_real_photo_detection_alignment_cpu'] = True
     finally:
         engine.clear()
+
+
+def _history_log_check(report):
+    from .app import App
+    from .settings import save_values
+    from .workspace_log import append_log, HISTORY_BOUNDARY
+    from .workspace_layout import workspace_path
+    with tempfile.TemporaryDirectory(prefix='aicull-log-boundary-') as folder:
+        base = Path(folder)
+        photos = base / 'photos'; photos.mkdir()
+        workspace = base / 'workspace'
+        save_values(base / 'settings', dict(input=str(photos), workspace=str(workspace)))
+        append_log(workspace, 'Previous session message')
+        app = App(settings_dir=base / 'settings')
+        try:
+            app.withdraw()
+            app._log('Current session message')
+            app.update()
+            text = app.log_text.get('1.0', 'end')
+            assert text.index('Previous session message') < text.index(HISTORY_BOUNDARY)
+            assert text.index(HISTORY_BOUNDARY) < text.index('当前保存设置：') < text.index('Current session message')
+            app._restore_session(); app.update()
+            assert app.log_text.get('1.0', 'end').count(HISTORY_BOUNDARY) == 1
+            assert HISTORY_BOUNDARY not in workspace_path(workspace, 'session.log').read_text('utf-8')
+            report['restored_log_boundary_order_and_no_persistence'] = True
+        finally:
+            app._close()

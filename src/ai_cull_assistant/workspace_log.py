@@ -3,6 +3,7 @@ from threading import RLock
 from .workspace_layout import workspace_path
 
 DETAIL_PREFIX = '[扫描诊断] '
+HISTORY_BOUNDARY = '-------------------- 以上是之前的日志 --------------------'
 _lock = RLock()
 
 
