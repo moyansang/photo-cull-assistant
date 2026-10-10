@@ -1,0 +1,308 @@
+"""Inspect and quarantine image-only focus evidence without changing review state."""
+from __future__ import annotations
+
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from functools import wraps
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import threading
+import uuid
+import zipfile
+
+from PIL import Image
+
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+_HISTORY = 'evidence-cleanup.json'
+
+
+def _plain(value) -> Path:
+    path = Path(value)
+    if not path.is_absolute() or '..' in path.parts:
+        raise ValueError('路径不明确，请先选择绝对路径工作区和原照片目录。')
+    for part in reversed((path, *path.parents)):
+        try:
+            info = part.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+            raise ValueError('路径包含符号链接或目录联接，为保护数据未清理。')
+    return path
+
+
+def _hash(payload):
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _json(path):
+    _plain(path)
+    if path.stat().st_size > 128 * 1024 * 1024:
+        raise ValueError('记录异常过大，未清理。')
+    return json.loads(path.read_text('utf-8-sig'))
+
+
+@contextmanager
+def evidence_operation(workspace):
+    """Nonblocking in-process and OS lock, also held throughout focus API calls."""
+    root = _plain(workspace)
+    root.mkdir(parents=True, exist_ok=True)
+    key = str(root).casefold()
+    with _locks_guard:
+        lock = _locks.setdefault(key, threading.Lock())
+    if not lock.acquire(blocking=False):
+        raise ValueError('清晰度证据正在被任务使用，请等待任务结束。')
+    stream = None
+    acquired = False
+    try:
+        path = _plain(root / '.evidence-operation.lock')
+        stream = path.open('a+b')
+        if not path.stat().st_size:
+            stream.write(b'0'); stream.flush()
+        stream.seek(0)
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except OSError as exc:
+            raise ValueError('另一个程序正在使用清晰度证据，请等待任务结束。') from exc
+        yield
+    finally:
+        if stream is not None:
+            if acquired:
+                stream.seek(0)
+                if os.name == 'nt':
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            stream.close()
+        lock.release()
+
+
+def guard_focus_review(function):
+    @wraps(function)
+    def guarded(asset, settings, profile, root, *args, **kwargs):
+        from .focus_audit import audit_root
+        with evidence_operation(audit_root(root).parent):
+            return function(asset, settings, profile, root, *args, **kwargs)
+    return guarded
+
+
+@dataclass(frozen=True)
+class EvidenceFile:
+    name: str
+    size: int
+    sha256: str
+
+
+@dataclass(frozen=True)
+class CleanupPlan:
+    workspace: Path
+    input_dir: Path
+    files: tuple[EvidenceFile, ...]
+    preserved: int
+    state_digest: str
+    missing_sources: int
+    changed_sources: int
+
+    @property
+    def bytes(self):
+        return sum(item.size for item in self.files)
+
+
+def _state(root, name):
+    active = _plain(root / name)
+    archive = _plain(root / '.workspace-archive.zip')
+    if active.is_file():
+        if archive.exists():
+            raise ValueError('同时存在活动记录和归档，状态不确定，未清理。')
+        return _json(active)
+    if not archive.is_file():
+        if name == 'ai_project.json':
+            return None
+        raise ValueError('缺少完整扫描记录，无法证明原片可重建，未清理。')
+    with zipfile.ZipFile(archive) as bundle:
+        info = bundle.getinfo('.archive-manifest.json')
+        if info.file_size > 1024 * 1024:
+            raise ValueError('归档清单异常，未清理。')
+        manifest = json.loads(bundle.read(info))
+        if manifest.get('version') != 1:
+            raise ValueError('归档版本不支持，未清理。')
+        expected = manifest.get('files', {}).get(name)
+        if expected is None and name == 'ai_project.json':
+            return None
+        info = bundle.getinfo(name)
+        if info.file_size > 128 * 1024 * 1024:
+            raise ValueError('归档记录异常过大，未清理。')
+        payload = bundle.read(info)
+        if not expected or len(payload) != expected.get('size') or _hash(payload) != expected.get('sha256'):
+            raise ValueError('归档校验失败，未清理。')
+        return json.loads(payload)
+
+
+def _validate_sources(root, source, session):
+    if session.get('version') != 1 or _plain(session.get('workspace_dir', '')) != root:
+        raise ValueError('扫描记录与当前工作区路径不一致，未清理。')
+    if _plain(session.get('input_dir', '')) != source:
+        raise ValueError('原照片目录与工作区不一致，未清理。')
+    if root == source or root in source.parents or source in root.parents:
+        raise ValueError('工作区与原照片目录重叠，未清理。')
+    inventory = session.get('source_stats')
+    if not isinstance(inventory, dict) or not inventory:
+        raise ValueError('缺少完整原片清单，未清理。')
+    missing = changed = 0
+    for value, expected in inventory.items():
+        path = _plain(value)
+        if not path.is_relative_to(source):
+            raise ValueError('原片清单包含照片目录以外的路径，未清理。')
+        try:
+            info = path.stat()
+        except FileNotFoundError:
+            missing += 1
+            continue
+        if not stat.S_ISREG(info.st_mode) or [info.st_size, info.st_mtime_ns] != expected:
+            changed += 1
+    return missing, changed
+
+
+def inspect_evidence(workspace, input_dir) -> CleanupPlan:
+    """Read-only; never call restore_workspace/load_session, even for archives."""
+    root, source = _plain(workspace), _plain(input_dir)
+    if not root.is_dir():
+        raise ValueError('当前工作区不存在。')
+    for name in ['.processing/active.json', 'cache/processing/active.json']:
+        if _plain(root / name).exists():
+            raise ValueError('工作区仍有处理或暂停任务，请结束任务后再清理。')
+    session = _state(root, 'scan-session.json')
+    project = _state(root, 'ai_project.json')
+    missing, changed = _validate_sources(root, source, session)
+    if project:
+        for task in project.get('tasks', []):
+            for batch in task.get('batches', []) + task.get('web_submissions', []):
+                if str(batch.get('status', '')).lower() in {'running', 'preparing', 'in_progress'}:
+                    raise ValueError('AI 任务仍在使用工作区，请结束任务后再清理。')
+    requests = _plain(root / 'focus-evidence' / 'requests')
+    if requests.exists():
+        for path in requests.iterdir():
+            _plain(path)
+            if path.suffix == '.json' and path.is_file() and 'response' not in _json(path):
+                raise ValueError('存在尚未保存回答的清晰度请求，无法确认任务已结束，未清理。')
+    blobs = _plain(root / 'focus-evidence' / 'blobs')
+    files = []; preserved = 0
+    if blobs.exists():
+        for path in sorted(blobs.iterdir()):
+            _plain(path)
+            if not path.is_file() or not re.fullmatch(r'[0-9a-f]{64}\.zip', path.name) or path.stat().st_nlink != 1:
+                preserved += 1
+                continue
+            try:
+                if path.stat().st_size > 256 * 1024 * 1024:
+                    raise ValueError('oversized package')
+                payload = path.read_bytes()
+                with zipfile.ZipFile(io.BytesIO(payload)) as bundle:
+                    infos = bundle.infolist()
+                    if len(infos) != 1 or bundle.comment:
+                        raise ValueError('mixed archive')
+                    info = infos[0]
+                    if info.filename not in {'image.png', 'image.jpg', 'image.jpeg', 'image.webp'} or info.file_size > 256 * 1024 * 1024 or stat.S_ISLNK(info.external_attr >> 16) or info.comment or info.extra:
+                        raise ValueError('not an image-only evidence package')
+                    image = bundle.read(info)
+                    if _hash(image) != path.stem:
+                        raise ValueError('payload identity mismatch')
+                    with Image.open(io.BytesIO(image)) as decoded:
+                        decoded.verify()
+                files.append(EvidenceFile(path.name, len(payload), _hash(payload)))
+            except (OSError, ValueError, zipfile.BadZipFile, RuntimeError):
+                preserved += 1
+    signature = _hash(json.dumps([session, project], sort_keys=True, ensure_ascii=False).encode())
+    return CleanupPlan(root, source, tuple(files), preserved, signature, missing, changed)
+
+
+def _write_json(path, value):
+    _plain(path)
+    temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
+    with temporary.open('x', encoding='utf-8') as stream:
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+    _plain(path)
+    temporary.replace(path)
+
+
+def quarantine_evidence(plan: CleanupPlan, destination) -> dict:
+    """Revalidate after confirmation, then move only approved image ZIPs; no deletes."""
+    with evidence_operation(plan.workspace):
+        if inspect_evidence(plan.workspace, plan.input_dir) != plan:
+            raise ValueError('确认期间工作区或证据已变化，请重新统计后再试。')
+        if not plan.files:
+            return dict(moved=0, bytes=0, failed=[], destination=None)
+        trash = _plain(destination)
+        if (trash == plan.workspace or trash in plan.workspace.parents or plan.workspace in trash.parents
+                or trash == plan.input_dir or trash in plan.input_dir.parents or plan.input_dir in trash.parents):
+            raise ValueError('待手动删除目录与工作区或原片重叠，未清理。')
+        operation_id = datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8]
+        folder = trash / (operation_id + '-证据图片') / plan.workspace.name / 'focus-evidence' / 'blobs'
+        _plain(folder); folder.mkdir(parents=True, exist_ok=False)
+        if folder.stat().st_dev != plan.workspace.stat().st_dev:
+            raise ValueError('待手动删除目录必须与工作区在同一磁盘，未清理。')
+        event = dict(id=operation_id, at=datetime.now(timezone.utc).isoformat(), workspace=str(plan.workspace),
+                     destination=str(folder), files=[vars(item) for item in plan.files])
+        _write_json(folder.parent / 'manifest.json', event)
+        marker = plan.workspace / 'focus-evidence' / _HISTORY
+        history = _json(marker) if marker.exists() else dict(version=1, operations=[])
+        if history.get('version') != 1 or not isinstance(history.get('operations'), list):
+            raise ValueError('证据清理记录异常，未清理。')
+        history['operations'].append(event)
+        # Persist intent before the first move: interruption leaves a recovery map.
+        _write_json(marker, history)
+        result = dict(moved=0, bytes=0, failed=[], destination=str(folder.parents[2]))
+        for item in plan.files:
+            source = plan.workspace / 'focus-evidence' / 'blobs' / item.name
+            target = folder / item.name
+            try:
+                _plain(source); _plain(target)
+                if target.exists() or _hash(source.read_bytes()) != item.sha256:
+                    raise ValueError('文件已变化，已保留')
+                _plain(source); _plain(target)
+                if source.stat().st_nlink != 1:
+                    raise ValueError('文件存在其他硬链接，已保留')
+                source.rename(target)
+                if _hash(target.read_bytes()) != item.sha256:
+                    raise ValueError('移动后校验失败，请保留两处数据并检查清单')
+                result['moved'] += 1; result['bytes'] += item.size
+            except (OSError, ValueError) as exc:
+                result['failed'].append(f'{item.name}: {exc}')
+        return result
+
+
+def evidence_status(workspace):
+    """Explain missing historical images after cleanup, including interrupted moves."""
+    try:
+        root = _plain(workspace)
+        marker = root / 'focus-evidence' / _HISTORY
+        if not marker.exists():
+            return ''
+        history = _json(marker)
+        names = {item['name'] for event in history['operations'] for item in event['files']
+                 if re.fullmatch(r'[0-9a-f]{64}\.zip', item['name'])}
+        missing = sum(not _plain(root / 'focus-evidence' / 'blobs' / name).exists() for name in names)
+        return f'已清理 {missing} 个历史证据图片包；请求回答及选片结果保留。' if missing else ''
+    except (OSError, ValueError, KeyError, TypeError):
+        return '证据清理记录暂不可读；请保留工作区并检查迁移清单。'
+
+
+def default_quarantine_root(program_dir):
+    program = Path(program_dir)
+    if program.parent.name == '当前版本' and program.parent.parent.name == '本地测试':
+        return program.parent.parent.parent / '待手动删除'
+    return program.parent / '待手动删除'

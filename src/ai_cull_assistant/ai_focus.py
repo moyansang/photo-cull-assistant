@@ -12,6 +12,7 @@ from PIL import Image, ImageOps
 
 from .ai_api import ApiError, call_model
 from .crop_settings import CropSettings
+from .evidence_cleanup import guard_focus_review
 
 
 PROMPT_VERSION = "focus-review-v2"
@@ -400,6 +401,7 @@ def review_focus(
     )
 
 
+@guard_focus_review
 def _review_one(
     asset: Any,
     settings: CropSettings,

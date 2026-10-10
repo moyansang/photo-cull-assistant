@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .group_editor import GroupEditor
+from .evidence_cleanup_ui import EvidenceCleanupMixin
 from .version import BUILD, VERSION
 from .update_ui import UpdateController
 import sys
@@ -46,7 +47,7 @@ from .workflow import (
 GROUPING_LABELS = {"严格": "strict", "标准": "standard", "宽松": "loose"}
 
 
-class App(tk.Tk):
+class App(EvidenceCleanupMixin, tk.Tk):
     def __init__(self, settings_dir: Path | None = None) -> None:
         super().__init__()
         self.withdraw()
@@ -527,6 +528,12 @@ class App(tk.Tk):
             button.grid(row=0, column=col, sticky="ew", padx=(0, 6 if col<5 else 0))
             first.columnconfigure(col, weight=1)
             setattr(self, name, button)
+        self.evidence_cleanup_button = ttk.Button(first, text="清理证据图片", command=self._clean_evidence_images)
+        self.evidence_cleanup_button.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.evidence_status_var = tk.StringVar(value="")
+        ttk.Label(first, textvariable=self.evidence_status_var, wraplength=720,
+                  style="Muted.TLabel").grid(row=1, column=1, columnspan=5, sticky="w", padx=(8, 0), pady=(10, 0))
+        self._refresh_evidence_status()
 
         controls = self._shared_controls = ttk.Frame(frame)
         controls.grid(row=1, column=0, sticky="ew", pady=(8, 6))
@@ -721,6 +728,8 @@ class App(tk.Tk):
             messagebox.showerror("配置 API", str(exc), parent=self)
 
     def _log_workspace_summary(self):
+        if hasattr(self, "evidence_status_var"):
+            self._refresh_evidence_status()
         if self._workspace_blocked or not self.workspace_var.get().strip():
             return
         from .workspace_summary import restoration_summary
@@ -971,6 +980,8 @@ class App(tk.Tk):
         self._scan_thread.start()
 
     def _poll_processing(self):
+        if hasattr(self, "evidence_cleanup_button"):
+            self._refresh_evidence_button()
         review_busy = self._review_busy()
         if review_busy != getattr(self, '_review_controls_busy', False):
             self._review_controls_busy = review_busy
@@ -1184,6 +1195,9 @@ class App(tk.Tk):
         return page
 
     def _navigate_workspace(self, name):
+        if getattr(self, '_cleaning_evidence', False):
+            messagebox.showinfo('正在清理证据', '请等待证据图片处理结束后再切换页面或任务。', parent=self)
+            return
         if name == 'home':
             self._show_workspace_page('home')
             return
@@ -1472,6 +1486,9 @@ class App(tk.Tk):
         return True
 
     def _open_ai_review(self):
+        if getattr(self, '_cleaning_evidence', False):
+            messagebox.showinfo('正在清理证据', '请等待证据图片处理结束后再切换页面或任务。', parent=self)
+            return
         if self._warn_unconfirmed_people():
             return
         if self._show_workspace_page('review'):
