@@ -11,7 +11,7 @@ def audit_root(cache_dir):
     return workspace / 'focus-evidence'
 
 
-def record_inputs(cache_dir, digest, images, prompt, profile, version):
+def record_inputs(cache_dir, digest, images, prompt, profile, version, *, source_paths=None):
     from .ai_project import atomic_json
     root = audit_root(cache_dir)
     blobs = root / 'blobs'
@@ -29,6 +29,8 @@ def record_inputs(cache_dir, digest, images, prompt, profile, version):
         entries.append(dict(name=Path(image).name, sha256=identity, bytes=len(payload)))
     manifest = dict(version=version, images=entries, prompt=prompt,
                     profile={k:profile[k] for k in ('model','base_url','preset_id') if k in profile})
+    if source_paths is not None:
+        manifest['source_paths'] = [str(Path(p).resolve()) for p in source_paths]
     target = root / 'requests' / (digest + '.json')
     atomic_json(target, manifest)
     return str(target.relative_to(root.parent))

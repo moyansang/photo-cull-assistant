@@ -438,7 +438,8 @@ def _review_one(
             "总览里的其他人和海报脸不参与本次判断；不要用其他人的清晰程度代替此人的结果。"
         )
     from .focus_audit import record_inputs, record_response
-    audit = record_inputs(root, digest, image_paths, prompt, profile, PROMPT_VERSION)
+    audit = record_inputs(root, digest, image_paths, prompt, profile, PROMPT_VERSION,
+                          source_paths=asset.rating_target_paths)
     try:
         response = call_model(profile, prompt, image_paths)
     except ApiError as exc:

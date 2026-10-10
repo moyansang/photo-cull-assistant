@@ -193,12 +193,15 @@ def inspect_evidence(workspace, input_dir) -> CleanupPlan:
             for batch in task.get('batches', []) + task.get('web_submissions', []):
                 if str(batch.get('status', '')).lower() in {'running', 'preparing', 'in_progress'}:
                     raise ValueError('AI 任务仍在使用工作区，请结束任务后再清理。')
+    request_state = {}
     requests = _plain(root / 'focus-evidence' / 'requests')
     if requests.exists():
         for path in requests.iterdir():
             _plain(path)
-            if path.suffix == '.json' and path.is_file() and 'response' not in _json(path):
-                raise ValueError('存在尚未保存回答的清晰度请求，无法确认任务已结束，未清理。')
+            if path.suffix == '.json' and path.is_file():
+                request_state[path.name] = _json(path)
+                if 'response' not in request_state[path.name]:
+                    raise ValueError('存在尚未保存回答的清晰度请求，无法确认任务已结束，未清理。')
     blobs = _plain(root / 'focus-evidence' / 'blobs')
     files = []; preserved = 0
     if blobs.exists():
@@ -226,7 +229,7 @@ def inspect_evidence(workspace, input_dir) -> CleanupPlan:
                 files.append(EvidenceFile(path.name, len(payload), _hash(payload)))
             except (OSError, ValueError, zipfile.BadZipFile, RuntimeError):
                 preserved += 1
-    signature = _hash(json.dumps([session, project], sort_keys=True, ensure_ascii=False).encode())
+    signature = _hash(json.dumps([session, project, request_state], sort_keys=True, ensure_ascii=False).encode())
     return CleanupPlan(root, source, tuple(files), preserved, signature, missing, changed)
 
 
@@ -242,47 +245,55 @@ def _write_json(path, value):
 def quarantine_evidence(plan: CleanupPlan, destination) -> dict:
     """Revalidate after confirmation, then move only approved image ZIPs; no deletes."""
     with evidence_operation(plan.workspace):
-        if inspect_evidence(plan.workspace, plan.input_dir) != plan:
-            raise ValueError('确认期间工作区或证据已变化，请重新统计后再试。')
-        if not plan.files:
-            return dict(moved=0, bytes=0, failed=[], destination=None)
-        trash = _plain(destination)
-        if (trash == plan.workspace or trash in plan.workspace.parents or plan.workspace in trash.parents
-                or trash == plan.input_dir or trash in plan.input_dir.parents or plan.input_dir in trash.parents):
-            raise ValueError('待手动删除目录与工作区或原片重叠，未清理。')
-        operation_id = datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8]
-        folder = trash / (operation_id + '-证据图片') / plan.workspace.name / 'focus-evidence' / 'blobs'
-        _plain(folder); folder.mkdir(parents=True, exist_ok=False)
-        if folder.stat().st_dev != plan.workspace.stat().st_dev:
-            raise ValueError('待手动删除目录必须与工作区在同一磁盘，未清理。')
-        event = dict(id=operation_id, at=datetime.now(timezone.utc).isoformat(), workspace=str(plan.workspace),
-                     destination=str(folder), files=[vars(item) for item in plan.files])
-        _write_json(folder.parent / 'manifest.json', event)
-        marker = plan.workspace / 'focus-evidence' / _HISTORY
-        history = _json(marker) if marker.exists() else dict(version=1, operations=[])
-        if history.get('version') != 1 or not isinstance(history.get('operations'), list):
-            raise ValueError('证据清理记录异常，未清理。')
-        history['operations'].append(event)
-        # Persist intent before the first move: interruption leaves a recovery map.
-        _write_json(marker, history)
-        result = dict(moved=0, bytes=0, failed=[], destination=str(folder.parents[2]))
-        for item in plan.files:
-            source = plan.workspace / 'focus-evidence' / 'blobs' / item.name
-            target = folder / item.name
-            try:
-                _plain(source); _plain(target)
-                if target.exists() or _hash(source.read_bytes()) != item.sha256:
-                    raise ValueError('文件已变化，已保留')
-                _plain(source); _plain(target)
-                if source.stat().st_nlink != 1:
-                    raise ValueError('文件存在其他硬链接，已保留')
-                source.rename(target)
-                if _hash(target.read_bytes()) != item.sha256:
-                    raise ValueError('移动后校验失败，请保留两处数据并检查清单')
-                result['moved'] += 1; result['bytes'] += item.size
-            except (OSError, ValueError) as exc:
-                result['failed'].append(f'{item.name}: {exc}')
-        return result
+        return _quarantine_evidence(plan, destination)
+
+
+def _quarantine_evidence(plan, destination, eligible_names=None):
+    """Caller holds evidence_operation; always revalidate the complete plan."""
+    if inspect_evidence(plan.workspace, plan.input_dir) != plan:
+        raise ValueError('确认期间工作区或证据已变化，请重新统计后再试。')
+    if eligible_names is not None:
+        from dataclasses import replace
+        plan = replace(plan, files=tuple(f for f in plan.files if f.name in eligible_names))
+    if not plan.files:
+        return dict(moved=0, bytes=0, failed=[], destination=None)
+    trash = _plain(destination)
+    if (trash == plan.workspace or trash in plan.workspace.parents or plan.workspace in trash.parents
+            or trash == plan.input_dir or trash in plan.input_dir.parents or plan.input_dir in trash.parents):
+        raise ValueError('待手动删除目录与工作区或原片重叠，未清理。')
+    operation_id = datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8]
+    folder = trash / (operation_id + '-证据图片') / plan.workspace.name / 'focus-evidence' / 'blobs'
+    _plain(folder); folder.mkdir(parents=True, exist_ok=False)
+    if folder.stat().st_dev != plan.workspace.stat().st_dev:
+        raise ValueError('待手动删除目录必须与工作区在同一磁盘，未清理。')
+    event = dict(id=operation_id, at=datetime.now(timezone.utc).isoformat(), workspace=str(plan.workspace),
+                 destination=str(folder), files=[vars(item) for item in plan.files])
+    _write_json(folder.parent / 'manifest.json', event)
+    marker = plan.workspace / 'focus-evidence' / _HISTORY
+    history = _json(marker) if marker.exists() else dict(version=1, operations=[])
+    if history.get('version') != 1 or not isinstance(history.get('operations'), list):
+        raise ValueError('证据清理记录异常，未清理。')
+    history['operations'].append(event)
+    # Persist intent before the first move: interruption leaves a recovery map.
+    _write_json(marker, history)
+    result = dict(moved=0, bytes=0, failed=[], destination=str(folder.parents[2]))
+    for item in plan.files:
+        source = plan.workspace / 'focus-evidence' / 'blobs' / item.name
+        target = folder / item.name
+        try:
+            _plain(source); _plain(target)
+            if target.exists() or _hash(source.read_bytes()) != item.sha256:
+                raise ValueError('文件已变化，已保留')
+            _plain(source); _plain(target)
+            if source.stat().st_nlink != 1:
+                raise ValueError('文件存在其他硬链接，已保留')
+            source.rename(target)
+            if _hash(target.read_bytes()) != item.sha256:
+                raise ValueError('移动后校验失败，请保留两处数据并检查清单')
+            result['moved'] += 1; result['bytes'] += item.size
+        except (OSError, ValueError) as exc:
+            result['failed'].append(f'{item.name}: {exc}')
+    return result
 
 
 def evidence_status(workspace):
@@ -306,3 +317,99 @@ def default_quarantine_root(program_dir):
     if program.parent.name == '当前版本' and program.parent.parent.name == '本地测试':
         return program.parent.parent.parent / '待手动删除'
     return program.parent / '待手动删除'
+
+
+def _audit_refs(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == 'audit' and isinstance(child, str):
+                child = child.replace('\\', '/')
+                # Exact relative namespace only; never follow arbitrary paths.
+                if re.fullmatch(r'focus-evidence/requests/[A-Za-z0-9_-]+\.json', child):
+                    yield child
+                else:
+                    raise ValueError('证据引用路径不明确，未同步整理。')
+            else:
+                yield from _audit_refs(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _audit_refs(child)
+
+
+def sync_removed_evidence(workspace, input_dir, removed):
+    """Called under evidence lock BEFORE the existing record-pruning operation.
+
+    Legacy audit links identify owners; new manifests also retain source paths
+    for older retries. Unattributed requests protect their blobs conservatively.
+    """
+    from .settings import application_dir
+    root, source = _plain(workspace), _plain(input_dir)
+    if not source.is_dir():
+        raise ValueError('照片文件夹不可访问，原记录及证据保留。')
+    plan = inspect_evidence(root, source)
+    session = _state(root, 'scan-session.json')
+    project = _state(root, 'ai_project.json') or {}
+    removed = {str(_plain(p)) for p in removed}
+    if any(_plain(p).exists() for p in removed):
+        raise ValueError('原片状态已变化，请重新打开工作区。')
+    marker = _plain(root / 'focus-evidence' / 'source-removals.json')
+    history = _json(marker) if marker.exists() else dict(version=1, sources=[], refs={})
+    if history.get('version') != 1 or not isinstance(history.get('sources'), list) or not isinstance(history.get('refs'), dict):
+        raise ValueError('证据同步记录异常，未同步整理。')
+    historical = {_plain(p) for p in history['sources']}
+    if any(not p.is_relative_to(source) for p in historical):
+        raise ValueError('证据同步记录需核对原片位置，未同步整理。')
+    removed |= {str(p) for p in historical if not p.exists()}
+    dead_refs, live_refs = set(), set()
+    for ref, owners in history['refs'].items():
+        list(_audit_refs({'audit': ref}))
+        if not isinstance(owners, list) or not owners:
+            raise ValueError('历史证据归属异常，未同步整理。')
+        (dead_refs if set(owners) <= removed else live_refs).add(ref)
+
+    for row in session.get('assets', []) + list(project.get('photos', {}).values()):
+        primary = row.get('primary_path') or row.get('path')
+        refs = set(_audit_refs(row))
+        (dead_refs if primary in removed else live_refs).update(refs)
+        if primary in removed:
+            for ref in refs:
+                history['refs'][ref] = sorted(set(history['refs'].get(ref, [])) | {primary})
+    live_refs.update(_audit_refs({k: v for k, v in project.items() if k != 'photos'}))
+    dead_hashes, protected_hashes = set(), set()
+    requests = _plain(root / 'focus-evidence' / 'requests')
+    for path in requests.iterdir() if requests.exists() else []:
+        _plain(path)
+        if not path.is_file() or path.suffix != '.json':
+            raise ValueError('证据请求目录包含未知项目，未同步整理。')
+        document = _json(path)
+        hashes = set()
+        for item in document['images']:
+            identity = item['sha256']
+            if not isinstance(identity, str) or not re.fullmatch(r'[0-9a-f]{64}', identity):
+                raise ValueError('证据图片标识异常，未同步整理。')
+            hashes.add(identity + '.zip')
+        ref = path.relative_to(root).as_posix()
+        owners = document.get('source_paths')
+        if owners is not None:
+            if not isinstance(owners, list) or not owners:
+                raise ValueError('证据原片归属不明确，未同步整理。')
+            owners = {str(_plain(p)) for p in owners}
+            if any(not Path(p).is_relative_to(source) for p in owners):
+                # Relocated or legacy ownership cannot prove deletion.
+                protected_hashes.update(hashes)
+                continue
+        dead = ref in dead_refs or (owners and owners <= removed)
+        live = ref in live_refs or (owners and not owners <= removed)
+        (dead_hashes if dead and not live else protected_hashes).update(hashes)
+    eligible = dead_hashes - protected_hashes
+    if eligible:
+        if not source.is_dir() or any(_plain(p).exists() for p in removed):
+            raise ValueError('原片状态已变化，未同步整理。')
+        result = _quarantine_evidence(plan, default_quarantine_root(application_dir()), eligible)
+        if result['failed']:
+            raise ValueError('部分证据暂不能移动，原照片记录保留，请解除占用后重试。')
+    else:
+        result = dict(moved=0, bytes=0, failed=[], destination=None)
+    history['sources'] = sorted(removed)
+    _write_json(marker, history)
+    return result

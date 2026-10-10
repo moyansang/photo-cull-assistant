@@ -55,6 +55,15 @@ def source_changes(workspace, input_dir):
 
 
 def load_session(workspace,input_dir):
+    # Hold the same lock as AI calls/manual cleanup through reconciliation.
+    if (Path(workspace) / 'focus-evidence').exists():
+        from .evidence_cleanup import evidence_operation
+        with evidence_operation(workspace):
+            return _load_session(workspace, input_dir)
+    return _load_session(workspace, input_dir)
+
+
+def _load_session(workspace,input_dir):
     workspace=Path(workspace).resolve()
     path=workspace/'scan-session.json'
     if not path.exists():return None
@@ -104,6 +113,9 @@ def load_session(workspace,input_dir):
         data[key]=[Path(p) for p in data[key]] if data[key] is not None else None
     result = ScanResult(**data)
     if removed:
+        if (workspace / 'focus-evidence').exists():
+            from .evidence_cleanup import sync_removed_evidence
+            sync_removed_evidence(workspace, Path(input_dir), removed)
         from .group_store import save_groups
         result.rejected_count = sum(a.auto_rejected for a in assets)
         result.main_pages = []
