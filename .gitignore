@@ -43,3 +43,27 @@ settings.json.tmp
 
 # Local-only project handoff notes
 /项目交接说明.md
+
+# Future local training data and outputs; pinned inference assets remain tracked
+/training-data/
+/training-checkpoints/
+/training-runs/
+
+# Additional root-level workspace records used by current runtime
+/assist-feedback.json
+/workspace-identity.json
+/scan-performance.json
+/.source-location.json
+/.source-relocation-transaction.json
+/.archive-manifest.json
+
+# Local environment secrets (sanitized examples can be versioned)
+.env
+.env.*
+!.env.example
+
+# CI / local verification outputs
+/smoke-test.json
+/regression-tests.xml
+/.coverage
+/htmlcov/

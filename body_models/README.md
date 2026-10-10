@@ -12,11 +12,24 @@ the initial four user-labelled motion-blur examples all produce a conservative
 `uncertain` results. It must therefore stay behind an explicit application
 setting until a broader, body-specific labelled set is available.
 
-Run `python body_models/download.py` from the repository root. The script puts
-the exact pinned models in ignored `build/body_models`, verifies size and
-SHA-256, and never downloads during photo processing. The application may set
-`AI_CULL_BODY_MODEL_DIR` or package the same verified files under
-`ai_cull_assistant/data/body_models`.
+The two unmodified baseline ONNX files are tracked in ordinary Git at
+`src/ai_cull_assistant/data/body_models/` (17,547,397 bytes combined). A normal
+clone contains them without Git LFS or a model download. Source, wheel and EXE
+use these assets. `manifest.json` pins upstream commit, filenames, sizes,
+SHA-256 and per-model license links; `SOURCE.txt` and `LICENSE-APACHE-2.0.txt`
+are also included beside the packaged weights.
+
+Run `python body_models/download.py --verify-only` to check them offline. A
+missing or changed model fails the build instead of downloading silently.
+For an explicit repair, run `python body_models/download.py`; this restores the
+exact pinned upstream bytes to the tracked directory. `--destination` permits
+an alternate directory. Runtime never downloads. `AI_CULL_BODY_MODEL_DIR` and
+the old ignored `build/body_models` cache remain compatibility search paths,
+but every candidate must match the pinned hashes.
+
+These are inference baselines, not a ready-to-train checkpoint. See
+[fine-tuning prerequisites](../docs/body-model-baselines.md). Do not overwrite
+these baselines with experiments or weaken the runtime hash checks.
 
 `assess_body_focus(PIL_image, normalized_face_box)` returns JSON-compatible
 evidence. `state` is `clear`, `severe_blur`, or `uncertain`. `review_kind`

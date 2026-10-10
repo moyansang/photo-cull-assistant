@@ -145,19 +145,26 @@ def test_review_boxes_only_expose_evidence_for_motion_review():
     assert body_focus.body_review_boxes(evidence) == []
 
 
-def test_manifest_is_pinned_and_downloads_are_not_tracked():
+def test_manifest_matches_shipped_baseline_models():
     root = Path(__file__).parents[1]
     manifest = json.loads((root / "body_models" / "manifest.json").read_text("utf-8"))
     assert manifest["source_commit"] == "47534e27c9851bb1128ccc0102f1145e27f23f98"
     assert {entry["sha256"] for entry in manifest["models"]} == set(body_focus.MODEL_SHA256)
-    assert not list((root / "body_models").glob("*.onnx"))
+    assets = root / "src" / "ai_cull_assistant" / "data" / "body_models"
+    assert {path.name for path in assets.glob("*.onnx")} == set(body_focus.MODEL_FILENAMES)
+    for entry in manifest["models"]:
+        path = assets / entry["filename"]
+        assert path.stat().st_size == entry["size"]
+        assert body_focus._sha256(path) == entry["sha256"]
+        assert manifest["source_commit"] in entry["license_url"]
+    for name in ("SOURCE.txt", "LICENSE-APACHE-2.0.txt"):
+        assert (assets / name).read_bytes() == (root / "body_models" / name).read_bytes()
 
 
-def test_real_models_cpu_smoke_when_build_cache_exists():
-    try:
-        detector_path, pose_path = body_focus.find_body_models()
-    except body_focus.BodyModelUnavailable:
-        pytest.skip("body models are an optional verified build-cache download")
+def test_shipped_models_cpu_smoke_without_build_cache(monkeypatch):
+    assets = Path(body_focus.__file__).parent / "data" / "body_models"
+    monkeypatch.setattr(body_focus, "_model_directories", lambda: iter([assets]))
+    detector_path, pose_path = body_focus.find_body_models()
     detector = body_focus._PersonDetector(detector_path)
     pose = body_focus._PoseEstimator(pose_path)
     assert detector.infer(np.zeros((256, 256, 3), np.uint8)).shape[1] == 13

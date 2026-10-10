@@ -11,6 +11,7 @@ authors = [{name = "OpenAI"}]
 requires-python = ">=3.11"
 dependencies = [
     "Pillow>=10.0.0",
+    "numpy>=1.26,<3",
     "ttkbootstrap==2.2.3",
     "opencv-python-headless>=4.10.0,<5",
 ]
@@ -38,4 +39,4 @@ version = {attr = "ai_cull_assistant.version.VERSION"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-ai_cull_assistant = ["data/*.onnx", "data/*.txt"]
+ai_cull_assistant = ["data/*.onnx", "data/*.txt", "data/body_models/*.onnx", "data/body_models/*.txt"]

@@ -1,4 +1,4 @@
-"""Download the pinned OpenCV Zoo body models into an ignored build cache."""
+"""Verify tracked body-model assets offline, or explicitly restore pinned files."""
 from __future__ import annotations
 
 import argparse
@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
+DEFAULT_DESTINATION = REPO_ROOT / "src" / "ai_cull_assistant" / "data" / "body_models"
 
 
 def _digest(path: Path) -> str:
@@ -25,6 +26,18 @@ def _valid(path: Path, entry: dict) -> bool:
         and path.stat().st_size == entry["size"]
         and _digest(path) == entry["sha256"]
     )
+
+
+def verify(destination: Path) -> list[Path]:
+    """Check every pinned asset without creating files or accessing the network."""
+    manifest = json.loads((HERE / "manifest.json").read_text("utf-8"))
+    paths = []
+    for entry in manifest["models"]:
+        target = destination / entry["filename"]
+        if not _valid(target, entry):
+            raise RuntimeError(f"Missing or invalid body model: {target}")
+        paths.append(target)
+    return paths
 
 
 def download(destination: Path) -> list[Path]:
@@ -61,11 +74,14 @@ def main() -> None:
     parser.add_argument(
         "--destination",
         type=Path,
-        default=REPO_ROOT / "build" / "body_models",
-        help="model output directory (default: build/body_models)",
+        default=DEFAULT_DESTINATION,
+        help="model directory (default: tracked src/ai_cull_assistant/data/body_models)",
     )
+    parser.add_argument("--verify-only", action="store_true",
+                        help="verify locally; fail without downloading or changing files")
     args = parser.parse_args()
-    for path in download(args.destination.resolve()):
+    operation = verify if args.verify_only else download
+    for path in operation(args.destination.resolve()):
         print(path)
 
 

@@ -49,8 +49,8 @@ if ($env:TCL_LIBRARY -and $env:TK_LIBRARY) {
 }
 
 # PyInstaller handles replacement of its own output with --noconfirm.
-# Resolve and verify optional body-model assets at build time, never during scans.
-python body_models/download.py
+# Verify tracked body-model assets offline; explicit repairs use download.py.
+python body_models/download.py --verify-only
 if ($LASTEXITCODE -ne 0) { throw "身体实验模型下载或校验失败" }
 
 pyinstaller `
@@ -62,7 +62,6 @@ pyinstaller `
     --name "AI选片助手" `
     --paths src `
     --add-data "src/ai_cull_assistant/data;ai_cull_assistant/data" `
-    --add-data "build/body_models;ai_cull_assistant/data/body_models" `
     --add-data "body_models;ai_cull_assistant/data/body_model_sources" `
     --collect-data ttkbootstrap `
     --collect-data cv2 `

@@ -2,7 +2,7 @@
 
 The detector and pose networks are loaded lazily per worker thread.  This file
 contains no download side effects; see ``body_models/download.py`` for the
-version-pinned acquisition step.
+explicit repair step. The pinned baseline weights ship with the source package.
 """
 from __future__ import annotations
 
@@ -47,6 +47,7 @@ def _model_directories() -> Iterable[Path]:
         yield Path(configured)
     package = Path(__file__).resolve().parent
     yield package / "data" / "body_models"
+    # Backward compatibility for older checkouts; builds use tracked assets only.
     yield package.parents[1] / "build" / "body_models"
     bundle = getattr(sys, "_MEIPASS", None)
     if bundle:

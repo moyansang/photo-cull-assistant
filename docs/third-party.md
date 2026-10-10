@@ -7,7 +7,8 @@
 | 组件 | 用途 | 本仓库的来源/许可记录 |
 |---|---|---|
 | OpenCV Zoo YuNet | 人脸检测与五点关键点 | [来源](../src/ai_cull_assistant/data/YUNET-SOURCE.txt)、[许可证](../src/ai_cull_assistant/data/YUNET-LICENSE.txt) |
-| OpenCV Zoo MediaPipe person / pose | 头部补救定位与身体检查实验 | [固定来源](../body_models/SOURCE.txt)、[Apache 2.0](../body_models/LICENSE-APACHE-2.0.txt)、[下载哈希清单](../body_models/manifest.json) |
+| OpenCV Zoo SFace | 离线人脸特征匹配 | [固定来源与哈希](../src/ai_cull_assistant/data/SFACE-SOURCE.txt)、[Apache 2.0](../src/ai_cull_assistant/data/SFACE-LICENSE.txt) |
+| OpenCV Zoo MediaPipe person / pose | 头部补救定位与身体检查实验 | [固定来源](../body_models/SOURCE.txt)、[Apache 2.0](../body_models/LICENSE-APACHE-2.0.txt)、[固定哈希与逐模型许可链接](../body_models/manifest.json)；未修改的两份 ONNX 随 Git 与安装包提供 |
 | rxi/json.lua | LR 插件解析 JSON | [带 MIT 声明的源码](../lightroom/PhotoCullAssistant.lrplugin/json.lua) |
 | OpenCV、NumPy、Pillow | 图像读写与分析 | Python/便携包所用依赖的各自发行许可 |
 | rawpy / LibRaw、ExifRead | RAW 解码、元数据 | 随依赖发行的许可证；具体相机兼容性取决于 LibRaw |

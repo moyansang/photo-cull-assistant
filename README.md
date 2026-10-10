@@ -88,6 +88,8 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe launcher.py
 ```
 
+两份人体检测／姿态基础 ONNX 已随普通 Git 跟踪，克隆后无需另行下载模型或安装 Git LFS。固定来源、版本、SHA256 与许可见 [模型说明](body_models/README.md)；可运行 `python body_models/download.py --verify-only` 离线校验。微调前还需准备训练资源，见[基础模型与微调边界](docs/body-model-baselines.md)。
+
 运行回归测试：
 
 ```powershell
@@ -100,7 +102,7 @@ py -3.12 -m venv .venv
 .\make_portable_zip.ps1
 ```
 
-打包脚本会先构建 EXE，再生成 ZIP 和 `update.json`；首次构建需要联网安装依赖、准备并校验模型。已有完整打包环境时可使用 `-UseExistingEnvironment`。开发数据与便携版数据分离；源码同步用 Git，程序升级用 Release，两者不会自动互相同步。
+打包脚本会先构建 EXE，再生成 ZIP 和 `update.json`；首次构建需要联网安装依赖；模型直接使用仓库中的固定文件并离线校验。已有完整打包环境时可使用 `-UseExistingEnvironment`。开发数据与便携版数据分离；源码同步用 Git，程序升级用 Release，两者不会自动互相同步。
 
 [开发与打包说明](docs/development.md) · [构建工作流](.github/workflows/build-windows.yml)
 
