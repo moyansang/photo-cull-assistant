@@ -488,7 +488,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
         workflow = [("scan_button", "扫描图片", self._run_scan_thread),
                     ("group_button", "编辑选片组", self._open_group_editor),
                     ("crop_button", "检测/调整人脸框", self._open_crop_settings),
-                    ("focus_button", "AI 复核", self._run_focus_review),
+                    ("focus_button", "AI 复核", lambda: self._navigate_workspace('focus')),
                     ("sheets_button", "生成联系表", self._generate_contact_sheets),
                     ("review_button", "AI 选片与导出", self._open_ai_review)]
         for col, (name, label, callback) in enumerate(workflow):
@@ -496,6 +496,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
             button.grid(row=0, column=col, sticky="ew", padx=(0, 6 if col<5 else 0))
             first.columnconfigure(col, weight=1)
             setattr(self, name, button)
+        self.focus_button._always_available = True
         self.evidence_cleanup_button = ttk.Button(first, text="清理证据图片", command=self._clean_evidence_images)
         self.evidence_cleanup_button.grid(row=1, column=0, sticky="w", pady=(10, 0))
         self.evidence_status_var = tk.StringVar(value="")
@@ -957,6 +958,8 @@ class App(EvidenceCleanupMixin, tk.Tk):
                 self._review_disabled_widgets = []
                 def disable(parent):
                     for widget in parent.winfo_children():
+                        if getattr(widget, '_always_available', False):
+                            continue
                         if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Spinbox, ttk.Checkbutton)):
                             self._review_disabled_widgets.append((widget, str(widget.cget('state'))))
                             widget.configure(state='disabled')

@@ -30,7 +30,8 @@ CONTROL_HELP = {
     '扫描图片': '进行本地人脸检测、清晰度检查与分组，不自动发送 API。',
     '编辑选片组': '查看、拆分及合并选片组，修改立即保存。',
     '检测/调整人脸框': '选择主体人脸，修正位置、范围和比例。',
-    'AI 复核': '使用主页面 API 复核清晰度待确认照片。',
+    'AI 复核': '进入复核页面，不发送 API 请求；点击页内“开始 AI 复核”后才执行。',
+    '开始 AI 复核': '使用主页面 API 复核清晰度待确认照片，可能产生 API 费用。',
     '生成联系表': '根据当前分组、筛选与人脸设置生成联系表。',
     'AI 选片与导出': '通过 API 或网页提交选片，查看结果并导出到 Lightroom。',
     '停止处理': '请求停止，当前处理单元结束后保存进度。',
@@ -367,8 +368,8 @@ def install_page_chrome(window, page_id):
                         'focus': app._open_focus_page, 'faces': app._open_crop_settings,
                         'review': app._open_ai_review}[target]
             callback()
-        for target, label in [('home', '主页'), ('groups', '选片组'), ('focus', '复核'),
-                              ('faces', '人脸框'), ('review', '选片')]:
+        for target, label in [('home', '主页'), ('groups', '选片组'), ('faces', '人脸框'),
+                              ('focus', '复核'), ('review', '选片')]:
             tab = ttk.Frame(navigation, style='Toolbar.TFrame')
             tab.pack(side='left', padx=(0, 8))
             button = ttk.Button(tab, text=label, command=lambda t=target: navigate(t))
