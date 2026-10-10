@@ -12,6 +12,8 @@
 
 [下载 Windows 便携版](https://github.com/moyansang/photo-cull-assistant/releases/latest) · [使用指南](docs/user-guide.md) · [常见问题](docs/faq.md) · [更新日志](CHANGELOG.md) · [报告问题](https://github.com/moyansang/photo-cull-assistant/issues/new/choose)
 
+本机开发交接记录保存在项目根目录的 `项目交接说明.md`，仅本地维护，不随 Git 仓库分发。
+
 ## 下载与开始
 
 1. 在 [Releases](https://github.com/moyansang/photo-cull-assistant/releases/latest) 下载 `AI-Photo-Cull-v1.6.0-Windows-x64-portable.zip`。GitHub 自动提供的 **Source code** 是源码，不是可运行 EXE。

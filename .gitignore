@@ -40,3 +40,6 @@ settings.json.tmp
 
 # Locally quarantined disposable build artifacts
 /待清理/
+
+# Local-only project handoff notes
+/项目交接说明.md
