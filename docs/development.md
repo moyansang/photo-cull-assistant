@@ -12,7 +12,7 @@ python -m pytest -q
 python launcher.py
 ```
 
-本地测试程序、工作区和维护资料统一放在仓库同级 `photo-cull-assistant-local/`；测试程序路径为 `../photo-cull-assistant-local/本地测试/当前版本/AI选片助手/`，其 `workspaces` 可联接到维护目录下的 `本地测试/工作区/`。这些本机资料不进入源码 Git，旧机器绝对路径不可直接沿用。
+源码位于总目录的 `github-release/`；本地测试程序、工作区和维护资料放在源码上级总目录；测试程序路径为 `../本地测试/当前版本/AI选片助手/`，其 `workspaces` 可联接到维护目录下的 `本地测试/工作区/`。这些本机资料不进入源码 Git，旧机器绝对路径不可直接沿用。
 
 当前 Git 范围与复现边界见 [Git 资源清单](git-scope.md)。NumPy 为直接运行依赖；Python/Tcl/Tk、Git、虚拟环境和安装的第三方包不进入源码仓库。
 
@@ -55,3 +55,22 @@ GitHub Actions 在版本标签或手动触发时构建并自检，上传 workflo
 ## 第三方与贡献
 
 请保留来源与许可证文件；[第三方说明](third-party.md)。未引入 GPU 后端。提出算法改进时应附可复现样本、旧/新结果与误判范围，不承诺无漏检。
+
+
+## 换电脑继续开发
+
+先在该电脑已有源码仓库运行 `git status --short --branch`，检查未提交/未跟踪文件。把本地修改保存在仓库外备份或明确的本地提交中，再更新；不要把私人交接和工作区提交进 Git。确认干净且处于 `main` 后：
+
+```powershell
+git fetch origin
+git pull --ff-only origin main
+git log -1 --oneline
+```
+
+若快进失败，保留现场并比较本地与远端提交，按具体冲突处理；不要使用 `reset --hard`、`clean -fd` 或强制推送。Git 只同步源码与固定基础模型，不会同步用户照片、设置、工作区、私人交接或编译后的程序。
+
+在目标电脑核验 Python 3.12 和当地 `.venv`，按本页安装开发/RAW 依赖；不要复制另一台电脑的虚拟环境。运行 `python body_models/download.py --verify-only`、`python -m pytest -q` 和 `python launcher.py --self-test <临时报告绝对路径>`。pytest 默认使用 Python 层输出捕获，以避开已复现的 Windows Tk 文件描述符捕获干扰，见 [Tk 测试说明](testing-tk.md)。
+
+要更新该机本地测试程序，先核对实际程序目录和运行状态，备份程序文件，再按构建清单替换；保留 settings、workspaces、目录联接及全部用户数据。使用 `build_exe.ps1` 构建；仅已核验依赖齐全时使用 `-UseExistingEnvironment`。对构建及安装后的 EXE 都运行 `--self-test`。旧归档按正常选择工作区时恢复，不批量处理用户归档。
+
+目录示例均相对源码位置；每台电脑的实际路径在本机维护说明中确认，不把共享文档改成某个 Windows 用户目录。构建或推送源码不等于发布 Release。
