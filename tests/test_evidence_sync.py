@@ -26,7 +26,7 @@ def setup(tmp_path, monkeypatch, *, shared=False, legacy=False):
 
 
 @pytest.mark.parametrize('legacy', [False, True])
-def test_only_removed_exclusive_evidence_moves(tmp_path, monkeypatch, legacy):
+def test_only_removed_exclusive_evidence_deletes(tmp_path, monkeypatch, legacy):
     photos, root, result = setup(tmp_path, monkeypatch, legacy=legacy)
     before = {p.name:p.read_bytes() for p in (root/'focus-evidence/requests').iterdir()}
     survivor = asdict(result.assets[1])
@@ -34,11 +34,15 @@ def test_only_removed_exclusive_evidence_moves(tmp_path, monkeypatch, legacy):
     restored = load_session(root, photos)
     assert len(restored.assets)==2 and asdict(restored.assets[0])==survivor
     assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==2
-    assert len(list((tmp_path/'trash').rglob('*.zip')))==1
+    assert not (tmp_path/'trash').exists()
+    event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
+    assert event['action']=='source_sync_permanent_delete' and event['result']['deleted']==1
     assert before=={p.name:p.read_bytes() for p in (root/'focus-evidence/requests').iterdir()}
     assert '已清理 1' in cleanup.evidence_status(root)
     load_session(root, photos)
-    assert len(list((tmp_path/'trash').rglob('*.zip')))==1
+    assert not (tmp_path/'trash').exists()
+    event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
+    assert event['action']=='source_sync_permanent_delete' and event['result']['deleted']==1
 
 
 @pytest.mark.parametrize('legacy', [False, True])
@@ -51,7 +55,9 @@ def test_shared_blob_survives_until_last_owner_deleted(tmp_path, monkeypatch, le
     result.assets[-1].primary_path.unlink(); load_session(root, photos)
     # Old request ownership is still understood after its scan row was pruned.
     assert not list((root/'focus-evidence/blobs').glob('*.zip'))
-    assert len(list((tmp_path/'trash').rglob('*.zip')))==1
+    assert not (tmp_path/'trash').exists()
+    event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
+    assert event['action']=='source_sync_permanent_delete' and event['result']['deleted']==1
 
 
 @pytest.mark.parametrize('kind', ['offline', 'modified', 'running', 'unknown', 'unanswered', 'escape'])
@@ -98,18 +104,18 @@ def test_live_project_reference_protects_legacy_shared_image(tmp_path, monkeypat
     assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==3
 
 
-def test_failed_move_keeps_records_for_retry(tmp_path, monkeypatch):
+def test_failed_delete_keeps_records_for_retry(tmp_path, monkeypatch):
     photos, root, result = setup(tmp_path, monkeypatch)
     result.assets[0].primary_path.unlink()
     before=(root/'scan-session.json').read_bytes()
-    original=Path.rename
-    def blocked(path, target):
+    original=Path.unlink
+    def blocked(path, *args, **kwargs):
         if path.suffix=='.zip':raise PermissionError('in use')
-        return original(path,target)
-    monkeypatch.setattr(Path,'rename',blocked)
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'unlink',blocked)
     with pytest.raises(ValueError,match='部分证据'):load_session(root,photos)
     assert (root/'scan-session.json').read_bytes()==before
-    monkeypatch.setattr(Path,'rename',original)
+    monkeypatch.setattr(Path,'unlink',original)
     assert len(load_session(root,photos).assets)==2
     assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==2
 
@@ -129,4 +135,44 @@ def test_rename_follows_existing_delete_and_add_rules(tmp_path, monkeypatch):
     assert len(added)==len(removed)==1
     assert len(load_session(root,photos).assets)==2
     assert len(source_changes(root,photos)[0])==1
-    assert len(list((tmp_path/'trash').rglob('*.zip')))==1
+    assert not (tmp_path/'trash').exists()
+    event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
+    assert event['action']=='source_sync_permanent_delete' and event['result']['deleted']==1
+
+
+def test_partial_automatic_delete_records_success_and_retries_failed_only(tmp_path, monkeypatch):
+    photos, root, result = setup(tmp_path, monkeypatch)
+    requests={p.name:p.read_bytes() for p in (root/'focus-evidence/requests').iterdir()}
+    for asset in result.assets[:2]:asset.primary_path.unlink()
+    before=(root/'scan-session.json').read_bytes()
+    blocked=json.loads((root/'focus-evidence/requests/request1.json').read_text())['images'][0]['sha256']+'.zip'
+    original=Path.unlink
+    def unlink(path,*args,**kwargs):
+        if path.name==blocked:raise PermissionError('in use')
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'unlink',unlink)
+    with pytest.raises(ValueError,match='下次打开'):load_session(root,photos)
+    assert (root/'scan-session.json').read_bytes()==before
+    event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
+    assert event['result']['deleted']==1 and len(event['result']['failed'])==1
+    assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==2
+    monkeypatch.setattr(Path,'unlink',original)
+    assert len(load_session(root,photos).assets)==1
+    assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==1
+    assert requests=={p.name:p.read_bytes() for p in (root/'focus-evidence/requests').iterdir()}
+    assert not (tmp_path/'trash').exists()
+
+
+def test_source_read_error_does_not_become_deletion(tmp_path,monkeypatch):
+    photos, root, result = setup(tmp_path, monkeypatch)
+    unreadable=result.assets[0].primary_path
+    original=Path.stat
+    def stat(path,*args,**kwargs):
+        if path==unreadable:raise PermissionError('unreadable source')
+        return original(path,*args,**kwargs)
+    before=(root/'scan-session.json').read_bytes()
+    monkeypatch.setattr(Path,'stat',stat)
+    with pytest.raises(PermissionError):load_session(root,photos)
+    assert (root/'scan-session.json').read_bytes()==before
+    assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==3
+    assert not (root/'focus-evidence/evidence-cleanup.json').exists()

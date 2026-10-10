@@ -243,45 +243,52 @@ def _write_json(path, value):
 
 
 def delete_evidence(plan: CleanupPlan) -> dict:
-    """Permanently delete the explicitly confirmed workspace-wide image scope.
-
-    Automatic source reconciliation MUST continue using quarantine_evidence.
-    Shared content-addressed blobs appear once in the plan; the confirmation
-    warns that all historical requests sharing those images lose their pixels.
-    """
+    """Delete the explicitly confirmed workspace-wide manual image scope."""
     with evidence_operation(plan.workspace):
-        if inspect_evidence(plan.workspace, plan.input_dir) != plan:
-            raise ValueError('确认期间工作区或证据已变化，请重新统计后再试。')
-        result = dict(deleted=0, bytes=0, failed=[])
-        if not plan.files:
-            return result
-        marker = _plain(plan.workspace / 'focus-evidence' / _HISTORY)
-        history = _json(marker) if marker.exists() else dict(version=1, operations=[])
-        if history.get('version') != 1 or not isinstance(history.get('operations'), list):
-            raise ValueError('证据清理记录异常，未删除。')
-        event = dict(id=uuid.uuid4().hex, at=datetime.now(timezone.utc).isoformat(),
-                     action='permanent_delete', workspace=str(plan.workspace),
-                     files=[vars(item) for item in plan.files])
-        history['operations'].append(event)
-        # Persist the approved scope before deleting. Even interruption leaves
-        # a record explaining missing historical images, never a false backup.
-        _write_json(marker, history)
-        for item in plan.files:
-            source = _plain(plan.workspace / 'focus-evidence' / 'blobs' / item.name)
-            try:
-                if _hash(source.read_bytes()) != item.sha256:
-                    raise ValueError('文件已变化，已保留')
-                _plain(source)
-                if source.stat().st_nlink != 1:
-                    raise ValueError('文件存在其他硬链接，已保留')
-                source.unlink()
-                result['deleted'] += 1
-                result['bytes'] += item.size
-            except (OSError, ValueError) as exc:
-                result['failed'].append(f'{item.name}: {exc}')
-        event['result'] = result
-        _write_json(marker, history)
+        return _delete_evidence(plan)
+
+
+def _delete_evidence(plan, eligible_names=None, *, action='permanent_delete'):
+    """Caller holds the evidence lock; revalidate full state before filtering.
+
+    Automatic reconciliation supplies only proven orphan names. The manual UI
+    confirms the complete workspace scope, including shared historical images.
+    """
+    if inspect_evidence(plan.workspace, plan.input_dir) != plan:
+        raise ValueError('确认期间工作区或证据已变化，请重新统计后再试。')
+    if eligible_names is not None:
+        from dataclasses import replace
+        plan = replace(plan, files=tuple(f for f in plan.files if f.name in eligible_names))
+    result = dict(deleted=0, bytes=0, failed=[])
+    if not plan.files:
         return result
+    marker = _plain(plan.workspace / 'focus-evidence' / _HISTORY)
+    history = _json(marker) if marker.exists() else dict(version=1, operations=[])
+    if history.get('version') != 1 or not isinstance(history.get('operations'), list):
+        raise ValueError('证据清理记录异常，未删除。')
+    event = dict(id=uuid.uuid4().hex, at=datetime.now(timezone.utc).isoformat(),
+                 action=action, workspace=str(plan.workspace),
+                 files=[vars(item) for item in plan.files])
+    history['operations'].append(event)
+    # Persist the approved scope before deleting. Even interruption leaves
+    # a record explaining missing historical images, never a false backup.
+    _write_json(marker, history)
+    for item in plan.files:
+        source = _plain(plan.workspace / 'focus-evidence' / 'blobs' / item.name)
+        try:
+            if _hash(source.read_bytes()) != item.sha256:
+                raise ValueError('文件已变化，已保留')
+            _plain(source)
+            if source.stat().st_nlink != 1:
+                raise ValueError('文件存在其他硬链接，已保留')
+            source.unlink()
+            result['deleted'] += 1
+            result['bytes'] += item.size
+        except (OSError, ValueError) as exc:
+            result['failed'].append(f'{item.name}: {exc}')
+    event['result'] = result
+    _write_json(marker, history)
+    return result
 
 
 def quarantine_evidence(plan: CleanupPlan, destination) -> dict:
@@ -384,7 +391,6 @@ def sync_removed_evidence(workspace, input_dir, removed):
     Legacy audit links identify owners; new manifests also retain source paths
     for older retries. Unattributed requests protect their blobs conservatively.
     """
-    from .settings import application_dir
     root, source = _plain(workspace), _plain(input_dir)
     if not source.is_dir():
         raise ValueError('照片文件夹不可访问，原记录及证据保留。')
@@ -447,11 +453,11 @@ def sync_removed_evidence(workspace, input_dir, removed):
     if eligible:
         if not source.is_dir() or any(_plain(p).exists() for p in removed):
             raise ValueError('原片状态已变化，未同步整理。')
-        result = _quarantine_evidence(plan, default_quarantine_root(application_dir()), eligible)
+        result = _delete_evidence(plan, eligible, action='source_sync_permanent_delete')
         if result['failed']:
-            raise ValueError('部分证据暂不能移动，原照片记录保留，请解除占用后重试。')
+            raise ValueError('部分证据暂不能删除，原照片记录保留，下次打开工作区将重试。')
     else:
-        result = dict(moved=0, bytes=0, failed=[], destination=None)
+        result = dict(deleted=0, bytes=0, failed=[])
     history['sources'] = sorted(removed)
     _write_json(marker, history)
     return result
