@@ -69,7 +69,6 @@ def test_workspace_activation_clears_old_log_without_reloading_history(tmp_path,
     logfile = workspace_path(workspace, 'session.log')
     logfile.parent.mkdir(parents=True, exist_ok=True)
     logfile.write_text('previous session history\n', encoding='utf-8')
-    monkeypatch.setattr(app, '_compact_completed_workspace', lambda *_: None)
     try:
         app._log('old workspace queued message')
         app.input_var.set(str(source))

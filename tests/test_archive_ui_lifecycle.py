@@ -14,7 +14,7 @@ from ai_cull_assistant.workspace_archive import compact_workspace, restore_works
 from test_workspace_archive import _completed_workspace
 
 
-def test_close_archives_and_reopen_restores_without_scan(tmp_path):
+def test_close_keeps_active_state_and_reopen_without_scan(tmp_path):
     photos, workspace, _result, _project, _task, _batch, export, _crops = _completed_workspace(tmp_path)
     config = tmp_path / "settings"
     save_values(config, {"input": str(photos), "workspace": str(workspace)})
@@ -22,9 +22,9 @@ def test_close_archives_and_reopen_restores_without_scan(tmp_path):
     app.withdraw()
     assert app.scan_result is not None
     app._close()
-    assert (workspace / ".workspace-archive.zip").is_file()
+    assert not (workspace / ".workspace-archive.zip").exists()
     assert export.is_file()
-    assert not (workspace / "previews").exists()
+    assert (workspace / "previews").exists()
 
     reopened = App(settings_dir=config)
     reopened.withdraw()
@@ -32,7 +32,7 @@ def test_close_archives_and_reopen_restores_without_scan(tmp_path):
         assert reopened.scan_result is not None
         assert not (workspace / ".workspace-archive.zip").exists()
         assert reopened._sheets_ready()
-        assert not Path(reopened.scan_result.assets[0].preview_path).exists()
+        assert Path(reopened.scan_result.assets[0].preview_path).exists()
     finally:
         reopened._close()
 
@@ -83,8 +83,8 @@ def test_close_after_scan_only_restores_groups_and_face_settings(tmp_path):
     app.crop_settings = CropSettings(scale_factor=1.35, shift_factor=-0.2)
     app._close()
 
-    assert (workspace / ".workspace-archive.zip").is_file()
-    assert not (workspace / "previews").exists()
+    assert not (workspace / ".workspace-archive.zip").exists()
+    assert (workspace / "previews").exists()
     reopened = App(settings_dir=config)
     reopened.withdraw()
     try:
@@ -100,7 +100,7 @@ def test_close_after_scan_only_restores_groups_and_face_settings(tmp_path):
         reopened._close()
 
 
-def test_close_logs_why_active_workspace_was_not_compacted(tmp_path):
+def test_close_keeps_active_job_without_attempting_archive(tmp_path):
     photos = tmp_path / "photos"
     photos.mkdir()
     Image.new("RGB", (120, 180), "white").save(photos / "A.jpg")
@@ -118,4 +118,76 @@ def test_close_logs_why_active_workspace_was_not_compacted(tmp_path):
     app._close()
 
     assert not (workspace / ".workspace-archive.zip").exists()
-    assert "工作区未整理：工作区仍有未完成任务" in (workspace / "logs" / "session.log").read_text("utf-8")
+    assert active.read_text("utf-8") == '{"job_id":"pending"}'
+    assert "工作区未整理" not in (workspace / "logs" / "session.log").read_text("utf-8")
+
+
+def test_legacy_archive_restores_once_and_repeated_close_keeps_active_state(tmp_path,monkeypatch):
+    import json
+    photos,workspace,_,project,task,_,export,_=_completed_workspace(tmp_path)
+    original=json.loads((workspace/'ai_project.json').read_text('utf-8'))
+    assert compact_workspace(workspace)['compacted']
+    config=tmp_path/'settings';save_values(config,{'input':str(photos),'workspace':str(workspace)})
+    def forbidden(*args,**kwargs):raise AssertionError('Automatic archive must not run')
+    monkeypatch.setattr('ai_cull_assistant.workspace_archive.compact_workspace',forbidden)
+    monkeypatch.setattr('ai_cull_assistant.processing_job.screen_assets',forbidden)
+    for _ in range(3):
+        app=App(settings_dir=config);app.withdraw()
+        try:
+            assert app.scan_result is not None and app._sheets_ready()
+            assert json.loads((workspace/'ai_project.json').read_text('utf-8'))==original
+            assert export.is_file()
+        finally:app._close()
+        assert (workspace/'scan-session.json').is_file()
+        assert not (workspace/'.workspace-archive.zip').exists()
+
+
+def test_switch_saves_preferences_and_preserves_old_cache_and_results(tmp_path,monkeypatch):
+    (tmp_path/'first').mkdir();(tmp_path/'second').mkdir()
+    first,old,*_=_completed_workspace(tmp_path/'first')
+    second,new,*_=_completed_workspace(tmp_path/'second')
+    config=tmp_path/'settings';save_values(config,{'input':str(first),'workspace':str(old)})
+    before=(old/'ai_project.json').read_bytes()
+    def forbidden(*args,**kwargs):raise AssertionError('Automatic archive must not run')
+    monkeypatch.setattr('ai_cull_assistant.workspace_archive.compact_workspace',forbidden)
+    app=App(settings_dir=config);app.withdraw()
+    try:
+        app.crop_settings=CropSettings(scale_factor=1.45)
+        app.input_var.set(str(second));app._activate_workspace(str(second),new)
+        assert (old/'scan-session.json').exists() and (old/'previews').is_dir()
+        assert (old/'ai_project.json').read_bytes()==before
+        assert not (old/'.workspace-archive.zip').exists()
+        app.input_var.set(str(first));app._activate_workspace(str(first),old)
+        assert app.crop_settings.scale_factor==1.45 and app.scan_result is not None
+    finally:app._close()
+    assert not (new/'.workspace-archive.zip').exists()
+
+
+def test_close_save_failure_keeps_last_checkpoint_and_cache(tmp_path,monkeypatch):
+    photos,workspace,*_=_completed_workspace(tmp_path)
+    config=tmp_path/'settings';save_values(config,{'input':str(photos),'workspace':str(workspace)})
+    app=App(settings_dir=config);app.withdraw()
+    before=(workspace/'scan-session.json').read_bytes()
+    def failed(*args,**kwargs):raise OSError('synthetic save failure')
+    monkeypatch.setattr('ai_cull_assistant.session_store.save_session',failed)
+    app._close()
+    assert (workspace/'scan-session.json').read_bytes()==before
+    assert (workspace/'previews').is_dir() and not (workspace/'.workspace-archive.zip').exists()
+    assert 'synthetic save failure' in (workspace/'logs/session.log').read_text('utf-8')
+
+
+def test_switch_save_failure_preserves_selection_and_files(tmp_path,monkeypatch):
+    photos,workspace,*_=_completed_workspace(tmp_path)
+    config=tmp_path/'settings';save_values(config,{'input':str(photos),'workspace':str(workspace)})
+    app=App(settings_dir=config);app.withdraw()
+    second=tmp_path/'second';second.mkdir()
+    before=(workspace/'scan-session.json').read_bytes()
+    def failed(*args,**kwargs):raise OSError('synthetic preferences failure')
+    with monkeypatch.context() as patch:
+        patch.setattr('ai_cull_assistant.app.save_workspace_preferences',failed)
+        app.input_var.set(str(second))
+        assert not app._sync_selected_workspace()
+        assert app._active_workspace==str(workspace) and app.input_var.get()==str(photos)
+        assert (workspace/'scan-session.json').read_bytes()==before
+        assert (workspace/'previews').is_dir() and not (workspace/'.workspace-archive.zip').exists()
+    app._close()

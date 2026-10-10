@@ -258,8 +258,6 @@ class App(EvidenceCleanupMixin, tk.Tk):
         if not self._confirm_face_draft_reset():
             raise ValueError('已取消切换，保留当前人脸编辑草稿。')
         self._discard_workspace_pages()
-        previous_workspace = self._active_workspace
-        previous_blocked = self._workspace_blocked
         self._save_active_workspace_preferences()
         values = load_workspace_preferences(self.settings_dir, workspace, input_dir)
         options = values.get("options", {})
@@ -293,9 +291,6 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self._restore_session(restore_log=False)
         self._restore_processing_job()
         self._log_workspace_summary()
-        if (previous_workspace and not previous_blocked
-                and Path(previous_workspace).resolve() != workspace.resolve()):
-            self._compact_completed_workspace(previous_workspace)
 
     def _sync_selected_workspace(self) -> bool:
         if self._processing_busy:
@@ -408,8 +403,6 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self._discard_workspace_pages()
         self._save_preferences()
         self._save_session()
-        if self._active_workspace and not self._workspace_cleared and not self._workspace_blocked:
-            self._compact_completed_workspace(self._active_workspace)
         for timer in self.tk.splitlist(self.tk.call('after', 'info')):
             # Timers may belong to children (for example hover tooltips).
             # Root.after_cancel deletes their Tcl command without updating
@@ -417,31 +410,6 @@ class App(EvidenceCleanupMixin, tk.Tk):
             # Cancel scheduling only; each owning widget frees its command.
             self.tk.call('after', 'cancel', timer)
         self.destroy()
-
-    def _compact_completed_workspace(self, workspace):
-        """Archive a completed scan checkpoint without rerunning analysis."""
-        from .workspace_archive import compact_workspace
-        old_label = self.progress_label.get()
-        old_percent = self.progress_var.get()
-        def progress(value):
-            self._display_progress("整理工作区进度：", value)
-            self.update_idletasks()
-        try:
-            stats = compact_workspace(workspace, progress=progress)
-            if not stats["compacted"] and stats["reason"] != "工作区已经压缩":
-                # This may run after switching to another workspace, so write
-                # the explanation to the workspace that could not be compacted.
-                logfile = workspace_path(Path(workspace), "session.log")
-                logfile.parent.mkdir(parents=True, exist_ok=True)
-                with logfile.open("a", encoding="utf-8") as stream:
-                    stream.write(f"工作区未整理：{stats['reason']}\n")
-            return stats
-        except (OSError, ValueError, RuntimeError) as exc:
-            # Do not append to a possibly archived log after partial compaction.
-            messagebox.showwarning("工作区整理未完成", f"已保留可恢复数据。\n{exc}", parent=self)
-            return {"compacted": False, "reason": str(exc)}
-        finally:
-            self._display_progress(old_label, old_percent)
 
     def _show_workspace_error(self):
         if not self._workspace_blocked or not self.winfo_exists():
