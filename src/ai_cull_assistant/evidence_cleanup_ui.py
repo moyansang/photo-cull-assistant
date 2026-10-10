@@ -6,22 +6,21 @@ import tkinter as tk
 from tkinter import messagebox
 
 from . import evidence_cleanup as cleanup
-from .settings import application_dir
 
 
-def confirmation_text(plan, destination):
+def confirmation_text(plan):
     return (
         f'当前工作区：{plan.workspace}\n'
-        f'可移出 {len(plan.files)} 个纯图片证据包，共 {plan.bytes / 1024**2:.2f} MiB。\n'
+        f'将永久删除 {len(plan.files)} 个纯图片证据包，共 {plan.bytes / 1024**2:.2f} MiB。\n'
         f'混合内容、异常或非图片项目将保留：{plan.preserved} 项。\n\n'
         f'原片缺失 {plan.missing_sources} 个、已变化 {plan.changed_sources} 个。'
         '缺失原片的证据可能无法再生成；已变化原片重生成的图片不保证与历史一致。\n\n'
-        '仅移出 focus-evidence/blobs 中的图片包。保留扫描记录、评分与选择、人工分组、'
+        '仅删除 focus-evidence/blobs 中的图片包。保留扫描记录、评分与选择、人工分组、'
         '裁切设置、AI 请求和回答、任务、联系表及导出；不会重新扫描或改写照片记录。\n'
-        '移出后将无法在工作区查看这些历史 AI 输入图片。后续重新评分仍需满足原片及任务校验。\n\n'
-        f'保存到：{destination}\n'
-        '本次是移动，尚未释放磁盘空间。检查后可手动删除；手动永久删除后无法从本功能恢复。\n\n'
-        '确认移出这些证据图片吗？'
+        '共享图片包只删除一次，但引用它的所有历史请求都将失去图片；请求回答文本仍保留。\n'
+        '永久删除后不可恢复，不进入回收站或待手动删除目录。删除成功后释放对应图片文件空间。\n'
+        '原片缺失时无法从原片重建；原片仍在也不保证重新生成与历史完全相同的图片。\n\n'
+        '确认永久删除以上证据图片吗？'
     )
 
 
@@ -76,7 +75,7 @@ class EvidenceCleanupMixin:
                 self.after(50, poll)
                 return
             if error is not None:
-                self._finish_evidence_cleanup('证据清理未完成；请保留原文件和待手动删除目录。')
+                self._finish_evidence_cleanup('证据删除未完成；请检查清理记录，已删除图片无法恢复。')
                 messagebox.showerror('无法清理证据图片', str(error), parent=self)
             else:
                 callback(result)
@@ -91,21 +90,19 @@ class EvidenceCleanupMixin:
             self._finish_evidence_cleanup('没有可清理的纯图片证据包。')
             messagebox.showinfo('清理证据图片', f'没有可清理的纯图片证据包；保留异常或混合内容 {plan.preserved} 项。', parent=self)
             return
-        destination = cleanup.default_quarantine_root(application_dir())
-        if not messagebox.askyesno('确认清理证据图片', confirmation_text(plan, destination), parent=self, default='no'):
-            self._finish_evidence_cleanup('已取消证据清理，文件未移动。')
+        if not messagebox.askyesno('确认永久删除证据图片', confirmation_text(plan), parent=self, default='no'):
+            self._finish_evidence_cleanup('已取消证据删除，文件未删除。')
             return
-        self.next_step_var.set('正在复核并移出证据图片；请勿移动工作区或原照片…')
-        self._evidence_cleanup_worker(lambda: cleanup.quarantine_evidence(plan, destination), self._evidence_cleanup_done)
+        self.next_step_var.set('正在复核并永久删除证据图片；请勿移动工作区或原照片…')
+        self._evidence_cleanup_worker(lambda: cleanup.delete_evidence(plan), self._evidence_cleanup_done)
 
     def _evidence_cleanup_done(self, result):
-        text = (f"已移出 {result['moved']} 个证据包，共 {result['bytes'] / 1024**2:.2f} MiB。\n"
+        text = (f"已永久删除 {result['deleted']} 个证据包，已删除图片文件共 {result['bytes'] / 1024**2:.2f} MiB。\n"
                 f"未完成 {len(result['failed'])} 项；被占用或变化的文件会保留。\n"
-                f"位置：{result['destination']}\n"
-                '评分、分组和请求回答保持不变；尚未释放磁盘空间，检查后可手动删除移出的文件。')
+                '评分、分组和请求回答保持不变；已删除的图片不可恢复。')
         if result['failed']:
             text += '\n\n' + '\n'.join(result['failed'][:3])
-        self._finish_evidence_cleanup('证据图片处理完成；检查待手动删除目录后再决定删除。')
+        self._finish_evidence_cleanup('证据图片删除完成；已删除图片不可恢复。')
         (messagebox.showwarning if result['failed'] else messagebox.showinfo)('清理证据图片', text, parent=self)
 
     def _finish_evidence_cleanup(self, text):

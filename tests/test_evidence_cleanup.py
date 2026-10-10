@@ -265,11 +265,12 @@ def test_home_button_cancel_confirm_repeat_and_missing_source_preserve_records(t
         assert str(app.evidence_cleanup_button.cget('state'))=='disabled'
         app._review_busy=original_busy;app._refresh_evidence_button()
         app.evidence_cleanup_button.invoke();pump(app)
-        assert len(prompts)==1 and '原片缺失 1' in prompts[0] and '尚未释放' in prompts[0]
+        assert len(prompts)==1 and '原片缺失 1' in prompts[0] and '不可恢复' in prompts[0] and '不进入回收站' in prompts[0]
         assert snapshots(root)==before and not (tmp_path/'trash').exists()
         choice[0]=True
         app.evidence_cleanup_button.invoke();pump(app)
         assert len(prompts)==2
+        assert not (tmp_path/'trash').exists()
         for name,data in before.items():
             if name.parts[:2]!=('focus-evidence','blobs'):assert (root/name).read_bytes()==data
         assert not list((root/'focus-evidence/blobs').glob('*.zip'))

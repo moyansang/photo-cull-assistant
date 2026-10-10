@@ -242,6 +242,48 @@ def _write_json(path, value):
     temporary.replace(path)
 
 
+def delete_evidence(plan: CleanupPlan) -> dict:
+    """Permanently delete the explicitly confirmed workspace-wide image scope.
+
+    Automatic source reconciliation MUST continue using quarantine_evidence.
+    Shared content-addressed blobs appear once in the plan; the confirmation
+    warns that all historical requests sharing those images lose their pixels.
+    """
+    with evidence_operation(plan.workspace):
+        if inspect_evidence(plan.workspace, plan.input_dir) != plan:
+            raise ValueError('确认期间工作区或证据已变化，请重新统计后再试。')
+        result = dict(deleted=0, bytes=0, failed=[])
+        if not plan.files:
+            return result
+        marker = _plain(plan.workspace / 'focus-evidence' / _HISTORY)
+        history = _json(marker) if marker.exists() else dict(version=1, operations=[])
+        if history.get('version') != 1 or not isinstance(history.get('operations'), list):
+            raise ValueError('证据清理记录异常，未删除。')
+        event = dict(id=uuid.uuid4().hex, at=datetime.now(timezone.utc).isoformat(),
+                     action='permanent_delete', workspace=str(plan.workspace),
+                     files=[vars(item) for item in plan.files])
+        history['operations'].append(event)
+        # Persist the approved scope before deleting. Even interruption leaves
+        # a record explaining missing historical images, never a false backup.
+        _write_json(marker, history)
+        for item in plan.files:
+            source = _plain(plan.workspace / 'focus-evidence' / 'blobs' / item.name)
+            try:
+                if _hash(source.read_bytes()) != item.sha256:
+                    raise ValueError('文件已变化，已保留')
+                _plain(source)
+                if source.stat().st_nlink != 1:
+                    raise ValueError('文件存在其他硬链接，已保留')
+                source.unlink()
+                result['deleted'] += 1
+                result['bytes'] += item.size
+            except (OSError, ValueError) as exc:
+                result['failed'].append(f'{item.name}: {exc}')
+        event['result'] = result
+        _write_json(marker, history)
+        return result
+
+
 def quarantine_evidence(plan: CleanupPlan, destination) -> dict:
     """Revalidate after confirmation, then move only approved image ZIPs; no deletes."""
     with evidence_operation(plan.workspace):
