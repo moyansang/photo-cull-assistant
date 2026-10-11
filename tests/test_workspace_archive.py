@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import stat
+import zipfile
 import pytest
 
 from PIL import Image
@@ -13,7 +15,8 @@ from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.preview import ensure_preview
 from ai_cull_assistant.session_store import load_session, save_session
 from ai_cull_assistant.workflow import run_scan
-from ai_cull_assistant.workspace_archive import compact_workspace, restore_workspace
+from ai_cull_assistant.workspace_archive import previews_were_compacted, restore_workspace
+from workspace_archive_fixtures import create_legacy_workspace_archive
 
 
 def _completed_workspace(tmp_path):
@@ -36,7 +39,7 @@ def _completed_workspace(tmp_path):
     return photos, workspace, result, project, task, batch, export, crops
 
 
-def test_completed_workspace_compacts_and_roundtrips_without_invalidating_ai(tmp_path):
+def test_completed_legacy_workspace_restores_without_invalidating_ai(tmp_path):
     photos, workspace, result, project, task, batch, export, crops = _completed_workspace(tmp_path)
     snapshot_hashes = list(batch["image_hashes"])
     export_bytes = export.read_bytes()
@@ -47,12 +50,10 @@ def test_completed_workspace_compacts_and_roundtrips_without_invalidating_ai(tmp
     evidence = {p.relative_to(audit_root(audit_cache)): p.read_bytes()
                 for p in audit_root(audit_cache).rglob('*') if p.is_file()}
 
-    preview_count = sum(p.is_file() for p in (workspace / 'previews').rglob('*'))
     assert list((workspace / 'previews').rglob('.sheet-thumbs/*.png'))
-    stats = compact_workspace(workspace, progress.append)
+    create_legacy_workspace_archive(workspace)
 
-    assert stats["compacted"] and stats["removed_previews"] == preview_count
-    assert progress[0] == 0 and progress[-1] == 100
+    assert previews_were_compacted(workspace)
     assert not (workspace / "scan-session.json").exists()
     assert not (workspace / "previews").exists()
     assert export.read_bytes() == export_bytes
@@ -60,7 +61,7 @@ def test_completed_workspace_compacts_and_roundtrips_without_invalidating_ai(tmp
     assert (workspace / "ai_tasks").is_dir()
     assert all((audit_root(audit_cache)/name).read_bytes() == payload for name, payload in evidence.items())
 
-    restored_stats = restore_workspace(workspace)
+    restored_stats = restore_workspace(workspace, progress.append)
     restored = load_session(workspace, photos)
     reopened = ReviewProject(workspace)
     reopened.refresh(restored.assets, crops)
@@ -68,6 +69,8 @@ def test_completed_workspace_compacts_and_roundtrips_without_invalidating_ai(tmp
     current_batch = current["batches"][0]
 
     assert restored_stats["restored"]
+    assert progress[0] == 0 and progress[-1] == 100
+    assert previews_were_compacted(workspace)
     assert current["id"] == task["id"] and current_batch["status"] == "complete"
     assert current_batch["image_hashes"] == snapshot_hashes
     assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in reopened.batch_images(current, current_batch)] == snapshot_hashes
@@ -76,7 +79,7 @@ def test_completed_workspace_compacts_and_roundtrips_without_invalidating_ai(tmp
     assert ensure_preview(restored.assets[0]).is_file()
 
 
-def test_completed_scan_without_sheets_or_ai_compacts_and_restores(tmp_path):
+def test_completed_scan_without_sheets_or_ai_restores_from_legacy_archive(tmp_path):
     photos = tmp_path / "photos"
     photos.mkdir()
     Image.new("RGB", (120, 180), "white").save(photos / "A.jpg")
@@ -91,9 +94,11 @@ def test_completed_scan_without_sheets_or_ai_compacts_and_restores(tmp_path):
     processing_cache.mkdir(parents=True)
     (processing_cache / "temporary.bin").write_bytes(b"temporary")
 
-    stats = compact_workspace(workspace)
+    create_legacy_workspace_archive(
+        workspace,
+        remove_paths=("previews", "cache/processing"),
+    )
 
-    assert stats["compacted"]
     assert not (workspace / "previews").exists()
     assert not (workspace / "cache" / "processing").exists()
     assert not (workspace / "contact_sheets").exists()
@@ -106,14 +111,13 @@ def test_completed_scan_without_sheets_or_ai_compacts_and_restores(tmp_path):
     assert restored.main_pages == [] and restored.rejected_pages == []
 
 
-def test_completed_ai_review_can_compact_before_export(tmp_path):
+def test_completed_ai_review_restores_before_export(tmp_path):
     photos, workspace, _result, project, task, _batch, export, _crops = _completed_workspace(tmp_path)
     paid_result = json.loads(project.path.read_text("utf-8"))["photos"]
     export.unlink()
 
-    stats = compact_workspace(workspace)
+    create_legacy_workspace_archive(workspace)
 
-    assert stats["compacted"]
     assert restore_workspace(workspace)["restored"]
     reopened = ReviewProject(workspace)
     assert reopened.current_task()["id"] == task["id"]
@@ -125,7 +129,7 @@ def test_archived_ai_result_survives_snapshot_cache_cleanup_and_rebuilds_on_dema
     task_id = task['id']
     answers = {pid: dict(project.data['photos'][pid]['ai']) for pid in batch['photo_ids']}
     raw_responses = json.loads(json.dumps(batch['raw_responses']))
-    compact_workspace(workspace)
+    create_legacy_workspace_archive(workspace)
     shutil.rmtree(workspace/'ai_tasks')
 
     assert restore_workspace(workspace)['restored']
@@ -147,7 +151,7 @@ def test_archived_ai_result_survives_snapshot_cache_cleanup_and_rebuilds_on_dema
 
 
 @pytest.mark.parametrize('state', ['pending', 'stale', 'changed_group', 'focus_dirty'])
-def test_saved_ai_work_compacts_without_losing_pending_or_stale_results(tmp_path, state):
+def test_saved_ai_work_restores_without_losing_pending_or_stale_results(tmp_path, state):
     photos, workspace, result, project, task, batch, export, _crops = _completed_workspace(tmp_path)
     if state == 'pending':
         task['batches'][0]['status'] = 'pending'
@@ -167,9 +171,11 @@ def test_saved_ai_work_compacts_without_losing_pending_or_stale_results(tmp_path
     cache.mkdir(parents=True, exist_ok=True)
     (cache / 'temporary.bin').write_bytes(b'cache')
 
-    stats = compact_workspace(workspace)
+    create_legacy_workspace_archive(
+        workspace,
+        remove_paths=("previews", "cache/analysis"),
+    )
 
-    assert stats['compacted']
     assert not (workspace / 'previews').exists()
     assert not cache.exists()
     assert export.read_bytes() == original_export
@@ -182,29 +188,9 @@ def test_saved_ai_work_compacts_without_losing_pending_or_stale_results(tmp_path
     assert restored.assets[0].ai_focus_dirty == result.assets[0].ai_focus_dirty
 
 
-def test_active_processing_job_and_its_cache_are_preserved(tmp_path):
-    photos = tmp_path / "photos"
-    photos.mkdir()
-    Image.new("RGB", (120, 180), "white").save(photos / "A.jpg")
-    workspace = tmp_path / "workspace"
-    result = run_scan(photos, workspace, technical_screening=False)
-    save_session(result)
-    processing = workspace / "cache" / "processing"
-    processing.mkdir(parents=True, exist_ok=True)
-    (processing / "active.json").write_text('{"job_id":"pending"}', encoding="utf-8")
-    (processing / "pending.bin").write_bytes(b"resume me")
-
-    stats = compact_workspace(workspace)
-
-    assert not stats["compacted"] and "未完成任务" in stats["reason"]
-    assert (processing / "active.json").is_file()
-    assert (processing / "pending.bin").read_bytes() == b"resume me"
-    assert Path(result.assets[0].preview_path).is_file()
-
-
 def test_corrupt_archive_does_not_remove_state_or_overwrite_on_restore(tmp_path):
     _photos, workspace, _result, _project, _task, _batch, _export, _crops = _completed_workspace(tmp_path)
-    compact_workspace(workspace)
+    create_legacy_workspace_archive(workspace)
     archive = workspace / ".workspace-archive.zip"
     archive.write_bytes(archive.read_bytes()[:40])
 
@@ -219,15 +205,54 @@ def test_corrupt_archive_does_not_remove_state_or_overwrite_on_restore(tmp_path)
     assert not (workspace / "scan-session.json").exists()
 
 
-def test_workspace_overlapping_source_is_not_touched(tmp_path):
-    photos, workspace, _result, _project, _task, _batch, _export, _crops = _completed_workspace(tmp_path)
-    session_path = workspace / "scan-session.json"
-    data = json.loads(session_path.read_text("utf-8"))
-    data["input_dir"] = str(tmp_path)
-    session_path.write_text(json.dumps(data), encoding="utf-8")
-    preview = next((workspace / "previews").rglob("*.jpg"))
+def test_restore_refuses_to_overwrite_different_active_state(tmp_path):
+    _photos, workspace, *_ = _completed_workspace(tmp_path)
+    create_legacy_workspace_archive(workspace)
+    active = workspace / "scan-session.json"
+    active.write_bytes(b'{"newer":"active state"}')
 
-    stats = compact_workspace(workspace)
+    with pytest.raises(ValueError, match="已有不同内容"):
+        restore_workspace(workspace)
 
-    assert not stats["compacted"] and "重叠" in stats["reason"]
-    assert preview.is_file() and session_path.is_file()
+    assert active.read_bytes() == b'{"newer":"active state"}'
+    assert (workspace / ".workspace-archive.zip").is_file()
+    assert not (workspace / "ai_project.json").exists()
+
+
+@pytest.mark.parametrize("kind", ["unknown", "traversal", "symlink"])
+def test_restore_rejects_unsafe_legacy_archive_members(tmp_path, kind):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    archive = workspace / ".workspace-archive.zip"
+    payload = b"{}"
+    member = "unknown.json" if kind == "unknown" else "../outside.json"
+    manifest = {
+        "version": 1,
+        "files": {
+            member: {
+                "size": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        },
+    }
+    with zipfile.ZipFile(archive, "w") as bundle:
+        info = zipfile.ZipInfo(member)
+        if kind == "symlink":
+            member = "scan-session.json"
+            info = zipfile.ZipInfo(member)
+            info.external_attr = (stat.S_IFLNK | 0o777) << 16
+            manifest["files"] = {
+                member: {
+                    "size": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                }
+            }
+        bundle.writestr(info, payload)
+        bundle.writestr(".archive-manifest.json", json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="未知文件|不安全路径|包含链接"):
+        restore_workspace(workspace)
+
+    assert archive.is_file()
+    assert not (workspace / "scan-session.json").exists()
+    assert not (tmp_path / "outside.json").exists()

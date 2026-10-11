@@ -169,11 +169,11 @@ def test_ambiguous_workspace_copies_require_explicit_choice(tmp_path):
 def test_select_source_finds_copied_archived_workspace_without_old_registry(tmp_path):
     import shutil
     from test_workspace_archive import _completed_workspace
-    from ai_cull_assistant.workspace_archive import compact_workspace
     from ai_cull_assistant.session_store import load_session
     from ai_cull_assistant.ai_project import ReviewProject
+    from workspace_archive_fixtures import create_legacy_workspace_archive
     photos, old, result, project, task, batch, export, crops = _completed_workspace(tmp_path)
-    assert compact_workspace(old)['compacted']
+    create_legacy_workspace_archive(old)
     settings=tmp_path/'new-machine'/'settings'
     copied=settings.parent/'workspaces'/'my-copied-project'
     shutil.copytree(old,copied)

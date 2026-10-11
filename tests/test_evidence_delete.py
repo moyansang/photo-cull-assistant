@@ -95,9 +95,9 @@ def test_interruption_has_durable_permanent_delete_intent(workspace,monkeypatch)
 
 
 def test_archived_workspace_is_not_restored_or_modified(tmp_path):
-    from ai_cull_assistant.workspace_archive import compact_workspace
+    from workspace_archive_fixtures import create_legacy_workspace_archive
     root,photos,*_=completed(tmp_path)
-    assert compact_workspace(root)['compacted']
+    create_legacy_workspace_archive(root)
     before=(root/'.workspace-archive.zip').read_bytes()
     assert cleanup.delete_evidence(cleanup.inspect_evidence(root,photos))['deleted']==1
     assert (root/'.workspace-archive.zip').read_bytes()==before

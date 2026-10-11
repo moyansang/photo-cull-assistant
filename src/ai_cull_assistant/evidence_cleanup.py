@@ -1,4 +1,4 @@
-"""Inspect and quarantine image-only focus evidence without changing review state."""
+"""Inspect and delete image-only focus evidence without changing review state."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -291,62 +291,8 @@ def _delete_evidence(plan, eligible_names=None, *, action='permanent_delete'):
     return result
 
 
-def quarantine_evidence(plan: CleanupPlan, destination) -> dict:
-    """Revalidate after confirmation, then move only approved image ZIPs; no deletes."""
-    with evidence_operation(plan.workspace):
-        return _quarantine_evidence(plan, destination)
-
-
-def _quarantine_evidence(plan, destination, eligible_names=None):
-    """Caller holds evidence_operation; always revalidate the complete plan."""
-    if inspect_evidence(plan.workspace, plan.input_dir) != plan:
-        raise ValueError('确认期间工作区或证据已变化，请重新统计后再试。')
-    if eligible_names is not None:
-        from dataclasses import replace
-        plan = replace(plan, files=tuple(f for f in plan.files if f.name in eligible_names))
-    if not plan.files:
-        return dict(moved=0, bytes=0, failed=[], destination=None)
-    trash = _plain(destination)
-    if (trash == plan.workspace or trash in plan.workspace.parents or plan.workspace in trash.parents
-            or trash == plan.input_dir or trash in plan.input_dir.parents or plan.input_dir in trash.parents):
-        raise ValueError('待手动删除目录与工作区或原片重叠，未清理。')
-    operation_id = datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8]
-    folder = trash / (operation_id + '-证据图片') / plan.workspace.name / 'focus-evidence' / 'blobs'
-    _plain(folder); folder.mkdir(parents=True, exist_ok=False)
-    if folder.stat().st_dev != plan.workspace.stat().st_dev:
-        raise ValueError('待手动删除目录必须与工作区在同一磁盘，未清理。')
-    event = dict(id=operation_id, at=datetime.now(timezone.utc).isoformat(), workspace=str(plan.workspace),
-                 destination=str(folder), files=[vars(item) for item in plan.files])
-    _write_json(folder.parent / 'manifest.json', event)
-    marker = plan.workspace / 'focus-evidence' / _HISTORY
-    history = _json(marker) if marker.exists() else dict(version=1, operations=[])
-    if history.get('version') != 1 or not isinstance(history.get('operations'), list):
-        raise ValueError('证据清理记录异常，未清理。')
-    history['operations'].append(event)
-    # Persist intent before the first move: interruption leaves a recovery map.
-    _write_json(marker, history)
-    result = dict(moved=0, bytes=0, failed=[], destination=str(folder.parents[2]))
-    for item in plan.files:
-        source = plan.workspace / 'focus-evidence' / 'blobs' / item.name
-        target = folder / item.name
-        try:
-            _plain(source); _plain(target)
-            if target.exists() or _hash(source.read_bytes()) != item.sha256:
-                raise ValueError('文件已变化，已保留')
-            _plain(source); _plain(target)
-            if source.stat().st_nlink != 1:
-                raise ValueError('文件存在其他硬链接，已保留')
-            source.rename(target)
-            if _hash(target.read_bytes()) != item.sha256:
-                raise ValueError('移动后校验失败，请保留两处数据并检查清单')
-            result['moved'] += 1; result['bytes'] += item.size
-        except (OSError, ValueError) as exc:
-            result['failed'].append(f'{item.name}: {exc}')
-    return result
-
-
 def evidence_status(workspace):
-    """Explain missing historical images after cleanup, including interrupted moves."""
+    """Explain missing historical images after cleanup."""
     try:
         root = _plain(workspace)
         marker = root / 'focus-evidence' / _HISTORY
@@ -359,13 +305,6 @@ def evidence_status(workspace):
         return f'已清理 {missing} 个历史证据图片包；请求回答及选片结果保留。' if missing else ''
     except (OSError, ValueError, KeyError, TypeError):
         return '证据清理记录暂不可读；请保留工作区并检查迁移清单。'
-
-
-def default_quarantine_root(program_dir):
-    program = Path(program_dir)
-    if program.parent.name == '当前版本' and program.parent.parent.name == '本地测试':
-        return program.parent.parent.parent / '待手动删除'
-    return program.parent / '待手动删除'
 
 
 def _audit_refs(value):

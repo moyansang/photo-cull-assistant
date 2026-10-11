@@ -10,8 +10,9 @@ from ai_cull_assistant.settings import save_values
 from ai_cull_assistant.session_store import load_session, save_session
 from ai_cull_assistant.subject import SubjectFeatures
 from ai_cull_assistant.workflow import persist_manual_groups, run_scan
-from ai_cull_assistant.workspace_archive import compact_workspace, restore_workspace
+from ai_cull_assistant.workspace_archive import restore_workspace
 from test_workspace_archive import _completed_workspace
+from workspace_archive_fixtures import create_legacy_workspace_archive
 
 
 def test_close_keeps_active_state_and_reopen_without_scan(tmp_path):
@@ -39,7 +40,7 @@ def test_close_keeps_active_state_and_reopen_without_scan(tmp_path):
 
 def test_sheets_after_archive_rebuild_previews_without_analysis(tmp_path, monkeypatch):
     photos, workspace, _result, _project, _task, _batch, _export, crops = _completed_workspace(tmp_path)
-    assert compact_workspace(workspace)["compacted"]
+    create_legacy_workspace_archive(workspace)
     restore_workspace(workspace)
     result = load_session(workspace, photos)
     def forbidden(*args, **kwargs):
@@ -126,10 +127,9 @@ def test_legacy_archive_restores_once_and_repeated_close_keeps_active_state(tmp_
     import json
     photos,workspace,_,project,task,_,export,_=_completed_workspace(tmp_path)
     original=json.loads((workspace/'ai_project.json').read_text('utf-8'))
-    assert compact_workspace(workspace)['compacted']
+    create_legacy_workspace_archive(workspace)
     config=tmp_path/'settings';save_values(config,{'input':str(photos),'workspace':str(workspace)})
     def forbidden(*args,**kwargs):raise AssertionError('Automatic archive must not run')
-    monkeypatch.setattr('ai_cull_assistant.workspace_archive.compact_workspace',forbidden)
     monkeypatch.setattr('ai_cull_assistant.processing_job.screen_assets',forbidden)
     for _ in range(3):
         app=App(settings_dir=config);app.withdraw()
@@ -148,8 +148,6 @@ def test_switch_saves_preferences_and_preserves_old_cache_and_results(tmp_path,m
     second,new,*_=_completed_workspace(tmp_path/'second')
     config=tmp_path/'settings';save_values(config,{'input':str(first),'workspace':str(old)})
     before=(old/'ai_project.json').read_bytes()
-    def forbidden(*args,**kwargs):raise AssertionError('Automatic archive must not run')
-    monkeypatch.setattr('ai_cull_assistant.workspace_archive.compact_workspace',forbidden)
     app=App(settings_dir=config);app.withdraw()
     try:
         app.crop_settings=CropSettings(scale_factor=1.45)

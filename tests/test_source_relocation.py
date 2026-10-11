@@ -11,10 +11,10 @@ from ai_cull_assistant.project_storage import save_workspace_preferences, worksp
 from ai_cull_assistant.session_store import load_session
 from ai_cull_assistant.source_relocation import relocate_source, recover_relocation
 from test_workspace_archive import _completed_workspace
+from workspace_archive_fixtures import create_legacy_workspace_archive
 
 
 def test_relocate_archived_workspace_preserves_ai_and_crops(tmp_path):
-    from ai_cull_assistant.workspace_archive import compact_workspace
     photos, workspace, result, project, task, batch, export, crops = _completed_workspace(tmp_path)
     asset = result.assets[0]
     crops.photos[crops.key(asset)] = {'offset_x_factor': .1, 'manual_face': [.2, .2, .3, .4]}
@@ -27,7 +27,7 @@ def test_relocate_archived_workspace_preserves_ai_and_crops(tmp_path):
     assert project.ingest(task, batch, json.dumps(answer)) == []
     save_workspace_preferences(workspace, crops.__dict__, {})
     before_id, before_fp = photo_id(asset), fingerprint(asset, crops)
-    assert compact_workspace(workspace)['compacted']
+    create_legacy_workspace_archive(workspace)
     new_source = tmp_path / 'G-drive' / photos.name
     new_source.parent.mkdir()
     shutil.copytree(photos, new_source)

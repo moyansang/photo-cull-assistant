@@ -6,8 +6,8 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
-settings.json
-settings.json.tmp
+/settings.json
+/settings.json.tmp
 工作区/
 精选/
 
@@ -40,9 +40,16 @@ settings.json.tmp
 
 # Locally quarantined disposable build artifacts
 /待清理/
+/待手动删除/
 
 # Local-only project handoff notes
 /项目交接说明.md
+/目录说明.md
+/项目待办.md
+
+# Local experiment inputs and generated results; experiment code remains visible
+/experiments/data/
+/experiments/results/
 
 # Future local training data and outputs; pinned inference assets remain tracked
 /training-data/

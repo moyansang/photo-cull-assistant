@@ -13,7 +13,6 @@ from test_source_reconciliation import initial
 
 def setup(tmp_path, monkeypatch, *, shared=False, legacy=False):
     photos, root, result = initial(tmp_path)
-    monkeypatch.setattr(cleanup, 'default_quarantine_root', lambda _: tmp_path/'trash')
     for index, asset in enumerate(result.assets):
         image = tmp_path/f'evidence{index}.png'
         Image.new('RGB', (80, 100), 'red' if shared or index == 0 else ['blue', 'green'][index-1]).save(image)
@@ -34,13 +33,11 @@ def test_only_removed_exclusive_evidence_deletes(tmp_path, monkeypatch, legacy):
     restored = load_session(root, photos)
     assert len(restored.assets)==2 and asdict(restored.assets[0])==survivor
     assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==2
-    assert not (tmp_path/'trash').exists()
     event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
     assert event['action']=='source_sync_permanent_delete' and event['result']['deleted']==1
     assert before=={p.name:p.read_bytes() for p in (root/'focus-evidence/requests').iterdir()}
     assert '已清理 1' in cleanup.evidence_status(root)
     load_session(root, photos)
-    assert not (tmp_path/'trash').exists()
     event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
     assert event['action']=='source_sync_permanent_delete' and event['result']['deleted']==1
 
@@ -51,11 +48,9 @@ def test_shared_blob_survives_until_last_owner_deleted(tmp_path, monkeypatch, le
     for asset in result.assets[:-1]:
         asset.primary_path.unlink(); load_session(root, photos)
         assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==1
-        assert not (tmp_path/'trash').exists()
     result.assets[-1].primary_path.unlink(); load_session(root, photos)
     # Old request ownership is still understood after its scan row was pruned.
     assert not list((root/'focus-evidence/blobs').glob('*.zip'))
-    assert not (tmp_path/'trash').exists()
     event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
     assert event['action']=='source_sync_permanent_delete' and event['result']['deleted']==1
 
@@ -79,7 +74,6 @@ def test_unsafe_states_preserve_records_and_evidence(tmp_path, monkeypatch, kind
     with pytest.raises((ValueError, KeyError)):load_session(root, photos)
     assert (root/'scan-session.json').read_bytes()==before
     assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==3
-    assert not (tmp_path/'trash').exists()
 
 
 def test_added_photo_only_prompts_and_unknown_shared_request_protects(tmp_path, monkeypatch):
@@ -135,7 +129,6 @@ def test_rename_follows_existing_delete_and_add_rules(tmp_path, monkeypatch):
     assert len(added)==len(removed)==1
     assert len(load_session(root,photos).assets)==2
     assert len(source_changes(root,photos)[0])==1
-    assert not (tmp_path/'trash').exists()
     event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
     assert event['action']=='source_sync_permanent_delete' and event['result']['deleted']==1
 
@@ -160,7 +153,6 @@ def test_partial_automatic_delete_records_success_and_retries_failed_only(tmp_pa
     assert len(load_session(root,photos).assets)==1
     assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==1
     assert requests=={p.name:p.read_bytes() for p in (root/'focus-evidence/requests').iterdir()}
-    assert not (tmp_path/'trash').exists()
 
 
 def test_source_read_error_does_not_become_deletion(tmp_path,monkeypatch):

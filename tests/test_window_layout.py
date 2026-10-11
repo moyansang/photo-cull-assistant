@@ -1,7 +1,6 @@
 import pytest
-import tkinter as tk
 
-from ai_cull_assistant.window_layout import ScrollableFrame, WorkArea, calculate_window_geometry
+from ai_cull_assistant.window_layout import WorkArea, calculate_window_geometry
 
 
 def test_preferred_size_is_centered_when_it_fits():
@@ -32,24 +31,3 @@ def test_minimum_never_forces_window_outside_small_work_area():
 def test_invalid_work_area_is_rejected():
     with pytest.raises(ValueError):
         calculate_window_geometry((800, 600), WorkArea(0, 0, 0, 600))
-
-
-def test_scrollable_frame_exposes_both_axes_for_oversized_content():
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        pytest.skip(f"Tk is unavailable: {exc}")
-    try:
-        root.geometry("240x160")
-        surface = ScrollableFrame(root)
-        surface.pack(fill="both", expand=True)
-        oversized = tk.Frame(surface.content, width=600, height=400)
-        oversized.grid()
-        oversized.grid_propagate(False)
-        root.update_idletasks()
-
-        assert surface.h_scrollbar.winfo_manager() == "grid"
-        assert surface.v_scrollbar.winfo_manager() == "grid"
-        assert tuple(map(int, surface.canvas.cget("scrollregion").split()))[2:] == (600, 400)
-    finally:
-        root.destroy()

@@ -1,10 +1,9 @@
-"""Screen-aware sizing and scrolling helpers for the Tk user interface."""
+"""Screen-aware sizing and positioning helpers for the Tk user interface."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 import sys
 import tkinter as tk
-from tkinter import ttk
 
 
 @dataclass(frozen=True)
@@ -133,93 +132,3 @@ def fit_window(
         window.update_idletasks()
         window.deiconify()
     return geometry
-
-
-class ScrollableFrame(ttk.Frame):
-    """A frame whose content remains reachable when either dimension is tight."""
-
-    def __init__(self, parent: tk.Misc, *, padding: int | tuple[int, ...] = 0) -> None:
-        super().__init__(parent)
-        self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0)
-        self.v_scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.h_scrollbar = ttk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
-        self.content = ttk.Frame(self.canvas, padding=padding)
-        self._content_id = self.canvas.create_window((0, 0), window=self.content, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.v_scrollbar.set, xscrollcommand=self.h_scrollbar.set)
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        self._content_size = (1, 1)
-        self.content.bind("<Configure>", self._update_scroll_region)
-        self.canvas.bind("<Configure>", self._resize_content)
-        self._toplevel = self.winfo_toplevel()
-        self._wheel_binding = self._toplevel.bind("<MouseWheel>", self._route_mousewheel, add="+")
-        self.bind("<Destroy>", self._on_destroy, add="+")
-
-    def _update_scroll_region(self, _event: tk.Event | None = None) -> None:
-        self._content_size = (self.content.winfo_reqwidth(), self.content.winfo_reqheight())
-        self._sync_content_size()
-
-    def _resize_content(self, _event: tk.Event) -> None:
-        self._sync_content_size()
-
-    def _sync_content_size(self) -> None:
-        canvas_width = max(1, self.canvas.winfo_width())
-        canvas_height = max(1, self.canvas.winfo_height())
-        content_width, content_height = self._content_size
-        self.canvas.itemconfigure(
-            self._content_id,
-            width=max(canvas_width, content_width),
-            height=max(canvas_height, content_height),
-        )
-        self.canvas.configure(scrollregion=(0, 0, max(canvas_width, content_width), max(canvas_height, content_height)))
-        if content_width > canvas_width:
-            self.h_scrollbar.grid(row=1, column=0, sticky="ew")
-        else:
-            self.h_scrollbar.grid_remove()
-            self.canvas.xview_moveto(0)
-        if content_height > canvas_height:
-            self.v_scrollbar.grid(row=0, column=1, sticky="ns")
-        else:
-            self.v_scrollbar.grid_remove()
-            self.canvas.yview_moveto(0)
-
-    def _route_mousewheel(self, event: tk.Event) -> str | None:
-        try:
-            target = self.winfo_containing(event.x_root, event.y_root)
-            origin = target
-            while target is not None:
-                if target == self:
-                    if isinstance(origin, (tk.Text, tk.Listbox, ttk.Treeview)):
-                        return None
-                    if isinstance(origin, tk.Canvas) and origin != self.canvas:
-                        return None
-                    return self._on_mousewheel(event)
-                target = target.master
-        except tk.TclError:
-            pass
-        return None
-
-    def _on_mousewheel(self, event: tk.Event) -> str:
-        if event.state & 0x0001 and self.h_scrollbar.winfo_manager():
-            self.canvas.xview_scroll(int(-event.delta / 120), "units")
-        else:
-            self.canvas.yview_scroll(int(-event.delta / 120), "units")
-        return "break"
-
-    def _on_destroy(self, event: tk.Event) -> None:
-        if event.widget == self and self._wheel_binding:
-            self._toplevel.unbind("<MouseWheel>", self._wheel_binding)
-            self._wheel_binding = None
-
-
-def scrollable_body(parent: tk.Misc, *, padding: int | tuple[int, ...] = 0) -> ttk.Frame:
-    """Pack a responsive scrolling surface and return its content frame."""
-    container = ScrollableFrame(parent, padding=padding)
-    container.pack(fill="both", expand=True)
-    container.content._scroll_container = container  # type: ignore[attr-defined]
-    return container.content
-
-
-# Kept as a descriptive alias for callers that only expect vertical overflow.
-VerticalScrolledFrame = ScrollableFrame

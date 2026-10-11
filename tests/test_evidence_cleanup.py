@@ -41,19 +41,18 @@ def snapshots(root):
     return {p.relative_to(root):p.read_bytes() for p in root.rglob('*') if p.is_file()}
 
 
-def test_inspect_is_read_only_and_move_preserves_all_results(workspace):
+def test_inspect_is_read_only_and_delete_preserves_all_results(workspace):
     root,photos,photo,trash=workspace;before=snapshots(root)
     plan=cleanup.inspect_evidence(root,photos)
     assert snapshots(root)==before and len(plan.files)==1
     assert not plan.missing_sources and not plan.changed_sources
-    result=cleanup.quarantine_evidence(plan,trash)
-    assert result['moved']==1 and not result['failed']
+    result=cleanup.delete_evidence(plan)
+    assert result['deleted']==1 and not result['failed']
     for name,payload in before.items():
         if name.parts[:2]!=('focus-evidence','blobs'):assert (root/name).read_bytes()==payload
-    moved=next(trash.rglob('*.zip'));assert moved.read_bytes()==before[Path('focus-evidence/blobs')/plan.files[0].name]
     assert '已清理 1' in cleanup.evidence_status(root)
     again=cleanup.inspect_evidence(root,photos)
-    assert not again.files and cleanup.quarantine_evidence(again,trash)['moved']==0
+    assert not again.files and cleanup.delete_evidence(again)['deleted']==0
 
 
 @pytest.mark.parametrize('kind',['missing','changed','whole_directory_missing'])
@@ -65,7 +64,7 @@ def test_missing_or_changed_sources_are_explicit_warnings_not_record_edits(works
     before=snapshots(root);plan=cleanup.inspect_evidence(root,photos)
     assert (plan.changed_sources if kind=='changed' else plan.missing_sources)==1
     assert snapshots(root)==before
-    assert cleanup.quarantine_evidence(plan,trash)['moved']==1
+    assert cleanup.delete_evidence(plan)['deleted']==1
     assert (root/'ai_project.json').read_bytes()==before[Path('ai_project.json')]
     assert (root/'scan-session.json').read_bytes()==before[Path('scan-session.json')]
 
@@ -81,14 +80,14 @@ def test_running_or_unresolved_requests_block(workspace,kind):
         write(root/'ai_project.json',{'tasks':[{'batches':[{'status':'running'}] if kind=='running_batch' else [],'web_submissions':[{'status':'running'}] if kind=='running_web' else []}]})
     before=snapshots(root)
     with pytest.raises(ValueError):cleanup.inspect_evidence(root,photos)
-    assert snapshots(root)==before and not trash.exists()
+    assert snapshots(root)==before
 
 
 def test_pending_rating_task_can_survive_cleanup(workspace):
     root,photos,photo,trash=workspace
     write(root/'ai_project.json',{'tasks':[{'batches':[{'status':'failed'}]}]})
     plan=cleanup.inspect_evidence(root,photos)
-    assert cleanup.quarantine_evidence(plan,trash)['moved']==1
+    assert cleanup.delete_evidence(plan)['deleted']==1
 
 
 @pytest.mark.parametrize('kind',['mixed','not_image','invalid_zip','nested','wrong_hash'])
@@ -101,18 +100,18 @@ def test_unknown_or_mixed_packages_are_preserved(workspace,kind):
             if kind=='mixed':z.writestr('metadata.json','{"keep":true}')
     original=p.read_bytes();plan=cleanup.inspect_evidence(root,photos)
     assert plan.preserved==1 and len(plan.files)==1
-    assert cleanup.quarantine_evidence(plan,trash)['moved']==1 and p.read_bytes()==original
+    assert cleanup.delete_evidence(plan)['deleted']==1 and p.read_bytes()==original
 
 
 @pytest.mark.parametrize('change',['source','session','new_blob','active_job'])
-def test_changes_after_confirmation_abort_before_any_move(workspace,change):
+def test_changes_after_confirmation_abort_before_any_delete(workspace,change):
     root,photos,photo,trash=workspace;plan=cleanup.inspect_evidence(root,photos)
     if change=='source':photo.unlink()
     elif change=='session':
         d=json.loads((root/'scan-session.json').read_text());d['new']=True;write(root/'scan-session.json',d)
     elif change=='active_job':write(root/'cache/processing/active.json',{})
     else:(root/'focus-evidence/blobs/keep.bin').write_bytes(b'keep')
-    with pytest.raises(ValueError):cleanup.quarantine_evidence(plan,trash)
+    with pytest.raises(ValueError):cleanup.delete_evidence(plan)
     assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==1
 
 
@@ -120,27 +119,28 @@ def test_partial_file_in_use_preserves_failed_file_and_receipt(workspace,monkeyp
     root,photos,photo,trash=workspace
     second=photos/'B.jpg';Image.new('RGB',(40,60),'blue').save(second)
     record_inputs(root/'cache/analysis','second',[second],'p',{},'v2');record_response(root/'cache/analysis','second',{})
-    plan=cleanup.inspect_evidence(root,photos);original=Path.rename
+    plan=cleanup.inspect_evidence(root,photos);original=Path.unlink
     blocked=plan.files[0].name
-    def rename(path,target):
+    def unlink(path,*args,**kwargs):
         if path.name==blocked:raise PermissionError('file in use')
-        return original(path,target)
-    monkeypatch.setattr(Path,'rename',rename)
-    result=cleanup.quarantine_evidence(plan,trash)
-    assert result['moved']==1 and len(result['failed'])==1
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'unlink',unlink)
+    result=cleanup.delete_evidence(plan)
+    assert result['deleted']==1 and len(result['failed'])==1
     assert (root/'focus-evidence/blobs'/blocked).exists()
-    assert list(trash.rglob('manifest.json')) and '已清理 1' in cleanup.evidence_status(root)
-
-
-def test_interruption_keeps_recovery_map(workspace,monkeypatch):
-    root,photos,photo,trash=workspace;plan=cleanup.inspect_evidence(root,photos)
-    original=Path.rename
-    def interrupted(path,target):
-        original(path,target);raise KeyboardInterrupt()
-    monkeypatch.setattr(Path,'rename',interrupted)
-    with pytest.raises(KeyboardInterrupt):cleanup.quarantine_evidence(plan,trash)
-    assert list(trash.rglob('manifest.json')) and len(list(trash.rglob('*.zip')))==1
     assert '已清理 1' in cleanup.evidence_status(root)
+
+
+def test_interruption_keeps_permanent_delete_history(workspace,monkeypatch):
+    root,photos,photo,trash=workspace;plan=cleanup.inspect_evidence(root,photos)
+    original=Path.unlink
+    def interrupted(path,*args,**kwargs):
+        original(path,*args,**kwargs);raise KeyboardInterrupt()
+    monkeypatch.setattr(Path,'unlink',interrupted)
+    with pytest.raises(KeyboardInterrupt):cleanup.delete_evidence(plan)
+    assert '已清理 1' in cleanup.evidence_status(root)
+    event=json.loads((root/'focus-evidence/evidence-cleanup.json').read_text())['operations'][-1]
+    assert event['action']=='permanent_delete'
 
 
 def link_dir(link,target):
@@ -150,7 +150,7 @@ def link_dir(link,target):
         subprocess.run(['cmd','/c','mklink','/J',str(link),str(target)],check=True,capture_output=True)
 
 
-@pytest.mark.parametrize('kind',['workspace','blobs','destination'])
+@pytest.mark.parametrize('kind',['workspace','blobs'])
 def test_links_and_junctions_cannot_escape(workspace,tmp_path,kind):
     root,photos,photo,trash=workspace
     if kind=='workspace':
@@ -159,17 +159,12 @@ def test_links_and_junctions_cannot_escape(workspace,tmp_path,kind):
     elif kind=='blobs':
         blobs=root/'focus-evidence/blobs';moved=tmp_path/'elsewhere';blobs.rename(moved);link_dir(blobs,moved)
         with pytest.raises(ValueError,match='链接|联接'):cleanup.inspect_evidence(root,photos)
-    else:
-        actual=tmp_path/'actual';actual.mkdir();link_dir(trash,actual)
-        plan=cleanup.inspect_evidence(root,photos)
-        with pytest.raises(ValueError,match='链接|联接'):cleanup.quarantine_evidence(plan,trash)
-        assert not list(actual.iterdir())
 
 
 def test_concurrent_focus_operation_blocks_cleanup(workspace):
     root,photos,photo,trash=workspace;plan=cleanup.inspect_evidence(root,photos)
     with cleanup.evidence_operation(root):
-        with pytest.raises(ValueError,match='正在'):cleanup.quarantine_evidence(plan,trash)
+        with pytest.raises(ValueError,match='正在'):cleanup.delete_evidence(plan)
     assert len(list((root/'focus-evidence/blobs').glob('*.zip')))==1
 
 
@@ -194,8 +189,8 @@ def test_windows_open_file_is_preserved(workspace):
     handle=kernel.CreateFileW(str(path),0x80000000,3,None,3,128,None)
     assert handle!=wintypes.HANDLE(-1).value
     try:
-        result=cleanup.quarantine_evidence(plan,trash)
-        assert result['moved']==0 and len(result['failed'])==1 and path.exists()
+        result=cleanup.delete_evidence(plan)
+        assert result['deleted']==0 and len(result['failed'])==1 and path.exists()
     finally:kernel.CloseHandle(handle)
 
 
@@ -217,15 +212,16 @@ def completed(tmp_path):
 
 @pytest.mark.parametrize('archived',[False,True])
 def test_archive_reopen_scores_and_missing_batch_images_rebuild_without_scan(tmp_path,archived):
-    from ai_cull_assistant.workspace_archive import compact_workspace,restore_workspace
+    from ai_cull_assistant.workspace_archive import restore_workspace
     from ai_cull_assistant.session_store import load_session
     from ai_cull_assistant.ai_project import ReviewProject
+    from workspace_archive_fixtures import create_legacy_workspace_archive
     root,photos,result,project,crops=completed(tmp_path)
     original=project.data['photos'];taskid=project.current_task()['id']
-    if archived:assert compact_workspace(root)['compacted']
+    if archived:create_legacy_workspace_archive(root)
     before=snapshots(root);plan=cleanup.inspect_evidence(root,photos)
     assert snapshots(root)==before
-    assert cleanup.quarantine_evidence(plan,tmp_path/'trash')['moved']==1
+    assert cleanup.delete_evidence(plan)['deleted']==1
     for name,data in before.items():
         if name.parts[:2]!=('focus-evidence','blobs'):assert (root/name).read_bytes()==data
     restore_workspace(root);scan=load_session(root,photos);reopened=ReviewProject(root);reopened.refresh(scan.assets,crops)
@@ -257,7 +253,6 @@ def test_home_button_cancel_confirm_repeat_and_missing_source_preserve_records(t
     monkeypatch.setattr(ui.messagebox,'showinfo',lambda *a,**kw:None)
     monkeypatch.setattr(ui.messagebox,'showwarning',lambda *a,**kw:None)
     monkeypatch.setattr(ui.messagebox,'showerror',lambda *a,**kw:pytest.fail(str(a)))
-    monkeypatch.setattr(cleanup,'default_quarantine_root',lambda p:tmp_path/'trash')
     try:
         assert app.evidence_cleanup_button.cget('text')=='清理证据图片'
         original_busy=app._review_busy;app._review_busy=lambda:True
@@ -266,11 +261,10 @@ def test_home_button_cancel_confirm_repeat_and_missing_source_preserve_records(t
         app._review_busy=original_busy;app._refresh_evidence_button()
         app.evidence_cleanup_button.invoke();pump(app)
         assert len(prompts)==1 and '原片缺失 1' in prompts[0] and '不可恢复' in prompts[0] and '不进入回收站' in prompts[0]
-        assert snapshots(root)==before and not (tmp_path/'trash').exists()
+        assert snapshots(root)==before
         choice[0]=True
         app.evidence_cleanup_button.invoke();pump(app)
         assert len(prompts)==2
-        assert not (tmp_path/'trash').exists()
         for name,data in before.items():
             if name.parts[:2]!=('focus-evidence','blobs'):assert (root/name).read_bytes()==data
         assert not list((root/'focus-evidence/blobs').glob('*.zip'))
@@ -282,12 +276,12 @@ def test_home_button_cancel_confirm_repeat_and_missing_source_preserve_records(t
         app._close()
 
 
-def test_focus_guard_blocks_during_quarantine_and_allows_later_regeneration(workspace):
+def test_focus_guard_blocks_during_delete_and_allows_later_regeneration(workspace):
     root,photos,photo,trash=workspace
     @cleanup.guard_focus_review
     def fake_review(asset,settings,profile,cache):
         record_inputs(cache,'new-request',[photo],'p',{},'v2');record_response(cache,'new-request',{})
-    plan=cleanup.inspect_evidence(root,photos);cleanup.quarantine_evidence(plan,trash)
+    plan=cleanup.inspect_evidence(root,photos);cleanup.delete_evidence(plan)
     with cleanup.evidence_operation(root):
         with pytest.raises(ValueError):fake_review(None,None,{},root/'cache/analysis')
     fake_review(None,None,{},root/'cache/analysis')

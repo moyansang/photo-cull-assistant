@@ -13,13 +13,13 @@ def test_select_copied_workspace_without_selecting_source_first(tmp_path):
     from PIL import Image
     from ai_cull_assistant.workflow import run_scan
     from ai_cull_assistant.session_store import save_session
-    from ai_cull_assistant.workspace_archive import compact_workspace
+    from workspace_archive_fixtures import create_legacy_workspace_archive
     source=make_source(tmp_path,'photos')
     Image.new('RGB',(120,180),'white').save(source/'A.jpg')
     old=tmp_path/'old'
     result=run_scan(source,old,technical_screening=False)
     save_session(result)
-    assert compact_workspace(old)['compacted']
+    create_legacy_workspace_archive(old)
     copied=tmp_path/'copied'
     shutil.copytree(old,copied)
     app=make_app(tmp_path/'settings','','')

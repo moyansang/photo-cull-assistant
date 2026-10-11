@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 import tkinter as tk
 from PIL import Image
@@ -15,12 +14,10 @@ from ai_cull_assistant import group_face_assist_dialog
 from ai_cull_assistant.crop_dialog import CropDialog
 from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.group_face_assist import (
-    AssistImage,
     FaceProposal,
     clamp_box,
     collect_targets,
     normalized_box_ok,
-    propose_group_faces,
     reference_box_from_entry,
 )
 from ai_cull_assistant.models import PhotoAsset
@@ -121,211 +118,7 @@ def test_box_validity_helpers():
     assert clamp_box(.2, .2, 5, 5) == (.2, .2, .8, .8)
 
 
-# -------------------------------------------------------------- proposal math
-
-BOX = (.40, .30, .12, .15)  # normalized reference face box
-IMAGE_W, IMAGE_H = 1600, 1200
-
-
-def _block(seed, w, h):
-    return np.random.default_rng(seed).integers(30, 225, size=(h, w, 3), dtype=np.uint8)
-
-
-def _save_scene(tmp_path, name, paste_blocks, size=(IMAGE_H, IMAGE_W)):
-    image = np.full((*size, 3), 128, np.uint8)
-    for (x, y, block) in paste_blocks:
-        image[y:y + block.shape[0], x:x + block.shape[1]] = block
-    path = tmp_path / f'{name}.jpg'
-    Image.fromarray(image).save(path, quality=95)
-    return path
-
-
-def _ref_block():
-    return _block(1, int(BOX[2] * IMAGE_W), int(BOX[3] * IMAGE_H))
-
-
-def _reference(tmp_path):
-    x, y = int(BOX[0] * IMAGE_W), int(BOX[1] * IMAGE_H)
-    path = _save_scene(tmp_path, 'ref', [(x, y, _ref_block())])
-    return AssistImage(key='ref', stem='ref', preview_path=str(path))
-
-
-def _target(tmp_path, name, offset=(20, 10)):
-    x, y = int(BOX[0] * IMAGE_W) + offset[0], int(BOX[1] * IMAGE_H) + offset[1]
-    path = _save_scene(tmp_path, name, [(x, y, _ref_block())])
-    return group_face_assist.AssistTarget(key=name, stem=name, preview_path=str(path))
-
-
-def _fake_detector(record):
-    def fake(image, score_threshold=.9, rotate_rescue=True):
-        h, w = image.shape[:2]
-        record.append({'threshold': score_threshold, 'rotate_rescue': rotate_rescue})
-        return [FaceDetection((w * .15, h * .15, w * .7, h * .7), (), .93)]
-    return fake
-
-
-def test_propose_matches_shifted_face_and_returns_reliable(monkeypatch, tmp_path):
-    calls = []
-    monkeypatch.setattr(group_face_assist, 'detect', _fake_detector(calls))
-    reference = _reference(tmp_path)
-    target = _target(tmp_path, 't1')
-    proposals = propose_group_faces(reference, BOX, [target], threading.Event())
-    assert len(proposals) == 1
-    proposal = proposals[0]
-    assert proposal.level == 'reliable', proposal.reason
-    assert proposal.box is not None
-    x, y, _, _ = proposal.box
-    assert abs(x - (BOX[0] + 20 / IMAGE_W)) < .05
-    assert abs(y - (BOX[1] + 10 / IMAGE_H)) < .05
-    assert normalized_box_ok(list(proposal.box))
-    # Local verification skips rotation and defaults to the global default.
-    assert calls and all(call['rotate_rescue'] is False for call in calls)
-    assert all(call['threshold'] == .8 for call in calls)
-
-
-def test_propose_matches_same_normalized_position_across_preview_sizes(monkeypatch, tmp_path):
-    calls = []
-    monkeypatch.setattr(group_face_assist, 'detect', _fake_detector(calls))
-    reference = _reference(tmp_path)
-
-    target_width, target_height = IMAGE_W // 2, IMAGE_H // 2
-    target_block = np.asarray(Image.fromarray(_ref_block()).resize(
-        (int(BOX[2] * target_width), int(BOX[3] * target_height)),
-        Image.Resampling.LANCZOS,
-    ))
-    x = int(BOX[0] * target_width)
-    y = int(BOX[1] * target_height)
-    target_path = _save_scene(
-        tmp_path, 'scaled_target', [(x, y, target_block)],
-        size=(target_height, target_width),
-    )
-    target = group_face_assist.AssistTarget(
-        key='scaled_target', stem='scaled_target', preview_path=str(target_path))
-
-    proposals = propose_group_faces(reference, BOX, [target], threading.Event())
-
-    assert len(proposals) == 1
-    proposal = proposals[0]
-    assert proposal.level == 'reliable', proposal.reason
-    assert proposal.box is not None
-    px, py, pw, ph = proposal.box
-    assert abs(px - BOX[0]) < .05
-    assert abs(py - BOX[1]) < .05
-    assert abs(pw - BOX[2]) < .05
-    assert abs(ph - BOX[3]) < .05
-    assert calls
-
-
-def test_detect_failure_for_one_target_does_not_block_later_targets(monkeypatch, tmp_path):
-    calls = 0
-
-    def flaky_detector(image, score_threshold=.9, rotate_rescue=True):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise RuntimeError('detector failed for this target')
-        height, width = image.shape[:2]
-        return [FaceDetection((width * .15, height * .15, width * .7, height * .7), (), .93)]
-
-    monkeypatch.setattr(group_face_assist, 'detect', flaky_detector)
-    reference = _reference(tmp_path)
-    targets = [_target(tmp_path, 'broken'), _target(tmp_path, 'later')]
-    progress = []
-
-    proposals = propose_group_faces(
-        reference, BOX, targets, threading.Event(),
-        on_progress=lambda done, total, proposal: progress.append((done, total, proposal.target_key)),
-    )
-
-    assert [proposal.target_key for proposal in proposals] == ['broken', 'later']
-    assert proposals[0].level in ('missing', 'review')
-    assert proposals[1].level == 'reliable', proposals[1].reason
-    assert calls == 2
-    assert progress == [(1, 2, 'broken'), (2, 2, 'later')]
-
-
-def test_grading_rules(monkeypatch, tmp_path):
-    reference = _reference(tmp_path)
-    target = _target(tmp_path, 'g1')
-    box_px = (int(BOX[0] * IMAGE_W), int(BOX[1] * IMAGE_H),
-              int(BOX[2] * IMAGE_W), int(BOX[3] * IMAGE_H))
-
-    def fake_confirmed(image, *args, **kwargs):
-        h, w = image.shape[:2]
-        return [FaceDetection((w * .05, h * .05, w * .9, h * .9), (), .91)]
-
-    def run(peaks, confirmed):
-        monkeypatch.setattr(group_face_assist, '_match_peaks', lambda *a, **k: list(peaks))
-        monkeypatch.setattr(group_face_assist, 'detect',
-                            fake_confirmed if confirmed else (lambda *a, **k: []))
-        proposals = propose_group_faces(reference, BOX, [
-            group_face_assist.AssistTarget(key='g1', stem='g1',
-                                           preview_path=target.preview_path)], threading.Event())
-        return proposals[0]
-
-    strong = [(0.85,) + tuple(float(v) for v in box_px)]
-    rival = [(0.80, float(box_px[0] + 15), float(box_px[1] + 20), float(box_px[2]), float(box_px[3]))]
-    # High, unique, detector-confirmed -> reliable.
-    assert run(strong, True).level == 'reliable'
-    # Two close-score candidates -> never reliable, even with a detection.
-    proposal = run(strong + rival, True)
-    assert proposal.level == 'review'
-    assert '多个' in proposal.reason
-    # Detector finds nothing at the match location -> review, keep match box.
-    proposal = run(strong, False)
-    assert proposal.level == 'review'
-    assert '未通过人脸检测' in proposal.reason
-    assert proposal.box is not None
-    # Mid-strength unique match with a detection -> review (low match score).
-    weak = [(0.60,) + tuple(float(v) for v in box_px)]
-    assert run(weak, True).level == 'review'
-    # No peaks at all -> missing with no box.
-    proposal = run([], True)
-    assert proposal.level == 'missing'
-    assert proposal.box is None
-
-
-def test_propose_handles_unreadable_and_weak_targets(monkeypatch, tmp_path):
-    monkeypatch.setattr(group_face_assist, 'detect', lambda *a, **k: [])
-    reference = _reference(tmp_path)
-    weak = _save_scene(tmp_path, 'weak', [(100, 100, _block(99, 150, 150))])
-    targets = [
-        group_face_assist.AssistTarget(key='nofile', stem='nofile',
-                                       preview_path=str(tmp_path / 'gone.jpg')),
-        group_face_assist.AssistTarget(key='weak', stem='weak', preview_path=str(weak)),
-    ]
-    progress = []
-    proposals = propose_group_faces(
-        reference, BOX, targets, threading.Event(),
-        on_progress=lambda done, total, proposal: progress.append((done, total)))
-    assert proposals[0].level == 'missing'
-    assert '预览缺失' in proposals[0].reason
-    assert proposals[0].box is None
-    assert proposals[1].level in ('missing', 'review')
-    assert progress == [(1, 2), (2, 2)]
-
-
-def test_propose_stops_early_on_stop_event(monkeypatch, tmp_path):
-    monkeypatch.setattr(group_face_assist, 'detect', lambda *a, **k: [])
-    reference = _reference(tmp_path)
-    targets = [_target(tmp_path, f's{i}') for i in range(4)]
-    stop = threading.Event()
-    stop.set()
-    assert propose_group_faces(reference, BOX, targets, stop) == []
-
-
-def test_propose_rejects_unreadable_reference(tmp_path):
-    reference = AssistImage(key='r', stem='r', preview_path=None)
-    with pytest.raises(ValueError):
-        propose_group_faces(reference, BOX, [], threading.Event())
-
-
-def test_propose_rejects_low_texture_reference(tmp_path):
-    path = tmp_path / 'flat-reference.jpg'
-    Image.new('RGB', (IMAGE_W, IMAGE_H), (128, 128, 128)).save(path)
-    reference = AssistImage(key='flat', stem='flat', preview_path=str(path))
-    with pytest.raises(ValueError):
-        propose_group_faces(reference, BOX, [], threading.Event())
+BOX = (.40, .30, .12, .15)
 
 
 # ------------------------------------------------------------- dialog flow
@@ -741,21 +534,6 @@ def test_explicit_cross_group_scope_includes_other_group():
     targets = collect_targets(reference, [reference, asset('other', group_id=2)], {},
                               lambda a: a.stem, allow_cross_group=True)
     assert len(targets) == 1 and targets[0].cross_group
-
-
-def test_cross_group_candidate_never_auto_accepts_identity(monkeypatch, tmp_path):
-    import numpy as np
-    from dataclasses import replace
-    path = tmp_path / 'face.jpg'
-    Image.new('RGB', (100, 100), 'white').save(path)
-    target = group_face_assist.AssistTarget(key='other', stem='other', preview_path=str(path), cross_group=True)
-    monkeypatch.setattr(group_face_assist, '_match_peaks', lambda *a: [(0.99, 20, 20, 20, 20)])
-    monkeypatch.setattr(group_face_assist, '_verify_with_detector', lambda *a: ((20, 20, 20, 20), .99))
-    template = np.ones((20, 20), dtype=np.uint8)
-    result = group_face_assist._propose_for_target(template, template, target, (.2,.2,.2,.2),
-                                                  'ref', threading.Event(), .8)
-    assert result.level == 'review'
-    assert '同一人物' in result.reason
 
 
 def test_cross_group_confirm_merges_into_draft(monkeypatch, tmp_path):

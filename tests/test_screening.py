@@ -5,17 +5,23 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image
 
 from ai_cull_assistant.models import PhotoAsset
-from ai_cull_assistant.screening import ScreeningConfig, assess_subject_blur, screen_assets
+from ai_cull_assistant.screening import assess_subject_blur, screen_assets
+
+
+def write_image(path: Path, image: np.ndarray) -> None:
+    # Keep the OpenCV JPEG encoding while supporting Unicode test directories.
+    ok, encoded = cv2.imencode(path.suffix, image)
+    assert ok, "Synthetic test image could not be encoded"
+    path.write_bytes(encoded.tobytes())
 
 
 def make_asset(tmp_path: Path, stem: str, image: np.ndarray) -> PhotoAsset:
     preview = tmp_path / f"{stem}_preview.jpg"
-    cv2.imwrite(str(preview), image)
+    write_image(preview, image)
     original = tmp_path / f"{stem}.jpg"
-    cv2.imwrite(str(original), image)
+    write_image(original, image)
     return PhotoAsset(
         stem=stem,
         display_path=original,
@@ -37,7 +43,7 @@ def checkerboard(size: int = 256, block: int = 8) -> np.ndarray:
 def test_no_face_means_do_not_auto_reject(tmp_path):
     image = checkerboard()
     path = tmp_path / "preview.jpg"
-    cv2.imwrite(str(path), image)
+    write_image(path, image)
 
     result = assess_subject_blur(path, face_boxes=[])
 
@@ -49,7 +55,7 @@ def test_obviously_blurred_subject_is_rejected_when_face_region_is_known(tmp_pat
     sharp = checkerboard()
     blurred = cv2.GaussianBlur(sharp, (41, 41), 0)
     path = tmp_path / "blurred.jpg"
-    cv2.imwrite(str(path), blurred)
+    write_image(path, blurred)
 
     result = assess_subject_blur(path, face_boxes=[(32, 32, 192, 192)])
 
@@ -62,7 +68,7 @@ def test_obviously_blurred_subject_is_rejected_when_face_region_is_known(tmp_pat
 def test_sharp_subject_is_not_rejected_when_face_region_is_known(tmp_path):
     sharp = checkerboard()
     path = tmp_path / "sharp.jpg"
-    cv2.imwrite(str(path), sharp)
+    write_image(path, sharp)
 
     result = assess_subject_blur(path, face_boxes=[(32, 32, 192, 192)])
 
@@ -103,7 +109,7 @@ def test_downsampled_low_contrast_obvious_blur_is_rejected(tmp_path):
     blurred = cv2.GaussianBlur(high, (19, 19), 0)
     preview = cv2.resize(blurred, (427, 640), interpolation=cv2.INTER_AREA)
     path = tmp_path / "downsampled_blur.jpg"
-    cv2.imwrite(str(path), preview)
+    write_image(path, preview)
 
     result = assess_subject_blur(path, face_boxes=[(107, 160, 213, 320)])
 

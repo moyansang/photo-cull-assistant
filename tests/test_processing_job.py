@@ -688,7 +688,8 @@ def test_migrated_compacted_focus_rebuilds_preview_and_checkpoints_current_path(
     from ai_cull_assistant.project_storage import migrate_workspace
     from ai_cull_assistant.session_store import load_session, save_session
     from ai_cull_assistant.subject import SubjectFeatures
-    from ai_cull_assistant.workspace_archive import compact_workspace, restore_workspace
+    from ai_cull_assistant.workspace_archive import restore_workspace
+    from workspace_archive_fixtures import create_legacy_workspace_archive
 
     photos = _photos(tmp_path, 1)
     original_bytes = (photos / 'P0000.jpg').read_bytes()
@@ -705,7 +706,7 @@ def test_migrated_compacted_focus_rebuilds_preview_and_checkpoints_current_path(
 
     workspace = tmp_path / 'new-workspace'
     migrate_workspace(old_workspace, workspace)
-    assert compact_workspace(workspace)['compacted']
+    create_legacy_workspace_archive(workspace)
     assert restore_workspace(workspace)['restored']
     restored = load_session(workspace, photos)
     assert restored is not None

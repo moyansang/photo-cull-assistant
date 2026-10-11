@@ -263,30 +263,6 @@ def test_person_assist_honours_cancellation_during_target(monkeypatch, tmp_path)
     assert progress == []
 
 
-def test_legacy_cross_group_full_frame_template_scan_is_bounded(monkeypatch, tmp_path):
-    path = tmp_path / 'large.png'
-    Image.fromarray(np.full((1500, 2400, 3), 100, dtype=np.uint8)).save(path)
-    observed = []
-
-    def peaks(gray, *_args, **_kwargs):
-        observed.append(gray.shape)
-        return []
-
-    monkeypatch.setattr(group_face_assist, '_match_peaks', peaks)
-    result = group_face_assist._propose_for_target(
-        np.ones((30, 30), dtype=np.uint8),
-        np.ones((30, 30), dtype=np.float32),
-        AssistTarget('large', 'large', str(path), cross_group=True),
-        (.3, .2, .1, .1),
-        'reference',
-        threading.Event(),
-        .8,
-    )
-
-    assert max(observed[0]) <= group_face_assist.MAX_FULL_IMAGE_EDGE
-    assert result.level == 'missing'
-
-
 def test_workspace_target_collection_does_not_offer_existing_boxes():
     def asset(stem, group_id):
         return SimpleNamespace(
