@@ -54,8 +54,19 @@ def test_main_tabs_preserve_drafts_and_shared_footer(tmp_path, monkeypatch):
         assert not review._preparing_task
         app.geometry('900x700'); app.update()
         assert review.export_button.winfo_viewable()
-        assert review.export_button.winfo_rooty() == review.split_button.winfo_rooty()
-        assert review.export_button.winfo_rootx() > review.split_button.winfo_rootx()
+        # Actions may wrap onto different rows. Both must remain fully
+        # reachable without disturbing the cached page or its draft state.
+        canvas = review.api_scroll.canvas
+        for button in (review.split_button, review.export_button):
+            total = canvas.bbox('all')[3]
+            y = button.winfo_rooty() - canvas.winfo_rooty() + canvas.yview()[0] * total
+            canvas.yview_moveto(max(0, y - (canvas.winfo_height() - button.winfo_height()) / 2) / total)
+            app.update()
+            assert button.winfo_width() >= button.winfo_reqwidth()
+            assert canvas.winfo_rootx() <= button.winfo_rootx()
+            assert button.winfo_rootx() + button.winfo_width() <= canvas.winfo_rootx() + canvas.winfo_width()
+            assert canvas.winfo_rooty() <= button.winfo_rooty()
+            assert button.winfo_rooty() + button.winfo_height() <= canvas.winfo_rooty() + canvas.winfo_height()
         assert review.batch_tree.winfo_height() > 40
         review.notebook.select(review.web_tab); app.update()
         assert str(review.page_actions.grid_info()['in']) == str(review.web_actions)

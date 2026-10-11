@@ -7,7 +7,8 @@ from tkinter import ttk
 from .ui_help import PAGE_HELP, install_control_help, install_page_chrome
 from .ui_style import apply_page, style_page_chrome
 from .version import VERSION, BUILD
-from .window_layout import fit_window
+from .window_layout import fit_window, work_area_for
+from .responsive_layout import ScrollableFrame
 
 
 class ToolWindow(tk.Toplevel):
@@ -55,15 +56,22 @@ class ToolWindow(tk.Toplevel):
         self.update_idletasks()
         # Negotiate against the visible page only. Keep the same native window
         # and user position when switching, growing only when content needs it.
-        minimum = (max(640, self.winfo_reqwidth()), max(310, self.winfo_reqheight()))
+        area = work_area_for(self)
+        available = (max(1, area.width - 64), max(1, area.height - 64))
+        minimum = (min(available[0], max(640, self.winfo_reqwidth())),
+                   min(available[1], max(310, self.winfo_reqheight())))
         if self.state() == 'withdrawn':
-            fit_window(self, (max(740, minimum[0]), max(460, minimum[1])),
+            scale = max(1, self.winfo_fpixels('1i') / 96)
+            fit_window(self, (max(round(740 * scale), minimum[0]), max(round(460 * scale), minimum[1])),
                        minimum_size=minimum, parent=self.app)
         else:
             self.minsize(*minimum)
-            width, height = max(self.winfo_width(), minimum[0]), max(self.winfo_height(), minimum[1])
+            width = min(available[0], max(self.winfo_width(), minimum[0]))
+            height = min(available[1], max(self.winfo_height(), minimum[1]))
             if (width, height) != (self.winfo_width(), self.winfo_height()):
-                self.geometry(f'{width}x{height}')
+                x = max(area.left, min(self.winfo_x(), area.left + area.width - width))
+                y = max(area.top, min(self.winfo_y(), area.top + area.height - height))
+                self.geometry(f'{width}x{height}{x:+d}{y:+d}')
         self.lift()
         self.focus_set()
 
@@ -79,8 +87,14 @@ class ToolWindow(tk.Toplevel):
         footer = ttk.Frame(page, padding=(18, 8, 18, 12))
         footer.pack(side='bottom', fill='x')
         ttk.Button(footer, text='关闭', command=self.close).pack(side='right')
-        body = ttk.Frame(page, padding=18)
-        body.pack(fill='both', expand=True)
+        if page_id == 'help':
+            body = ttk.Frame(page, padding=18)
+            body.pack(fill='both', expand=True)
+        else:
+            viewport = ScrollableFrame(page)
+            viewport.pack(fill='both', expand=True)
+            body = viewport.content
+            body.configure(padding=18)
         if page_id == 'update':
             ttk.Label(body, text=f'当前版本：v{VERSION} · 构建 {BUILD}').pack(anchor='w', pady=8)
             ttk.Checkbutton(body, text='不再自动检查更新', variable=self.app.no_updates_var,

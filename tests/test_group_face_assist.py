@@ -342,8 +342,12 @@ def test_assist_fixed_actions_visible_on_short_desktop(monkeypatch, tmp_path):
         for button in buttons:
             assert button.winfo_viewable()
             assert button.winfo_rooty() + button.winfo_height() <= assist.winfo_rooty() + assist.winfo_height()
-        assert assist.reference_preview.winfo_viewable()
         assert assist.preview.winfo_height() >= 80
+        assert assist.tree.winfo_height() >= 150
+        if assist._compact:
+            assist._preview_tabs.select(assist._details)
+            assist.update()
+        assert assist.reference_preview.winfo_viewable()
     finally:
         dialog.destroy()
         root.destroy()

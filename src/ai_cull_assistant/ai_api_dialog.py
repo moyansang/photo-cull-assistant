@@ -18,6 +18,7 @@ from .settings import read_values, save_values
 from .ui_help import install_control_help, install_page_chrome
 from .ui_style import set_button_style, apply_page
 from .window_layout import fit_window
+from .responsive_layout import ScrollableFrame
 from .ui_page import WorkspacePage
 
 
@@ -105,7 +106,9 @@ class ApiConfigDialog(WorkspacePage):
             self._apply_new_preset(remembered_preset)
         self._sync_advanced()
         # Keep geometry stable during native mouse press/release dispatch.
-        fit_window(self, (740, 460), minimum_size=(640, 420), parent=self.master)
+        scale = max(1, self.winfo_fpixels('1i') / 96)
+        fit_window(self, (round(740 * scale), round(460 * scale)),
+                   minimum_size=(640, 420), parent=self.master)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._poll_token = self.after(100, self._poll_events)
         # The editor is an owned, modeless window. A hidden child must never
@@ -135,33 +138,34 @@ class ApiConfigDialog(WorkspacePage):
         body.pack(fill="both", expand=True)
         self.settings_notebook = ttk.Notebook(body)
         self.settings_notebook.pack(fill="both", expand=True)
-        self.basic_tab = ttk.Frame(self.settings_notebook, padding=16)
-        self.advanced_tab = ttk.Frame(self.settings_notebook, padding=16)
+        self.basic_tab = ScrollableFrame(self.settings_notebook)
+        self.advanced_tab = ScrollableFrame(self.settings_notebook)
         self.settings_notebook.add(self.basic_tab, text="基本设置")
         self.settings_notebook.add(self.advanced_tab, text="高级设置")
         self.settings_notebook.bind("<<NotebookTabChanged>>", self._settings_tab_changed)
 
-        basic = self.basic_tab
+        basic = self.basic_tab.content
+        basic.configure(padding=16)
         basic.columnconfigure(1, weight=1)
-        ttk.Label(basic, text="已保存配置", width=14).grid(row=0, column=0, sticky="w", pady=6)
-        self.profile_box = ttk.Combobox(basic, textvariable=self.profile_var, state="readonly", width=42)
+        ttk.Label(basic, text="已保存配置").grid(row=0, column=0, sticky="w", pady=6)
+        self.profile_box = ttk.Combobox(basic, textvariable=self.profile_var, state="readonly", width=22)
         self.profile_box.grid(row=0, column=1, sticky="ew", pady=6)
         self.profile_box.bind("<<ComboboxSelected>>", self._select_profile)
         self.new_button = ttk.Button(basic, text="新建", command=self._new_profile)
         self.new_button.grid(row=0, column=2, padx=(8, 0), pady=6)
 
-        ttk.Label(basic, text="服务预设", width=14).grid(row=1, column=0, sticky="w", pady=6)
+        ttk.Label(basic, text="服务预设").grid(row=1, column=0, sticky="w", pady=6)
         self.preset_box = ttk.Combobox(
             basic,
             textvariable=self.preset_var,
             values=list(self._preset_names.values()),
             state="readonly",
-            width=42,
+            width=22,
         )
         self.preset_box.grid(row=1, column=1, columnspan=2, sticky="ew", pady=6)
         self.preset_box.bind("<<ComboboxSelected>>", self._select_preset)
 
-        ttk.Label(basic, text="API 密钥", width=14).grid(row=2, column=0, sticky="w", pady=6)
+        ttk.Label(basic, text="API 密钥").grid(row=2, column=0, sticky="w", pady=6)
         self.key_entry = ttk.Entry(basic, textvariable=self.key_var, show="*")
         self.key_entry.grid(row=2, column=1, columnspan=2, sticky="ew", pady=6)
 
@@ -173,8 +177,9 @@ class ApiConfigDialog(WorkspacePage):
             command=self._toggle_advanced,
         )
 
-        self.advanced_tab.columnconfigure(0, weight=1)
-        self.advanced_frame = ttk.Frame(self.advanced_tab)
+        self.advanced_tab.content.configure(padding=16)
+        self.advanced_tab.content.columnconfigure(0, weight=1)
+        self.advanced_frame = ttk.Frame(self.advanced_tab.content)
         self.advanced_frame.grid(row=0, column=0, sticky="nsew")
         self.advanced_frame.columnconfigure(1, weight=1)
         fields = (
@@ -186,7 +191,7 @@ class ApiConfigDialog(WorkspacePage):
         )
         self.advanced_entries: list[ttk.Entry] = []
         for row, (label, variable) in enumerate(fields):
-            ttk.Label(self.advanced_frame, text=label, width=14).grid(row=row, column=0, sticky="w", pady=6)
+            ttk.Label(self.advanced_frame, text=label).grid(row=row, column=0, sticky="w", pady=6)
             entry = ttk.Entry(self.advanced_frame, textvariable=variable)
             entry.grid(row=row, column=1, sticky="ew", pady=6)
             self.advanced_entries.append(entry)

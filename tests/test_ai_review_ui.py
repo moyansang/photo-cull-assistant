@@ -1,7 +1,7 @@
 import json
 import time
 import tkinter as tk
-from tkinter import ttk
+from tkinter import font, ttk
 from pathlib import Path
 import pytest
 from PIL import Image
@@ -98,7 +98,12 @@ def test_web_tabs_prepare_and_restore(ui, monkeypatch):
     assert dialog.export_button.cget('text') == '导出到 LR'
     assert dialog.refine_button.cget('text') == '精选照片再选一轮'
     assert dialog.split_button.cget('text') == '拆分所选批次重试'
-    assert dialog.split_button.master.master.master is dialog.task_tab
+    ancestors = []
+    node = dialog.split_button
+    while node is not None:
+        ancestors.append(node)
+        node = getattr(node, 'master', None)
+    assert dialog.task_tab in ancestors
     opened = []
     monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
     dialog.notebook.select(1)
@@ -116,7 +121,7 @@ def test_web_tabs_prepare_and_restore(ui, monkeypatch):
     assert project.data['ui_settings']['submission_tab'] == 1
 
 
-def test_review_layout_has_fixed_footer_and_no_outer_scroll_surface(ui):
+def test_review_layout_has_fixed_footer_and_scrollable_web_and_result_tabs(ui):
     _root, dialog, _project, _task, _batch, _errors = ui
     assert dialog._page_id == 'review'
     assert dialog.export_button.master.pack_info()['side'] == 'bottom'
@@ -127,7 +132,13 @@ def test_review_layout_has_fixed_footer_and_no_outer_scroll_surface(ui):
             yield child
             yield from descendants(child)
 
-    assert not any(isinstance(widget, tk.Canvas) for widget in descendants(dialog))
+    canvases = [widget for widget in descendants(dialog) if isinstance(widget, tk.Canvas)]
+    assert set(canvases) == {
+        dialog.prefs_scroll.canvas,
+        dialog.api_scroll.canvas,
+        dialog.web_scroll.canvas,
+        dialog.review_canvas,
+    }
 
 
 def test_review_can_embed_and_forward_status_progress_and_close(tk_root, monkeypatch, tmp_path):
@@ -366,26 +377,170 @@ def test_compact_review_tabs_keep_all_visible_buttons_in_bounds(ui, size):
             yield child
             yield from descendants(child)
 
+    def containing_canvas(widget):
+        node = widget
+        while node is not None and node is not dialog:
+            if node is dialog.web_scroll.content:
+                return dialog.web_scroll.canvas
+            if node is dialog.api_scroll.content:
+                return dialog.api_scroll.canvas
+            if node is dialog.prefs_scroll.content:
+                return dialog.prefs_scroll.canvas
+            if node is dialog.review_workspace.master:
+                return dialog.review_canvas
+            node = getattr(node, 'master', None)
+        return None
+
+    def scroll_to_button(button, canvas):
+        left, top, right, bottom = canvas.bbox('all')
+        current_top = canvas.canvasy(0)
+        content_y = button.winfo_rooty() - canvas.winfo_rooty() + current_top
+        target = content_y - max(0, (canvas.winfo_height() - button.winfo_height()) / 2)
+        canvas.yview_moveto(max(0, min(1, (target - top) / max(1, bottom - top))))
+        root.update()
+        assert canvas.winfo_rootx() <= button.winfo_rootx()
+        assert button.winfo_rootx() + button.winfo_width() <= canvas.winfo_rootx() + canvas.winfo_width()
+        assert canvas.winfo_rooty() <= button.winfo_rooty()
+        assert button.winfo_rooty() + button.winfo_height() <= canvas.winfo_rooty() + canvas.winfo_height()
+
     for index in range(3):
         dialog.notebook.select(index)
         root.update()
+        page_canvas = (dialog.api_scroll.canvas, dialog.web_scroll.canvas, dialog.review_canvas)[index]
+        active_canvases = [page_canvas]
+        if dialog.prefs.winfo_ismapped():
+            active_canvases.append(dialog.prefs_scroll.canvas)
+        page_buttons = [
+            widget for widget in descendants(dialog)
+            if isinstance(widget, ttk.Button)
+            and widget.winfo_ismapped()
+            and containing_canvas(widget) in active_canvases
+        ]
+        assert page_buttons
+        for widget in page_buttons:
+            scroll_to_button(widget, containing_canvas(widget))
+
         left = dialog.winfo_rootx()
         top = dialog.winfo_rooty()
         right = left + dialog.winfo_width()
         bottom = top + dialog.winfo_height()
         visible_buttons = [
             widget for widget in descendants(dialog)
-            if isinstance(widget, ttk.Button) and widget.winfo_viewable()
+            if isinstance(widget, ttk.Button)
+            and widget.winfo_viewable()
+            and containing_canvas(widget) is None
         ]
         assert visible_buttons
-        assert all(
-            left <= widget.winfo_rootx()
-            and top <= widget.winfo_rooty()
-            and widget.winfo_rootx() + widget.winfo_width() <= right
-            and widget.winfo_rooty() + widget.winfo_height() <= bottom
-            for widget in visible_buttons
-        )
+        for widget in visible_buttons:
+            assert left <= widget.winfo_rootx()
+            assert top <= widget.winfo_rooty()
+            assert widget.winfo_rootx() + widget.winfo_width() <= right
+            assert widget.winfo_rooty() + widget.winfo_height() <= bottom
     root.withdraw()
+
+
+def test_true_200_percent_review_keeps_tab_actions_reachable(tmp_path, monkeypatch, tk_root):
+    root = tk_root
+    original_scaling = root.tk.call('tk', 'scaling')
+    root.tk.call('tk', 'scaling', 192 / 72)
+    root.geometry('960x540+0+0')
+    root.deiconify()
+    host = ttk.Frame(root)
+    host.pack(fill='both', expand=True)
+    project, assets, _task, _batch = setup_project(tmp_path)
+    profile = {'id': 'test', 'name': 'test', 'base_url': 'https://example.invalid/v1', 'model': 'vision'}
+    monkeypatch.setattr(ai_api, 'load_profiles', lambda _: [profile])
+    monkeypatch.setattr(root, '_selected_api_profile', lambda: profile, raising=False)
+    dialog = ReviewDialog(root, project, assets, CropSettings(), tmp_path, embedded=True)
+    dialog.pack(fill='both', expand=True)
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    def assert_buttons(buttons, viewport):
+        left, top = viewport.winfo_rootx(), viewport.winfo_rooty()
+        right = left + viewport.winfo_width()
+        bottom = top + viewport.winfo_height()
+        for button in buttons:
+            assert button.winfo_viewable(), button.cget('text')
+            assert button.winfo_width() >= button.winfo_reqwidth(), button.cget('text')
+            assert left <= button.winfo_rootx() and button.winfo_rootx() + button.winfo_width() <= right
+            assert top <= button.winfo_rooty() and button.winfo_rooty() + button.winfo_height() <= bottom
+
+    try:
+        drive(root, dialog)
+        dialog.notebook.select(0)
+        root.update()
+        assert dialog.prefs.winfo_manager() == ''
+        dialog.prefs_toggle.invoke()
+        root.update()
+        assert dialog.prefs.winfo_manager() == 'pack'
+        assert dialog.prefs_scroll.winfo_height() <= dialog.winfo_height() // 4 + 2
+        assert tuple(round(value, 3) for value in dialog.prefs_scroll.canvas.xview()) == (0.0, 1.0)
+        assert dialog.notebook.winfo_height() >= 100
+        strategy_combo = next(
+            widget for widget in descendants(dialog.prefs_scroll.canvas)
+            if isinstance(widget, ttk.Combobox)
+            and '允许保留多个不同动作' in widget.cget('values')
+        )
+        control_font = font.nametofont('TkDefaultFont', root=root)
+        assert strategy_combo.winfo_reqwidth() >= (
+            control_font.measure('允许保留多个不同动作')
+            + control_font.measure('00')
+        )
+        dialog.prefs_toggle.invoke()
+        root.update()
+        api = [dialog.run_button, dialog.resubmit_button, dialog.pause_button, dialog.split_button]
+        canvas = dialog.api_scroll.canvas
+        for button in api:
+            total_height = canvas.bbox('all')[3]
+            current_offset = canvas.yview()[0] * total_height
+            content_y = button.winfo_rooty() - canvas.winfo_rooty() + current_offset
+            target = max(0, content_y - (canvas.winfo_height() - button.winfo_height()) / 2)
+            canvas.yview_moveto(min(1, target / total_height))
+            root.update()
+            assert_buttons([button], canvas)
+
+        dialog.notebook.select(1)
+        root.update()
+        assert tuple(round(value, 3) for value in dialog.web_scroll.canvas.xview()) == (0.0, 1.0)
+        dialog.web_scroll.canvas.yview_moveto(1)
+        root.update()
+        wanted = {'复制完整提示词', '打开全部联系表目录', '导入整份回答', '查看原始回答'}
+        web = [w for w in descendants(dialog.web_tab)
+               if isinstance(w, ttk.Button) and w.cget('text') in wanted]
+        assert {w.cget('text') for w in web} == wanted
+        canvas = dialog.web_scroll.canvas
+        for button in web:
+            total_height = canvas.bbox('all')[3]
+            current_offset = canvas.yview()[0] * total_height
+            content_y = button.winfo_rooty() - canvas.winfo_rooty() + current_offset
+            target = max(0, content_y - (canvas.winfo_height() - button.winfo_height()) / 2)
+            canvas.yview_moveto(min(1, target / total_height))
+            root.update()
+            assert_buttons([button], canvas)
+
+        dialog.notebook.select(2)
+        root.update()
+        preview = [dialog.review_previous_button, dialog.review_next_button, dialog.review_open_button]
+        assert [w.cget('text') for w in preview] == ['←', '→', '原图']
+        canvas = dialog.review_canvas
+        for button in preview:
+            total_height = canvas.bbox('all')[3]
+            current_offset = canvas.yview()[0] * total_height
+            content_y = button.winfo_rooty() - canvas.winfo_rooty() + current_offset
+            target = max(0, content_y - 8)
+            canvas.yview_moveto(min(1, target / total_height))
+            root.update()
+            assert_buttons([button], canvas)
+    finally:
+        if dialog.winfo_exists():
+            dialog.dispose()
+        host.destroy()
+        root.tk.call('tk', 'scaling', original_scaling)
+        root.withdraw()
 
 
 def test_reopen_preserves_answers_when_home_sheet_changes_or_disappears(ui, monkeypatch, tmp_path):

@@ -58,9 +58,9 @@ def test_main_layout_fits_compact_desktop_and_keeps_flow_on_one_row(tmp_path):
                 app.sheets_button, app.review_button]
         assert [w.cget('text') for w in flow] == [
             '扫描图片', '编辑选片组', '检测/调整人脸框', 'AI 复核', '生成联系表', 'AI 选片与导出']
-        assert [int(w.grid_info()['column']) for w in flow] == list(range(6))
         assert [w.winfo_rootx() for w in flow] == sorted(w.winfo_rootx() for w in flow)
         assert len({w.winfo_rooty() for w in flow}) == 1
+        assert all(w.winfo_width() >= w.winfo_reqwidth() for w in flow)
         for widget in flow + [app.log_text, app.clear_log_button, app._page_chrome]:
             assert widget.winfo_rootx() >= app.winfo_rootx()
             assert widget.winfo_rootx() + widget.winfo_width() <= app.winfo_rootx() + app.winfo_width()
@@ -77,6 +77,71 @@ def test_main_layout_fits_compact_desktop_and_keeps_flow_on_one_row(tmp_path):
         assert help_buttons and not help_buttons[0].instate(['disabled'])
         app._set_processing_busy(False)
     finally:
+        app.destroy()
+
+
+@pytest.mark.parametrize('work_area,expected', [((1024, 604), (960, 540)), ((900, 600), (836, 536))])
+def test_homepage_controls_remain_reachable_at_true_200_percent(
+        tmp_path, monkeypatch, work_area, expected):
+    from ai_cull_assistant.app import App
+    from ai_cull_assistant import window_layout
+    from ai_cull_assistant.settings import save_values
+    save_values(tmp_path, {'input': '', 'workspace': '', 'options': {'no_auto_updates': True}})
+    original_init = tk.Tk.__init__
+
+    def scaled_init(root, *args, **kwargs):
+        original_init(root, *args, **kwargs)
+        root._original_scaling = root.tk.call('tk', 'scaling')
+        root.tk.call('tk', 'scaling', 192 / 72)
+
+    monkeypatch.setattr(tk.Tk, '__init__', scaled_init)
+    monkeypatch.setattr(window_layout, 'work_area_for',
+                        lambda _: window_layout.WorkArea(0, 0, *work_area))
+    app = App(settings_dir=tmp_path)
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    try:
+        app.update()
+        assert (app.winfo_width(), app.winfo_height()) == expected
+        assert tuple(round(value, 3) for value in app._home_scroll.canvas.xview()) == (0.0, 1.0)
+
+        chrome_buttons = [w for w in descendants(app._page_chrome) if isinstance(w, ttk.Button)]
+        for button in chrome_buttons:
+            assert button.winfo_viewable(), button.cget('text')
+            assert button.winfo_width() >= button.winfo_reqwidth(), button.cget('text')
+
+        home_buttons = [app.scan_button, app.group_button, app.crop_button, app.focus_button,
+                        app.sheets_button, app.review_button, app.evidence_cleanup_button]
+        canvas = app._home_scroll.canvas
+        left, top = canvas.winfo_rootx(), canvas.winfo_rooty()
+        right, bottom = left + canvas.winfo_width(), top + canvas.winfo_height()
+        for button in home_buttons:
+            total_height = canvas.bbox('all')[3]
+            current_offset = canvas.yview()[0] * total_height
+            content_y = button.winfo_rooty() - canvas.winfo_rooty() + current_offset
+            target = max(0, content_y - (canvas.winfo_height() - button.winfo_height()) / 2)
+            canvas.yview_moveto(min(1, target / total_height))
+            app.update()
+            assert button.winfo_viewable(), button.cget('text')
+            assert button.winfo_width() >= button.winfo_reqwidth(), button.cget('text')
+            assert left <= button.winfo_rootx() and button.winfo_rootx() + button.winfo_width() <= right
+            assert top <= button.winfo_rooty() and button.winfo_rooty() + button.winfo_height() <= bottom
+
+        shared = [app.stop_button, app.continue_button, app.contact_button,
+                  app.clear_log_button, app.clear_workspace_button]
+        left, top = app.winfo_rootx(), app.winfo_rooty()
+        right, bottom = left + app.winfo_width(), top + app.winfo_height()
+        for button in shared:
+            assert button.winfo_viewable(), button.cget('text')
+            assert button.winfo_width() >= button.winfo_reqwidth(), button.cget('text')
+            assert left <= button.winfo_rootx() and button.winfo_rootx() + button.winfo_width() <= right
+            assert top <= button.winfo_rooty() and button.winfo_rooty() + button.winfo_height() <= bottom
+    finally:
+        app.tk.call('tk', 'scaling', app._original_scaling)
         app.destroy()
 
 

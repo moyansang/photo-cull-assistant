@@ -35,6 +35,7 @@ from .shared_api import (
 from .window_layout import fit_window
 from .ui_help import install_page_chrome, install_control_help
 from .ui_style import set_button_style, apply_page
+from .responsive_layout import ScrollableFrame, WrappingToolbar
 from .workspace_layout import workspace_path
 from .workspace_log import append_log, visible_log, HISTORY_BOUNDARY
 from dataclasses import asdict, replace
@@ -433,8 +434,13 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self._page_host.grid(row=0, column=0, sticky='nsew')
         self._page_host.columnconfigure(0, weight=1)
         self._page_host.rowconfigure(0, weight=1)
-        home = self._home_page = ttk.Frame(self._page_host)
-        home.grid(row=0, column=0, sticky='nsew')
+        home_page = self._home_page = ttk.Frame(self._page_host)
+        home_page.grid(row=0, column=0, sticky='nsew')
+        home_page.columnconfigure(0, weight=1)
+        home_page.rowconfigure(0, weight=1)
+        self._home_scroll = ScrollableFrame(home_page)
+        self._home_scroll.grid(row=0, column=0, sticky='nsew')
+        home = self._home_scroll.content
         home.columnconfigure(0, weight=1)
 
         self.input_var = tk.StringVar(value=self.saved_paths["input"])
@@ -451,23 +457,36 @@ class App(EvidenceCleanupMixin, tk.Tk):
         form = ttk.Frame(home)
         form.grid(row=0, column=0, sticky="ew")
         form.columnconfigure(1, weight=1)
-        self._path_row(form, 0, "照片文件夹", self.input_var, self._choose_input)
-        ttk.Button(form, text="重新定位原照片", command=self._relink_source).grid(row=0, column=3, padx=(8, 0))
+        input_row = self._path_row(form, 0, "照片文件夹", self.input_var, self._choose_input)
+        ttk.Button(input_row, text="重新定位原照片", command=self._relink_source).grid(
+            row=1, column=2, padx=(8, 0))
         self._path_row(form, 1, "工作区", self.workspace_var, self._choose_workspace)
 
-        options = ttk.Frame(form)
-        options.grid(row=2, column=0, columnspan=4, sticky="w", pady=(14, 8))
-        ttk.Label(options, text="分组灵敏度").pack(side="left", padx=(0, 12))
-        ttk.Combobox(options, textvariable=self.preset_var, values=list(GROUPING_LABELS), state="readonly", width=10).pack(side="left")
-        ttk.Label(options, text="每页照片数").pack(side="left", padx=(28, 12))
-        ttk.Spinbox(options, from_=8, to=60, textvariable=self.per_page_var, width=5).pack(side="left")
-        ttk.Label(options, text="列数").pack(side="left", padx=(28, 12))
-        ttk.Spinbox(options, from_=2, to=6, textvariable=self.columns_var, width=5).pack(side="left")
-        ttk.Label(options, text="全局置信度").pack(side="left", padx=(24, 8))
+        options = WrappingToolbar(form, gap=14)
+        options.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(14, 8))
+
+        grouping = ttk.Frame(options)
+        ttk.Label(grouping, text="分组灵敏度").pack(side="left", padx=(0, 12))
+        ttk.Combobox(grouping, textvariable=self.preset_var, values=list(GROUPING_LABELS), state="readonly", width=10).pack(side="left")
+        options.add(grouping)
+
+        page_size = ttk.Frame(options)
+        ttk.Label(page_size, text="每页照片数").pack(side="left", padx=(0, 12))
+        ttk.Spinbox(page_size, from_=8, to=60, textvariable=self.per_page_var, width=5).pack(side="left")
+        options.add(page_size)
+
+        columns = ttk.Frame(options)
+        ttk.Label(columns, text="列数").pack(side="left", padx=(0, 12))
+        ttk.Spinbox(columns, from_=2, to=6, textvariable=self.columns_var, width=5).pack(side="left")
+        options.add(columns)
+
+        confidence = ttk.Frame(options)
+        ttk.Label(confidence, text="全局置信度").pack(side="left", padx=(0, 8))
         self.detection_confidence_spinbox = ttk.Spinbox(
-            options, from_=.7, to=.95, increment=.01, width=5, format="%.2f",
+            confidence, from_=.7, to=.95, increment=.01, width=5, format="%.2f",
             textvariable=self.detection_confidence_var, command=self._commit_detection_confidence)
         self.detection_confidence_spinbox.pack(side="left")
+        options.add(confidence)
         self.detection_confidence_spinbox.bind('<FocusOut>', self._commit_detection_confidence)
         self.detection_confidence_spinbox.bind('<Return>', self._commit_detection_confidence)
 
@@ -485,6 +504,9 @@ class App(EvidenceCleanupMixin, tk.Tk):
 
         first = ttk.Frame(home)
         first.grid(row=1, column=0, sticky="ew", pady=(16, 10))
+        first.columnconfigure(0, weight=1)
+        workflow_bar = WrappingToolbar(first)
+        workflow_bar.grid(row=0, column=0, sticky="ew")
         workflow = [("scan_button", "扫描图片", self._run_scan_thread),
                     ("group_button", "编辑选片组", self._open_group_editor),
                     ("crop_button", "检测/调整人脸框", self._open_crop_settings),
@@ -492,16 +514,21 @@ class App(EvidenceCleanupMixin, tk.Tk):
                     ("sheets_button", "生成联系表", self._generate_contact_sheets),
                     ("review_button", "AI 选片与导出", self._open_ai_review)]
         for col, (name, label, callback) in enumerate(workflow):
-            button = ttk.Button(first, text=label, command=callback)
-            button.grid(row=0, column=col, sticky="ew", padx=(0, 6 if col<5 else 0))
-            first.columnconfigure(col, weight=1)
+            button = ttk.Button(workflow_bar, text=label, command=callback)
+            workflow_bar.add(button)
             setattr(self, name, button)
         self.focus_button._always_available = True
-        self.evidence_cleanup_button = ttk.Button(first, text="清理证据图片", command=self._clean_evidence_images)
-        self.evidence_cleanup_button.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        evidence = ttk.Frame(first)
+        evidence.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        evidence.columnconfigure(1, weight=1)
+        self.evidence_cleanup_button = ttk.Button(evidence, text="清理证据图片", command=self._clean_evidence_images)
+        self.evidence_cleanup_button.grid(row=0, column=0, sticky="w")
         self.evidence_status_var = tk.StringVar(value="")
-        ttk.Label(first, textvariable=self.evidence_status_var, wraplength=720,
-                  style="Muted.TLabel").grid(row=1, column=1, columnspan=5, sticky="w", padx=(8, 0), pady=(10, 0))
+        evidence_status = ttk.Label(evidence, textvariable=self.evidence_status_var, wraplength=720,
+                                    style="Muted.TLabel")
+        evidence_status.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        evidence.bind("<Configure>", lambda event: evidence_status.configure(
+            wraplength=max(180, event.width - self.evidence_cleanup_button.winfo_reqwidth() - 24)))
         self._refresh_evidence_status()
 
         controls = self._shared_controls = ttk.Frame(frame)
@@ -522,7 +549,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self.next_step_var = tk.StringVar(value="推荐下一步：扫描图片")
         self.next_step_label = ttk.Label(status, textvariable=self.next_step_var)
         self.next_step_label.pack(side="left")
-        progress = ttk.Frame(frame)
+        progress = self._shared_progress = ttk.Frame(frame)
         progress.grid(row=3, column=0, sticky="ew", pady=(0, 6))
         progress.columnconfigure(1, weight=1)
         self.progress_var = tk.DoubleVar(value=0)
@@ -532,7 +559,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
         ttk.Progressbar(progress, variable=self.progress_var, maximum=100).grid(row=0, column=1, sticky="ew")
         ttk.Label(progress, textvariable=self.progress_text, width=5, anchor="e").grid(row=0, column=2, padx=(12, 0))
 
-        log_frame = ttk.Frame(frame)
+        log_frame = self._shared_log_frame = ttk.Frame(frame)
         log_frame.grid(row=4, column=0, sticky="nsew")
         log_heading = ttk.Frame(log_frame)
         log_heading.pack(fill="x", pady=(0, 4))
@@ -545,6 +572,9 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self.log_text.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self.log_text.pack(side="left", fill="both", expand=True)
+        self._compact_tasks_expanded = False
+        self._shared_toggle = ttk.Button(frame, text="展开任务与日志", command=self._toggle_shared_details)
+        self._shared_toggle._always_available = True
         frame.bind("<Configure>", self._resize_shared_log, add="+")
         install_control_help(self, "home")
         apply_page(self)
@@ -553,10 +583,14 @@ class App(EvidenceCleanupMixin, tk.Tk):
             button.configure(style="secondary.Link.TButton")
         set_button_style(self.clear_workspace_button, "danger-link")
 
-    def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: tk.StringVar, command) -> None:
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5, padx=(0, 16))
-        ttk.Entry(parent, textvariable=variable).grid(row=row, column=1, sticky="ew")
-        ttk.Button(parent, text="选择", command=command).grid(row=row, column=2, padx=(8, 0))
+    def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: tk.StringVar, command) -> ttk.Frame:
+        line = ttk.Frame(parent)
+        line.grid(row=row, column=0, columnspan=4, sticky="ew", pady=5)
+        line.columnconfigure(0, weight=1)
+        ttk.Label(line, text=label).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 3))
+        ttk.Entry(line, textvariable=variable).grid(row=1, column=0, sticky="ew")
+        ttk.Button(line, text="选择", command=command).grid(row=1, column=1, padx=(8, 0))
+        return line
 
     def _choose_input(self) -> None:
         from .directory_picker import choose_photo_directory
@@ -816,6 +850,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
                 if widget.winfo_exists():
                     widget.configure(state=state)
             self.continue_button.configure(state="normal" if self._processing_job else "disabled")
+        self._resize_shared_log()
 
     def _set_processing_busy(self, busy):
         self._processing_busy = busy
@@ -837,6 +872,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
                 if widget.winfo_exists():widget.configure(state=state)
             self.continue_button.configure(state="normal" if self._processing_job else "disabled")
         self.stop_button.configure(state="normal" if busy else "disabled")
+        self._resize_shared_log()
 
     def _start_processing(self, resume=False, mode="scan", regroup=False, focus_errors_skipped=False):
         if self._review_busy():
@@ -1114,22 +1150,49 @@ class App(EvidenceCleanupMixin, tk.Tk):
         return bool(page and page.winfo_exists() and
                     (getattr(page, '_api_active', False) or getattr(page, '_preparing_task', False)))
 
+    def _toggle_shared_details(self):
+        self._compact_tasks_expanded = not self._compact_tasks_expanded
+        self._resize_shared_log()
+
     def _resize_shared_log(self, _event=None):
         # Short forms use their natural height and give surplus space to logs.
         # Photo editors reserve most height for images, with a bounded log area.
         compact = self._visible_page in ('home', 'focus')
-        self._workspace_layout.rowconfigure(0, weight=0 if compact else 1)
-        self._workspace_layout.rowconfigure(4, weight=1 if compact else 0)
-        lines = 3 if compact else max(1, min(5, (self._workspace_layout.winfo_height() - 360) // 100))
+        # The homepage owns a scrollable form, so let it absorb short-window
+        # pressure while the shared task controls and progress stay reachable.
+        self._workspace_layout.rowconfigure(0, weight=1)
+        very_compact = self._workspace_layout.winfo_height() < round(
+            self.winfo_fpixels("1i") * 4.5)
+        self._workspace_layout.rowconfigure(4, weight=0 if very_compact else 1)
+        lines = (1 if very_compact else 3) if compact else max(
+            1, min(5, (self._workspace_layout.winfo_height() - 360) // 100))
         faces = self._visible_page == 'faces'
-        if faces:
+        if faces or (very_compact and not compact):
             lines = min(lines, 2)
             self._shared_status.grid_remove()
             self._compact_next_step.pack(side='right')
         else:
             self._shared_status.grid()
             self._compact_next_step.pack_forget()
+        self._shared_controls.grid()
+        self._shared_progress.grid()
+        self._shared_log_frame.grid()
         self._shared_controls.grid_configure(pady=(2, 2) if faces else (8, 6))
+        compact_review = very_compact and self._visible_page == 'review'
+        busy = self._processing_busy or getattr(getattr(self, 'updates', None), 'busy', False)
+        collapsed = compact_review and not busy and not self._compact_tasks_expanded
+        if collapsed:
+            for widget in (self._shared_controls, self._shared_status, self._shared_progress, self._shared_log_frame):
+                widget.grid_remove()
+        else:
+            self._shared_controls.grid()
+            self._shared_progress.grid()
+        if compact_review:
+            self._shared_toggle.configure(text='展开任务与日志' if collapsed else '收起任务与日志',
+                                          state='disabled' if busy else 'normal')
+            self._shared_toggle.grid(row=5, column=0, sticky='e')
+        else:
+            self._shared_toggle.grid_remove()
         if int(self.log_text.cget('height')) != lines:
             self.log_text.configure(height=lines)
 

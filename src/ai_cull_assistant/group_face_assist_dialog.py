@@ -22,6 +22,7 @@ from . import group_face_assist
 from .ui_help import install_control_help, install_page_chrome
 from .ui_style import set_button_style, apply_page, COLORS
 from .window_layout import fit_window
+from .responsive_layout import WrappingToolbar, ScrollableFrame
 
 MODE_LABELS = {'外观（颜色/纹理）': 'appearance', '人脸特征（实验性）': 'identity'}
 
@@ -86,13 +87,13 @@ class GroupFaceAssistDialog(tk.Toplevel):
         # remains visible on a 720-pixel-high desktop.
         header = ttk.Frame(self, padding=(12, 8, 12, 0))
         header.pack(side='top', fill='x')
-        self.reference_label = ttk.Label(header, text=f"参考人物：{reference.stem}", width=30, anchor="w")
-        self.reference_label.pack(side="left", fill="x", expand=True)
-        self.progress_label = ttk.Label(header, text=f"待检查 0 / {len(self.targets)}")
-        self.progress_label.pack(side='left', padx=18)
-        self.stop_button = ttk.Button(header, text='停止查找', command=self.stop_search)
-        self.stop_button.pack(side='right')
-        ttk.Button(header, text='重新查找未确认', command=self._retry_unconfirmed).pack(side='right', padx=6)
+        self.reference_label = ttk.Label(header, text=f"参考人物：{reference.stem}", width=1, anchor="w")
+        self.reference_label.pack(fill="x")
+        actions = WrappingToolbar(header)
+        actions.pack(fill='x')
+        self.progress_label = actions.add(ttk.Label(actions, text=f"待检查 0 / {len(self.targets)}"))
+        self.stop_button = actions.add(ttk.Button(actions, text='停止查找', command=self.stop_search))
+        actions.add(ttk.Button(actions, text='重新查找未确认', command=self._retry_unconfirmed))
 
         mode_bar = ttk.Frame(self, padding=(12, 4))
         mode_bar.pack(side='top', fill='x')
@@ -101,85 +102,100 @@ class GroupFaceAssistDialog(tk.Toplevel):
                                        values=tuple(MODE_LABELS), state='readonly', width=22)
         self.mode_picker.pack(side='left')
         self.mode_picker.bind('<<ComboboxSelected>>', self._mode_changed)
-        self.mode_help = ttk.Label(mode_bar, wraplength=700, style='Muted.TLabel', justify='left')
-        self.mode_help.pack(side='left', padx=10, fill='x', expand=True)
+        self.mode_help = ttk.Label(self, wraplength=700, style='Muted.TLabel', justify='left')
+        self.mode_help.pack(side='top', padx=12, fill='x')
+        self.mode_help.bind('<Configure>', lambda e: self.mode_help.configure(wraplength=max(100, e.width)))
         self._update_mode_help()
 
         footer = ttk.Frame(self, padding=(12, 4, 12, 10))
         footer.pack(side='bottom', fill='x')
-        buttons = ttk.Frame(footer)
+        buttons = WrappingToolbar(footer)
         buttons.pack(fill='x')
-        ttk.Button(buttons, text='确认此框 (Y)', command=self.confirm_current).pack(side='left', padx=(0, 6))
-        ttk.Button(buttons, text='不是这个人 (X)', command=self.reject_current).pack(side='left', padx=6)
-        ttk.Button(buttons, text='暂时跳过 (P)', command=self.skip_current).pack(side='left', padx=6)
+        buttons.add(ttk.Button(buttons, text='确认此框 (Y)', command=self.confirm_current))
+        buttons.add(ttk.Button(buttons, text='不是这个人 (X)', command=self.reject_current))
+        buttons.add(ttk.Button(buttons, text='暂时跳过 (P)', command=self.skip_current))
         self.bind('<KeyPress>', self._review_shortcut, add='+')
-        ttk.Button(buttons, text='关闭', command=self.destroy).pack(side='right', padx=(6, 0))
-        self.accept_button = ttk.Button(buttons, text='采用选中候选', command=self.accept_selected)
-        self.accept_button.pack(side='right', padx=6)
+        self.accept_button = buttons.add(ttk.Button(buttons, text='采用选中候选', command=self.accept_selected))
+        buttons.add(ttk.Button(buttons, text='关闭', command=self.destroy))
 
-        body = ttk.Frame(self, padding=(12, 6))
+        body = self._body = ttk.Frame(self, padding=(12, 6))
         body.pack(side='top', fill='both', expand=True)
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
 
-        left_rail = ttk.Frame(body)
+        left_rail = self._left_rail = ttk.Frame(body)
         left_rail.grid(row=0, column=0, sticky='nsew')
-        left_rail.rowconfigure(1, weight=1)
+        left_rail.grid_propagate(False)
+        left_rail.rowconfigure(0, weight=1)
         left_rail.columnconfigure(0, weight=1)
-        reference_frame = ttk.LabelFrame(left_rail, text='参考人物', padding=6)
-        reference_frame.grid(row=0, column=0, sticky='ew')
-        ttk.Label(reference_frame, text='确认框自动积累，下轮使用', style='Muted.TLabel').pack(fill='x')
+        self._details = ttk.Notebook(body, width=1, height=1)
+        reference_scroll = ScrollableFrame(self._details)
+        self._details.add(reference_scroll, text='参考人物')
+        reference_frame = reference_scroll.content
+        sample_help = ttk.Label(reference_frame, text='已确认的人脸会保存为参考。\n点击“重新查找”时使用，不会自动训练。',
+                                wraplength=230, style='Muted.TLabel', justify='left')
+        sample_help.pack(fill='x')
         self.sample_picker = ttk.Combobox(reference_frame, state='readonly', width=22)
         self.sample_picker.pack(fill='x')
         sample_actions = ttk.Frame(reference_frame)
         sample_actions.pack(fill='x')
         ttk.Button(sample_actions, text='移除此参考', command=self._remove_reference).pack(side='left')
-        ttk.Button(sample_actions, text='清空积累', command=self._clear_references).pack(side='left')
+        ttk.Button(sample_actions, text='清空参考', command=self._clear_references).pack(side='left')
         self._refresh_references()
         self.reference_preview = tk.Canvas(
-            reference_frame, width=190, height=210, background=COLORS['photo'], highlightthickness=0)
+            reference_frame, width=190, height=210, background=COLORS['bg'], highlightthickness=0)
         self.reference_preview.pack(fill='x')
+        self.reference_preview.bind('<Configure>', lambda _e: self._draw_reference())
         self._reference_photos = []
 
         list_frame = ttk.LabelFrame(left_rail, text='候选照片', padding=6)
-        list_frame.grid(row=1, column=0, sticky='nsew', pady=(8, 0))
+        list_frame.grid(row=0, column=0, sticky='nsew')
         list_frame.rowconfigure(0, weight=1)
         list_frame.columnconfigure(0, weight=1)
-        style = ttk.Style(self)
-        style.configure('Assist.Treeview', rowheight=54)
         self.tree = ttk.Treeview(
             list_frame, columns=('accept', 'stem', 'status'), show='tree headings', height=8,
             selectmode='browse', style='Assist.Treeview',
         )
         self.tree.heading('#0', text='照片')
-        self.tree.column('#0', width=58, minwidth=58, stretch=False)
         ui_scale = max(1.0, float(self.tk.call('tk', 'scaling')) / (96 / 72))
+        thumbnail_column = round(58 * ui_scale)
+        self.tree.column('#0', width=thumbnail_column, minwidth=thumbnail_column, stretch=False)
         for column, label, width in (('#1', '采用', 42), ('#2', '文件名', 130), ('#3', '状态', 72)):
             self.tree.heading(column, text=label)
-            self.tree.column(column, width=round(width * ui_scale), anchor='center' if column != '#2' else 'w')
+            self.tree.column(column, width=round(width * ui_scale), minwidth=round(width * ui_scale),
+                             anchor='center' if column != '#2' else 'w')
         self.tree.grid(row=0, column=0, sticky='nsew')
         scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self._scroll_tree)
         scrollbar.grid(row=0, column=1, sticky='ns')
-        self.tree.configure(yscrollcommand=scrollbar.set)
+        horizontal = ttk.Scrollbar(list_frame, orient='horizontal', command=self.tree.xview)
+        horizontal.grid(row=1, column=0, sticky='ew')
+        self.tree.configure(yscrollcommand=scrollbar.set, xscrollcommand=horizontal.set)
         self.tree.bind('<<TreeviewSelect>>', self.show_current)
         self.tree.bind('<ButtonRelease-1>', self._tree_click)
         self.tree.bind('<MouseWheel>', self._tree_wheel)
         self.tree.bind('<Configure>', lambda _event: self._schedule_visible_thumbnails())
-        preview_frame = ttk.LabelFrame(body, text='候选照片预览', padding=6)
-        preview_frame.grid(row=0, column=1, sticky='nsew', padx=(10, 10))
+        self._preview_tabs = ttk.Notebook(body, width=1, height=1)
+        # The responsive details pane is a sibling so it can also occupy a grid
+        # column. Keep it above the notebook when managed as one of its tabs.
+        self._preview_tabs.bind('<<NotebookTabChanged>>', lambda _e: self._details.lift())
+        self._preview_tabs.grid(row=0, column=1, sticky='nsew', padx=(8, 0))
+        preview_frame = ttk.Frame(self._preview_tabs, padding=6)
+        self._preview_tabs.add(preview_frame, text='候选照片预览')
         preview_frame.rowconfigure(0, weight=1)
         preview_frame.columnconfigure(0, weight=1)
-        self.preview = tk.Canvas(preview_frame, background=COLORS['photo'], highlightthickness=0)
+        self.preview = tk.Canvas(preview_frame, width=1, height=1, background=COLORS['bg'], highlightthickness=0)
         self.preview.grid(row=0, column=0, sticky='nsew')
         self.preview.bind('<Configure>', lambda _e: self.show_current())
         self.preview.bind('<ButtonPress-1>', self.pointer_down)
         self.preview.bind('<B1-Motion>', self.pointer_move)
         self.preview.bind('<ButtonRelease-1>', self.pointer_up)
         self.preview.bind('<MouseWheel>', self.pointer_wheel)
-        inset = ttk.LabelFrame(body, text='候选细节', padding=8)
-        inset.grid(row=0, column=2, sticky='nsew')
-        self.inset = tk.Canvas(inset, width=180, height=190, background=COLORS['photo'], highlightthickness=0)
+        inset_scroll = ScrollableFrame(self._details)
+        self._details.add(inset_scroll, text='人脸细节')
+        inset = inset_scroll.content
+        self.inset = tk.Canvas(inset, width=180, height=190, background=COLORS['bg'], highlightthickness=0)
         self.inset.pack(fill='x')
+        self.inset.bind('<Configure>', lambda _e: self.show_current())
         self.candidate_picker = ttk.Combobox(inset, state='disabled', width=22)
         self.candidate_picker.pack(fill='x', pady=(8, 0))
         self.candidate_picker.bind('<<ComboboxSelected>>', self._choose_candidate)
@@ -188,7 +204,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.reason_label.pack(fill='x', pady=(10, 0))
         inset.bind('<Configure>', lambda e: self.reason_label.configure(wraplength=max(150, e.width-18)))
 
-        fit_window(self, (1120, 680), minimum_size=(760, 520), parent=parent)
+        self._compact = None
+        body.bind('<Configure>', self._fit_body)
         self.protocol('WM_DELETE_WINDOW', self.destroy)
         for target in self.targets:
             self.tree.insert('', 'end', iid=target.key, text='', values=('☐', target.stem, '排队中'))
@@ -206,15 +223,36 @@ class GroupFaceAssistDialog(tk.Toplevel):
         install_control_help(self, "assist")
         apply_page(self)
         set_button_style(self.accept_button, "primary")
+        fit_window(self, (1280, 800), minimum_size=(760, 520), parent=parent)
         from .ui_help import ToolTip
         self.reference_label._filename_tip = ToolTip(self.reference_label, reference.stem)
         self.tree._filename_tip = ToolTip(self.tree, "")
         if not self.targets:
-            self.preview.create_text(160, 100, text="没有待补齐的照片", fill=COLORS["photo_text"])
+            self.preview.create_text(160, 100, text="没有待补齐的照片", fill=COLORS["text"])
         self.grab_set()
         self._start_worker()
         if self._feedback_error:
             self.after(0, lambda: messagebox.showwarning("补框进度", self._feedback_error, parent=self))
+
+    def _fit_body(self, event):
+        """Keep a full-height photo list; put details in a tab on narrow windows."""
+        width = max(1, event.width - 24)
+        scale = max(1, float(self.tk.call('tk', 'scaling')) / (96 / 72))
+        left = min(round(320 * scale), round(width * .38))
+        self._body.columnconfigure(0, minsize=left)
+        detail_width = max(250, self.sample_picker.winfo_reqwidth() + 30)
+        compact = width < left + detail_width + round(320 * scale)
+        if compact != self._compact:
+            if compact:
+                self._details.grid_forget()
+                self._body.columnconfigure(2, minsize=0)
+                self._preview_tabs.add(self._details, text='参考与细节')
+            else:
+                if str(self._details) in self._preview_tabs.tabs():
+                    self._preview_tabs.forget(self._details)
+                self._details.grid(row=0, column=2, sticky='nsew', padx=(8, 0))
+                self._body.columnconfigure(2, minsize=detail_width)
+            self._compact = compact
 
     def _init_feedback(self, workspace, input_dir):
         if workspace is None or input_dir is None:
@@ -285,7 +323,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
     def _refresh_references(self):
         samples = self._feedback.samples() if self._feedback else []
         self._sample_ids = [sample['id'] for sample in samples]
-        self.sample_picker.configure(values=self._sample_ids or ('暂无积累参考',))
+        self.sample_picker.configure(values=self._sample_ids or ('尚无已确认参考',))
         self.sample_picker.current(0)
 
     def _remove_reference(self):
@@ -347,8 +385,8 @@ class GroupFaceAssistDialog(tk.Toplevel):
     def _update_mode_help(self):
         identity = MODE_LABELS[self.mode_var.get()] == 'identity'
         self.mode_help.configure(text=(
-            '离线比对人脸特征；需清晰人脸。门槛为实验默认值，近分/低分需手选；选择不等于确认。'
-            if identity else '按颜色、纹理和头部位置查找；衣服相似可能混淆，逐张确认后才采用。'))
+            '在本机比较人脸特征，适合清晰正脸；实验功能，仍需逐张确认。'
+            if identity else '按颜色、纹理和头部位置寻找候选；相似衣服可能混淆，仍需逐张确认。'))
 
     def _mode_changed(self, _event=None):
         if self._worker and self._worker.is_alive():
@@ -613,12 +651,12 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.reference_preview.delete('all')
         self._reference_photos.clear()
         if not self.reference.preview_path:
-            self.reference_preview.create_text(78, 90, text='参考预览不可用', fill=COLORS['photo_text'])
+            self.reference_preview.create_text(78, 90, text='参考预览不可用', fill=COLORS['text'])
             return
         try:
             image = self._load_preview(self.reference.preview_path)
         except OSError as exc:
-            self.reference_preview.create_text(78, 90, text=f'参考预览不可用\n{exc}', fill=COLORS['photo_text'])
+            self.reference_preview.create_text(78, 90, text=f'参考预览不可用\n{exc}', fill=COLORS['text'])
             return
         width = max(120, self.reference_preview.winfo_width() - 8)
         height = max(170, self.reference_preview.winfo_height())
@@ -636,7 +674,7 @@ class GroupFaceAssistDialog(tk.Toplevel):
         face = ImageOps.contain(crop, (width, face_height))
         face_photo = ImageTk.PhotoImage(face, master=self.reference_preview)
         self._reference_photos.append(face_photo)
-        self.reference_preview.create_text((width + 8) / 2, label_y, text='参考人脸', fill=COLORS['photo_text'])
+        self.reference_preview.create_text((width + 8) / 2, label_y, text='参考人脸', fill=COLORS['text'])
         self.reference_preview.create_image(
             (width + 8) / 2, label_y + 8 + face_height / 2, image=face_photo,
         )
@@ -678,13 +716,13 @@ class GroupFaceAssistDialog(tk.Toplevel):
         self.reason_label.configure(text=f"原因：{reason}")
         if not target.preview_path:
             self.preview.create_text(self.preview.winfo_width() // 2 or 200, 100,
-                                      text='预览缺失或不可读', fill=COLORS['photo_text'])
+                                      text='预览缺失或不可读', fill=COLORS['text'])
             self.inset.delete('all')
             return
         try:
             image = self._load_preview(target.preview_path)
         except OSError as exc:
-            self.preview.create_text(200, 100, text=f'预览不可用：{exc}', fill=COLORS['photo_text'], width=max(100, self.preview.winfo_width()-32))
+            self.preview.create_text(200, 100, text=f'预览不可用：{exc}', fill=COLORS['text'], width=max(100, self.preview.winfo_width()-32))
             self.inset.delete('all')
             return
         width = max(120, self.preview.winfo_width())

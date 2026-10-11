@@ -7,7 +7,7 @@ import queue
 import threading
 from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import font, messagebox, ttk
 from typing import Any, Callable, Iterable
 
 from PIL import Image, ImageOps, ImageTk
@@ -15,6 +15,7 @@ from .ui_help import install_control_help, install_page_chrome
 from .ui_page import WorkspacePage
 from .ui_style import apply_page, set_button_style, COLORS
 from .window_layout import fit_window
+from .responsive_layout import ScrollableFrame, WrappingToolbar
 
 
 DONE_STATUSES = {"completed", "complete", "done", "已完成"}
@@ -94,7 +95,10 @@ class PasteResponseDialog(tk.Toplevel):
         ttk.Button(footer, text=submit_text, command=self._submit).pack(side="right", padx=(0, 8))
         body = ttk.Frame(self, padding=(12, 10))
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text=instruction).pack(anchor="w", pady=(0, 6))
+        instruction_label = ttk.Label(body, text=instruction)
+        instruction_label.pack(anchor="w", fill="x", pady=(0, 6))
+        body.bind("<Configure>", lambda event: instruction_label.configure(
+            wraplength=max(180, event.width - 24)), add="+")
         text_frame = ttk.Frame(body)
         text_frame.pack(fill="both", expand=True)
         self.text = tk.Text(text_frame, wrap="word", undo=True)
@@ -305,12 +309,7 @@ class ReviewDialog(WorkspacePage):
     def _build_ui(self) -> None:
         install_page_chrome(self, "review")
         outer = self._outer = ttk.Frame(self, padding=(10, 6, 10, 0))
-        if self._embedded:
-            self.page_actions = ttk.Frame(self)
-            ttk.Button(self.page_actions, text="返回主页", command=self.return_home).pack(side="right")
-            self.export_button = ttk.Button(self.page_actions, text="导出到 LR", command=self._export_ai_ratings)
-            self.export_button.pack(side="right", padx=(0, 8))
-        else:
+        if not self._embedded:
             footer = ttk.Frame(self, padding=(10, 6, 10, 10))
             footer.pack(side="bottom", fill="x")
             ttk.Label(footer, textvariable=self.status_var).pack(side="left", fill="x", expand=True)
@@ -333,23 +332,39 @@ class ReviewDialog(WorkspacePage):
         self._build_web_tab()
         self._build_review_tab()
         if self._embedded:
-            self.bind("<Configure>", self._fit_preferences, add="+")
+            # Each scrollable page owns its actions. Reusing a sibling frame
+            # with pack/grid(in_=...) lets it paint outside a canvas viewport.
+            self._page_action_sets = []
+            for parent in (self.api_actions, self.web_actions, self.review_action_slot):
+                frame = ttk.Frame(parent)
+                ttk.Button(frame, text="返回主页", command=self.return_home).pack(side="right")
+                button = ttk.Button(frame, text="导出到 LR", command=self._export_ai_ratings)
+                button.pack(side="right", padx=(0, 8))
+                self._page_action_sets.append((frame, button))
+            self.page_actions, self.export_button = self._page_action_sets[0]
+        self.bind("<Configure>", self._fit_preferences, add="+")
         install_control_help(self, "review")
         apply_page(self)
         set_button_style(self.run_button, "primary")
         set_button_style(self.export_button, "primary")
+        if self._embedded:
+            for _frame, button in self._page_action_sets:
+                set_button_style(button, "primary")
 
     def _tab_changed(self, _event=None):
         selected = self.notebook.index(self.notebook.select())
         if self._embedded:
-            self.page_actions.grid_forget()
-            self.page_actions.pack_forget()
+            for frame, _button in self._page_action_sets:
+                frame.grid_forget()
+                frame.pack_forget()
+            self.page_actions, self.export_button = self._page_action_sets[selected]
             if selected == 0:
-                self.page_actions.grid(in_=self.api_actions, row=0, column=4, sticky="e", padx=(8, 0))
+                self._fit_api_page_actions()
+                self.after_idle(self._fit_api_page_actions)
             elif selected == 1:
-                self.page_actions.grid(in_=self.web_actions, row=0, column=3, sticky="e", padx=(8, 0))
+                self.page_actions.grid(in_=self.web_actions, row=1, column=0, sticky="e", pady=(6, 0))
             else:
-                self.page_actions.pack(in_=self._outer, fill="x", before=self.notebook, pady=(0, 4))
+                self.page_actions.pack(in_=self.review_action_slot, side="left")
         # The result view favors the photo and AI reply.  Preferences return
         # to the exact same place when switching back to API or web submission.
         if selected == 2:
@@ -365,12 +380,32 @@ class ReviewDialog(WorkspacePage):
             else:
                 self._show_selected_photo()
 
+    def _fit_api_page_actions(self) -> None:
+        if not self._embedded or not hasattr(self, "_page_action_sets"):
+            return
+        frame = self._page_action_sets[0][0]
+        buttons_width = sum(
+            button.winfo_reqwidth() + 6
+            for button in (self.run_button, self.resubmit_button, self.pause_button, self.split_button)
+        )
+        compact = self.api_actions.winfo_width() < buttons_width + frame.winfo_reqwidth() + 8
+        frame.grid(
+            in_=self.api_actions,
+            row=1 if compact else 0,
+            column=0 if compact else 1,
+            sticky="w" if compact else "e",
+            padx=(0, 0) if compact else (8, 0),
+            pady=(6, 0) if compact else (0, 0),
+        )
+
     def _toggle_compact_preferences(self):
         self._prefs_expanded = not getattr(self, '_prefs_expanded', False)
         self._fit_preferences()
 
     def _fit_preferences(self, _event=None):
-        compact = self.winfo_height() < 460
+        # A 540 px-tall window is already compact at 200% scaling. Keep the
+        # active tab reachable by scaling this cutoff with Tk's font metrics.
+        compact = self.winfo_height() < max(460, round(self.winfo_fpixels("1i") * 4.5))
         if compact:
             self.prefs_toggle.pack_forget()
             if self.prefs.winfo_manager():
@@ -382,7 +417,22 @@ class ReviewDialog(WorkspacePage):
         expanded = not compact or getattr(self, '_prefs_expanded', False)
         self.prefs_toggle.configure(text="收起选片偏好" if expanded else "展开选片偏好")
         if expanded:
+            if compact:
+                # The toggle already names this section. Remove the repeated
+                # title and padding, and keep one complete control row visible.
+                self.prefs.configure(text="", padding=0)
+                row_height = max(
+                    control.winfo_reqheight() for control in self._preference_controls)
+                self.prefs_scroll.configure(height=min(
+                    row_height + self._preference_gap,
+                    max(row_height, self.winfo_height() // 4),
+                ))
+            else:
+                self.prefs.configure(text="本轮选片偏好", padding=(8, 6))
+                self.prefs_scroll.configure(
+                    height=max(120, round(self.winfo_fpixels("1i") * .75)))
             self.prefs.pack(fill="x", pady=(0, 6))
+            self.prefs_scroll.request_layout()
         else:
             self.prefs.pack_forget()
 
@@ -398,33 +448,60 @@ class ReviewDialog(WorkspacePage):
         self._review_sashes_initialized = True
 
     def _build_task_tab(self) -> None:
-        tab = self.task_tab
+        self.api_scroll = ScrollableFrame(self.task_tab)
+        self.api_scroll.pack(fill="both", expand=True)
+        self.task_tab.bind(
+            "<Map>", lambda _event: self.after_idle(self.api_scroll.vertical.grid), add="+")
+        tab = self.api_scroll.content
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(1, weight=1)
         prefs = self.prefs = ttk.LabelFrame(self.common_tasks, text="本轮选片偏好", padding=(8, 6))
         self.prefs_toggle = ttk.Button(self.common_tasks, text="展开选片偏好", command=self._toggle_compact_preferences)
         prefs.pack(fill="x", pady=(0, 6))
-        fields = (
-            (0, 0, "选片力度", "intensity", ("少量精选", "均衡保留", "多留备选")),
-            (0, 2, "同组策略", "strategy", ("通常保留一张", "允许保留多个不同动作")),
-            (0, 4, "评价重点", "focus", ("表情优先", "动作优先", "综合判断")),
-        )
-        for row, col, label, key, values in fields:
-            pady = (5, 0) if row else 0
-            ttk.Label(prefs, text=label).grid(row=row, column=col, sticky="w", padx=(0, 4), pady=pady)
-            ttk.Combobox(prefs, textvariable=self.preference_vars[key], values=values, state="readonly", width=18).grid(
-                row=row, column=col + 1, sticky="ew", padx=(0, 10), pady=pady
+        self.prefs_scroll = ScrollableFrame(prefs)
+        self.prefs_scroll.configure(height=max(120, round(self.winfo_fpixels("1i") * .75)))
+        self.prefs_scroll.grid_propagate(False)
+        self.prefs_scroll.pack(fill="x")
+        prefs.bind(
+            "<Map>", lambda _event: self.after_idle(self.prefs_scroll.vertical.grid), add="+")
+        self._preference_gap = 10
+        self.preference_bar = WrappingToolbar(
+            self.prefs_scroll.content, gap=self._preference_gap)
+        preference_bar = self.preference_bar
+        preference_bar.pack(fill="x")
+        self._preference_controls = []
+
+        def add_preference(label, create_widget):
+            group = ttk.Frame(preference_bar)
+            ttk.Label(group, text=label).pack(side="left", padx=(0, 4))
+            control = create_widget(group)
+            control.pack(side="left")
+            self._preference_controls.append(control)
+            preference_bar.add(group)
+
+        control_font = font.nametofont("TkDefaultFont", root=self)
+        for label, key, values in (
+            ("选片力度", "intensity", ("少量精选", "均衡保留", "多留备选")),
+            ("同组策略", "strategy", ("通常保留一张", "允许保留多个不同动作")),
+            ("评价重点", "focus", ("表情优先", "动作优先", "综合判断")),
+        ):
+            zero_width = max(1, control_font.measure("0"))
+            option_width = max(
+                16,
+                max(control_font.measure(value) for value in values) // zero_width + 2,
             )
-        ttk.Label(prefs, text="目标数量").grid(row=1, column=0, sticky="w", pady=(5, 0))
-        ttk.Entry(prefs, textvariable=self.preference_vars["target"]).grid(row=1, column=1, sticky="ew", pady=(5, 0), padx=(0, 10))
-        ttk.Label(prefs, text="补充要求").grid(row=1, column=2, sticky="w", pady=(5, 0))
-        ttk.Entry(prefs, textvariable=self.preference_vars["extra"]).grid(row=1, column=3, columnspan=2, sticky="ew", pady=(5, 0), padx=(0, 10))
-        for col in (1, 3, 5):
-            prefs.columnconfigure(col, weight=1)
-        create = ttk.Frame(prefs)
-        create.grid(row=1, column=5, sticky="e", pady=(5, 0))
-        self.refine_button = ttk.Button(create, text="精选照片再选一轮", command=self._create_refine)
-        self.refine_button.pack(side="left", padx=(0, 8))
+            add_preference(label, lambda parent, key=key, values=values,
+                           option_width=option_width: ttk.Combobox(
+                parent, textvariable=self.preference_vars[key], values=values,
+                state="readonly", width=option_width))
+        add_preference("目标数量", lambda parent: ttk.Entry(
+            parent, textvariable=self.preference_vars["target"], width=10))
+        add_preference("补充要求", lambda parent: ttk.Entry(
+            parent, textvariable=self.preference_vars["extra"], width=24))
+        self.refine_button = ttk.Button(
+            preference_bar, text="精选照片再选一轮", command=self._create_refine)
+        self._preference_controls.append(self.refine_button)
+        preference_bar.add(self.refine_button)
 
         api = ttk.Frame(tab, padding=8)
         api.grid(row=0, column=0, sticky="ew", pady=(0, 8))
@@ -433,28 +510,33 @@ class ReviewDialog(WorkspacePage):
         api.columnconfigure(1, weight=1)
         actions = self.api_actions = ttk.Frame(api)
         actions.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
-        actions.columnconfigure(4, weight=1)
-        self.run_button = ttk.Button(actions, text="开始 / 继续未完成批次", command=self._start_api)
-        self.run_button.grid(row=0, column=0, sticky="w", padx=(0, 8))
-        self.resubmit_button = ttk.Button(actions, text="重新提交", command=self._resubmit_api)
-        self.resubmit_button.grid(row=0, column=1, sticky="w")
-        self.pause_button = ttk.Button(actions, text="完成当前批后暂停", command=self._pause_api, state="disabled")
-        self.pause_button.grid(row=0, column=2, sticky="w", padx=(8, 8))
-        self.split_button = ttk.Button(actions, text="拆分所选批次重试", command=self._split_selected_batch)
-        self.split_button.grid(row=0, column=3, sticky="w")
-        if self._embedded:
-            def fit_actions(event):
-                short = event.width < 960
-                self.run_button.configure(text="开始 / 继续" if short else "开始 / 继续未完成批次")
-                self.pause_button.configure(text="本批后暂停" if short else "完成当前批后暂停")
-                self.split_button.configure(text="拆分批次重试" if short else "拆分所选批次重试")
-            actions.bind("<Configure>", fit_actions)
+        actions.columnconfigure(0, weight=1)
+        api_button_bar = WrappingToolbar(actions)
+        api_button_bar.grid(row=0, column=0, sticky="ew")
+        self.run_button = api_button_bar.add(ttk.Button(
+            api_button_bar, text="开始 / 继续未完成批次", command=self._start_api))
+        self.resubmit_button = api_button_bar.add(ttk.Button(
+            api_button_bar, text="重新提交", command=self._resubmit_api))
+        self.pause_button = api_button_bar.add(ttk.Button(
+            api_button_bar, text="完成当前批后暂停", command=self._pause_api, state="disabled"))
+        self.split_button = api_button_bar.add(ttk.Button(
+            api_button_bar, text="拆分所选批次重试", command=self._split_selected_batch))
+        def fit_actions(event):
+            if event.width <= 1 or self.winfo_width() <= 1:
+                return
+            short = event.width < max(960, round(self.winfo_fpixels("1i") * 6.5))
+            self.run_button.configure(text="开始 / 继续" if short else "开始 / 继续未完成批次")
+            self.pause_button.configure(text="本批后暂停" if short else "完成当前批后暂停")
+            self.split_button.configure(text="拆分批次重试" if short else "拆分所选批次重试")
+            if self._embedded and hasattr(self, "_page_action_sets"):
+                self.after_idle(self._fit_api_page_actions)
+        actions.bind("<Configure>", fit_actions)
 
 
         batches = ttk.Frame(tab, padding=8)
         batches.grid(row=1, column=0, sticky="nsew")
         columns = ("status", "photos", "images", "error")
-        self.batch_tree = ttk.Treeview(batches, columns=columns, show="tree headings", height=7, selectmode="browse")
+        self.batch_tree = ttk.Treeview(batches, columns=columns, show="tree headings", height=3, selectmode="browse")
         self.batch_tree.heading("#0", text="批次")
         self.batch_tree.heading("status", text="状态")
         self.batch_tree.heading("photos", text="照片")
@@ -475,23 +557,40 @@ class ReviewDialog(WorkspacePage):
         )
 
     def _build_web_tab(self) -> None:
-        tab = self.web_tab
+        self.web_scroll = ScrollableFrame(self.web_tab)
+        self.web_scroll.pack(fill="both", expand=True)
+        self.web_tab.bind(
+            "<Map>", lambda _event: self.after_idle(self.web_scroll.vertical.grid), add="+")
+        tab = self.web_scroll.content
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(2, weight=1)
-        ttk.Label(tab, text="勾选批次，准备网页提示词与联系表；Ctrl / Shift 可多选。", foreground="#555555").grid(
+        self.web_instruction = ttk.Label(
+            tab, text="勾选批次，准备网页提示词与联系表；Ctrl / Shift 可多选。",
+            foreground="#555555")
+        self.web_instruction.grid(
             row=0, column=0, sticky="w"
         )
         actions = self.web_actions = ttk.Frame(tab)
         actions.grid(row=1, column=0, sticky="ew", pady=8)
-        actions.columnconfigure(3, weight=1)
-        ttk.Button(actions, text="全选未完成批次", command=self._web_select_pending).grid(row=0, column=0, sticky="w")
-        ttk.Button(actions, text="全选", command=lambda: self.web_tree.selection_set(self.web_tree.get_children())).grid(row=0, column=1, padx=8)
-        ttk.Button(actions, text="合并准备所选批次", command=self._prepare_web).grid(row=0, column=2, sticky="w")
+        actions.columnconfigure(0, weight=1)
+        web_toolbar = WrappingToolbar(actions)
+        web_toolbar.grid(row=0, column=0, sticky="ew")
+        web_toolbar.add(ttk.Button(web_toolbar, text="全选未完成批次", command=self._web_select_pending))
+        web_toolbar.add(ttk.Button(
+            web_toolbar, text="全选",
+            command=lambda: self.web_tree.selection_set(self.web_tree.get_children())))
+        web_toolbar.add(ttk.Button(web_toolbar, text="合并准备所选批次", command=self._prepare_web))
         self.web_summary = tk.StringVar()
-        ttk.Label(actions, textvariable=self.web_summary).grid(row=1, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        self.web_summary_label = ttk.Label(actions, textvariable=self.web_summary)
+        self.web_summary_label.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        def fit_web_text(event):
+            wrap = max(180, event.width - 28)
+            self.web_instruction.configure(wraplength=wrap)
+            self.web_summary_label.configure(wraplength=wrap)
+        self.web_scroll.canvas.bind("<Configure>", fit_web_text, add="+")
         frame = ttk.Frame(tab)
         frame.grid(row=2, column=0, sticky="nsew")
-        self.web_tree = ttk.Treeview(frame, columns=("status", "photos", "images"), show="tree headings", selectmode="extended", height=7)
+        self.web_tree = ttk.Treeview(frame, columns=("status", "photos", "images"), show="tree headings", selectmode="extended", height=3)
         for key, title in (("#0", "可合并批次"), ("status", "状态"), ("photos", "照片数"), ("images", "联系表数")):
             self.web_tree.heading(key, text=title)
             self.web_tree.column(key, width=160, anchor="center")
@@ -506,12 +605,12 @@ class ReviewDialog(WorkspacePage):
         self.web_history = ttk.Combobox(history, textvariable=self.web_history_var, state="readonly")
         self.web_history.pack(fill="x")
         self.web_history.bind("<<ComboboxSelected>>", lambda _e: self._remember_web())
-        buttons = ttk.Frame(history)
+        buttons = WrappingToolbar(history)
         buttons.pack(fill="x", pady=(8, 0))
-        ttk.Button(buttons, text="复制完整提示词", command=self._copy_web_prompt).pack(side="left")
-        ttk.Button(buttons, text="打开全部联系表目录", command=self._open_web_folder).pack(side="left", padx=8)
-        ttk.Button(buttons, text="导入整份回答", command=self._paste_web_response).pack(side="left")
-        ttk.Button(buttons, text="查看原始回答", command=self._show_web_raw).pack(side="left", padx=8)
+        buttons.add(ttk.Button(buttons, text="复制完整提示词", command=self._copy_web_prompt))
+        buttons.add(ttk.Button(buttons, text="打开全部联系表目录", command=self._open_web_folder))
+        buttons.add(ttk.Button(buttons, text="导入整份回答", command=self._paste_web_response))
+        buttons.add(ttk.Button(buttons, text="查看原始回答", command=self._show_web_raw))
         self._web_labels = {}
 
     def _web_selection_summary(self) -> None:
@@ -658,17 +757,45 @@ class ReviewDialog(WorkspacePage):
 
     def _build_review_tab(self) -> None:
         self.review_tab.columnconfigure(0, weight=1)
-        self.review_tab.rowconfigure(1, weight=1)
-        bar = ttk.Frame(self.review_tab)
-        bar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
-        ttk.Label(bar, text="筛选").pack(side="left")
-        combo = ttk.Combobox(bar, textvariable=self.filter_var, values=("全部", "清晰度待确认", "待复核", "AI 建议弃置", "4～5 星", "回答缺失或异常"), state="readonly", width=18)
-        combo.pack(side="left", padx=8)
-        ttk.Label(bar, textvariable=self.review_count_var, style="Muted.TLabel").pack(side="left")
-        combo.bind("<<ComboboxSelected>>", lambda _e: (self._refresh_review(), self._save_ui_settings()))
-        ttk.Label(bar, textvariable=self.export_status_var).pack(side="right")
+        self.review_tab.rowconfigure(0, weight=1)
+        viewport = ttk.Frame(self.review_tab)
+        viewport.grid(row=0, column=0, sticky="nsew")
+        viewport.columnconfigure(0, weight=1)
+        viewport.rowconfigure(0, weight=1)
+        self.review_canvas = tk.Canvas(
+            viewport, width=1, height=1, highlightthickness=0, background=COLORS["bg"])
+        self.review_canvas.grid(row=0, column=0, sticky="nsew")
+        review_scroll = ttk.Scrollbar(viewport, orient="vertical", command=self.review_canvas.yview)
+        self.review_canvas.configure(yscrollcommand=review_scroll.set)
+        review_scroll.grid(row=0, column=1, sticky="ns")
+        content = ttk.Frame(self.review_canvas)
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(1, weight=1)
+        content_window = self.review_canvas.create_window(0, 0, window=content, anchor="nw")
 
-        self.review_workspace = ttk.Panedwindow(self.review_tab, orient="horizontal")
+        def fit_review_content(_event=None):
+            width = max(1, self.review_canvas.winfo_width())
+            height = max(self.review_canvas.winfo_height(), content.winfo_reqheight())
+            # Match the embedded frame request to the viewport so its grid and
+            # panes settle during the first visible layout pass.
+            content.configure(width=width, height=height)
+            self.review_canvas.itemconfigure(content_window, width=width, height=height)
+            self.review_canvas.configure(scrollregion=(0, 0, width, height))
+
+        self.review_canvas.bind("<Configure>", fit_review_content, add="+")
+        content.bind("<Configure>", fit_review_content, add="+")
+
+        bar = self.review_bar = WrappingToolbar(content)
+        bar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        bar.add(ttk.Label(bar, text="筛选"))
+        combo = ttk.Combobox(bar, textvariable=self.filter_var, values=("全部", "清晰度待确认", "待复核", "AI 建议弃置", "4～5 星", "回答缺失或异常"), state="readonly", width=18)
+        bar.add(combo)
+        bar.add(ttk.Label(bar, textvariable=self.review_count_var, style="Muted.TLabel"))
+        combo.bind("<<ComboboxSelected>>", lambda _e: (self._refresh_review(), self._save_ui_settings()))
+        bar.add(ttk.Label(bar, textvariable=self.export_status_var))
+        self.review_action_slot = bar.add(ttk.Frame(bar))
+
+        self.review_workspace = ttk.Panedwindow(content, orient="horizontal")
         self.review_workspace.grid(row=1, column=0, sticky="nsew")
 
         self.review_list_panel = ttk.LabelFrame(self.review_workspace, text="照片结果", padding=8)
@@ -679,7 +806,7 @@ class ReviewDialog(WorkspacePage):
             displaycolumns=("name", "group", "ai", "flag"),
             show="headings",
             selectmode="browse",
-            height=12,
+            height=5,
         )
         for key, label, width in (("name", "照片", 108), ("group", "组", 38), ("ai", "星级", 42), ("flag", "弃置", 62), ("reason", "对应 AI 回复", 0), ("clarity", "清晰度", 90)):
             self.review_tree.heading(key, text=label)
@@ -692,6 +819,27 @@ class ReviewDialog(WorkspacePage):
         self.review_tree.bind("<Double-1>", lambda _e: self._open_original())
 
         self.review_preview_panel = ttk.LabelFrame(self.review_workspace, text="照片预览", padding=6)
+        preview_actions = ttk.Frame(self.review_preview_panel)
+        preview_actions.pack(side="top", fill="x", pady=(0, 4))
+        self.review_previous_button = ttk.Button(
+            preview_actions, text="上一张", command=lambda: self._navigate_photo(-1))
+        self.review_previous_button.pack(side="left")
+        self.review_next_button = ttk.Button(
+            preview_actions, text="下一张", command=lambda: self._navigate_photo(1))
+        self.review_next_button.pack(side="left", padx=(4, 0))
+        self.review_open_button = ttk.Button(preview_actions, text="打开原图", command=self._open_original)
+        self.review_open_button.pack(side="right")
+        natural_widths = [button.cget("width") for button in (
+            self.review_previous_button, self.review_next_button, self.review_open_button)]
+        def fit_preview_actions(event):
+            short = event.width < max(360, round(self.winfo_fpixels("1i") * 2.4))
+            labels = ("←", "→", "原图") if short else ("上一张", "下一张", "打开原图")
+            widths = (2, 2, 3) if short else natural_widths
+            for button, text, width in zip(
+                    (self.review_previous_button, self.review_next_button, self.review_open_button),
+                    labels, widths):
+                button.configure(text=text, width=width)
+        preview_actions.bind("<Configure>", fit_preview_actions, add="+")
         preview_frame = tk.Frame(self.review_preview_panel, background=COLORS["photo"], highlightthickness=0)
         preview_frame.pack(fill="both", expand=True)
         self.preview_label = tk.Label(
@@ -703,12 +851,6 @@ class ReviewDialog(WorkspacePage):
             borderwidth=0,
         )
         self.preview_label.pack(fill="both", expand=True)
-        preview_actions = ttk.Frame(self.review_preview_panel)
-        preview_actions.pack(fill="x", pady=(4, 0))
-        ttk.Button(preview_actions, text="上一张", command=lambda: self._navigate_photo(-1)).pack(side="left")
-        ttk.Button(preview_actions, text="下一张", command=lambda: self._navigate_photo(1)).pack(side="left", padx=(8, 0))
-        ttk.Button(preview_actions, text="打开原图", command=self._open_original).pack(side="right")
-
         self.review_detail_panel = ttk.LabelFrame(self.review_workspace, text="AI 结果", padding=7)
         self.review_caption_label = ttk.Label(
             self.review_detail_panel,
@@ -738,7 +880,7 @@ class ReviewDialog(WorkspacePage):
         ttk.Label(self.review_detail_panel, text="AI 回复与检查信息", style="Heading.TLabel").pack(anchor="w", pady=(4, 3))
         details_frame = ttk.Frame(self.review_detail_panel)
         details_frame.pack(fill="both", expand=True)
-        self.details = tk.Text(details_frame, height=5, width=22, wrap="word", state="disabled")
+        self.details = tk.Text(details_frame, height=2, width=22, wrap="word", state="disabled")
         detail_scroll = ttk.Scrollbar(details_frame, command=self.details.yview)
         self.details.configure(yscrollcommand=detail_scroll.set)
         self.details.pack(side="left", fill="both", expand=True)

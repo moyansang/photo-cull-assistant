@@ -60,7 +60,9 @@ def initialize(widget):
     style.configure('TNotebook.Tab', font=body, padding=(14, 8))
     style.configure('Muted.TLabel', foreground=COLORS['muted'], font=root._cull_fonts['small'])
     style.configure('Heading.TLabel', font=root._cull_fonts['heading'])
-    style.configure('Assist.Treeview', rowheight=max(54, round(root.winfo_fpixels('34p'))), font=body)
+    # Assist thumbnails are 48 physical pixels; size rows for them and the
+    # actual font, rather than multiplying generous padding at high DPI.
+    style.configure('Assist.Treeview', rowheight=max(54, body.metrics('linespace') + 12), font=body)
     style.map('Assist.Treeview', background=[('selected', COLORS['selection'])], foreground=[('selected', COLORS['text'])])
     return style
 

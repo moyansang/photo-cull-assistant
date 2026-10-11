@@ -227,9 +227,9 @@ def test_compact_layout_uses_basic_and_advanced_tabs_with_fixed_actions(tk_root,
             "基本设置",
             "高级设置",
         ]
-        assert dialog.profile_box.master is dialog.basic_tab
-        assert dialog.preset_box.master is dialog.basic_tab
-        assert dialog.key_entry.master is dialog.basic_tab
+        assert dialog.profile_box.master is dialog.basic_tab.content
+        assert dialog.preset_box.master is dialog.basic_tab.content
+        assert dialog.key_entry.master is dialog.basic_tab.content
         assert all(entry.master is dialog.advanced_frame for entry in dialog.advanced_entries)
         assert dialog.test_button.master is dialog.save_button.master is dialog.close_button.master
         assert dialog.test_button.master.pack_info()["side"] == "bottom"
