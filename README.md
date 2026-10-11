@@ -117,6 +117,10 @@ py -3.12 -m venv .venv
 
 ## 许可证与致谢
 
-**仓库目前尚未为整体软件提供统一许可证。** 源码公开不代表第三方可以按某个未声明的开源许可证使用或再分发；如需相关授权，请先联系维护者。
+本项目自有代码由 **moyansang** 按 [PolyForm Noncommercial License 1.0.0](LICENSE) 授权，**不授予商业使用许可**。允许在许可证规定的范围内使用、修改和分发；出售程序、提供收费选片服务或用于商业摄影工作流等商业用途不在本许可授权范围内。分发时须保留许可条款或其官方链接，以及下列署名通知。
+
+Required Notice: Copyright (c) 2026 moyansang
+
+许可证另明确允许列举的慈善、教育、公共研究、公共安全/卫生、环保和政府机构使用，不受其资金来源或相关资助义务影响；具体边界以 [LICENSE](LICENSE) 英文全文为准。这是提供源码的非商业许可，不应标注为允许自由商用的开源软件。
 
 依赖和模型各自遵循原有许可：YuNet 使用 MIT，SFace 与相关 MediaPipe 模型使用 Apache-2.0，LR 插件中的 `json.lua` 使用 MIT。详见[第三方来源](docs/third-party.md)与[SFace 模型许可](src/ai_cull_assistant/data/SFACE-LICENSE.txt)。本项目不是 Microsoft、Adobe 或模型提供方的官方产品。

@@ -8,6 +8,7 @@ dynamic = ["version"]
 description = "Local contact-sheet based photo culling assistant"
 readme = "README.md"
 authors = [{name = "moyansang"}]
+license = {file = "LICENSE"}
 requires-python = ">=3.11"
 dependencies = [
     "Pillow>=10.0.0",

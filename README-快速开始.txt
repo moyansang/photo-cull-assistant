@@ -33,3 +33,8 @@ AI 任务恢复：恢复旧归档、清理图片缓存和迁移工作区不代�
 
 本地构建 5 页面：顶部主页面 Alt+1、配置 API Alt+2、检查更新 Alt+3、LR 插件 Alt+4；帮助 F1。按钮停留片刻显示用途，长说明在帮助中查看。
 补齐人脸：选好当前人物后点击“补齐人脸”，在整个工作区查找未标记照片；参考图与候选缩略图辅助核对，确认后采用，最后保存人脸编辑。默认按外观相似排序；可选「人脸特征（实验性）」使用离线模型。低分、近分与参考冲突交给人工处理，所有候选都需人工确认。模式说明：https://github.com/moyansang/photo-cull-assistant/blob/main/docs/face-identity-mode.md
+
+许可：项目自有代码采用 PolyForm Noncommercial License 1.0.0，不授予商业使用许可。
+完整条款：https://polyformproject.org/licenses/noncommercial/1.0.0
+Required Notice: Copyright (c) 2026 moyansang
+第三方组件保留各自许可；项目许可不替换它们的原有授权。
