@@ -75,3 +75,6 @@ __pycache__/
 /regression-tests.xml
 /.coverage
 /htmlcov/
+
+# Local agent instructions; transferred privately between computers
+/AGENTS.md
