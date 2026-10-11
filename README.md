@@ -6,7 +6,7 @@
 
 **[下载 Windows x64 便携版](https://github.com/moyansang/photo-cull-assistant/releases/latest)** · [使用指南](docs/user-guide.md) · [常见问题](docs/faq.md) · [反馈问题](https://github.com/moyansang/photo-cull-assistant/issues/new/choose)
 
-当前发布：**v1.6.0 · 构建 2**。本地扫描无需 API Key，便携包无需安装 Python。原照片保留在原目录；“弃置”是审核结果和 Lightroom 标记，不是删除原片。
+当前发布：**v1.6.0 · 构建 10**。本地扫描无需 API Key，便携包无需安装 Python。原照片保留在原目录；“弃置”是审核结果和 Lightroom 标记，不是删除原片。
 
 ## 它能做什么
 
@@ -28,7 +28,8 @@
 | `AI-Photo-Cull-v1.6.0-Windows-x64-portable.zip` | **普通用户下载这个**：完整程序、依赖、模型及 LR 插件 |
 | `SHA256SUMS-v1.6.0.txt` | 核对便携包的 SHA256 |
 | `update.json` | 软件更新器读取的元数据，无需手动打开 |
-| `Source code (zip / tar.gz)` | 开发源码，不是可以直接运行的 EXE |
+| `AI-Photo-Cull-v1.6.0-build10-source.zip` | 与构建 10 对应的开发源码，含非商业许可证 |
+| `Source code (zip / tar.gz)` | GitHub 按原 v1.6.0 标签自动生成的构建 2 历史源码；当前源码请用上面的构建 10 附件 |
 
 完整解压后运行 `AI选片助手.exe`，保留旁边的 `_internal`、`lightroom` 等目录，不要只复制 EXE。
 
@@ -36,7 +37,7 @@
 
 ## 五步开始选片
 
-本地构建 8 的顶部导航依次为 **主页 → 选片组 → 人脸框 → 复核 → 选片**。主页入口按扫描图片、编辑选片组、检测/调整人脸框、AI 复核、生成联系表、AI 选片与导出排列；构建 8 尚未发布到 Release。
+构建 10 的顶部导航依次为 **主页 → 选片组 → 人脸框 → 复核 → 选片**。主页入口按扫描图片、编辑选片组、检测/调整人脸框、AI 复核、生成联系表、AI 选片与导出排列。
 
 1. **选择照片和工作区**。工作区建议放在照片目录外，用来保存分析、缓存与审核进度。
 2. **扫描并检查人脸**。调整分组，修正漏框或误框；修改后点击“重新扫描修改过的图片”。人物候选需要你确认和采用。

@@ -61,6 +61,7 @@ pyinstaller `
     --manifest app.manifest `
     --name "AI选片助手" `
     --paths src `
+    --add-data "LICENSE;licenses/photo-cull-assistant" `
     --add-data "src/ai_cull_assistant/data;ai_cull_assistant/data" `
     --add-data "body_models/manifest.json;ai_cull_assistant/data/body_model_sources" `
     --add-data "body_models/README.md;ai_cull_assistant/data/body_model_sources" `
