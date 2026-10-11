@@ -138,10 +138,10 @@ def test_page_space_and_return_actions(tmp_path, monkeypatch):
                 scan = next(b for b in buttons(page) if b.cget('text') == '重新扫描')
                 assert scan.winfo_rooty() < home.winfo_rooty()
                 assert page.canvas.winfo_height() > 250
-                # Both orientations keep controls beside the image; flipping
-                # repeatedly must preserve drafts and keep every action visible.
-                for portrait in (True, False, True):
-                    page._fit_preview_layout(portrait=portrait)
+                # Viewport resizing keeps controls beside the photo. Real
+                # orientation changes are covered by test_crop_layout.
+                for width in (1100, 1200, 1100):
+                    app.geometry(f'{width}x940')
                     app.update_idletasks()
                     assert page._navigation.winfo_viewable()
                     assert page.detail_canvas.winfo_height() > 100

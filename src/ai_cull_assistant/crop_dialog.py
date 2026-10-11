@@ -234,7 +234,6 @@ class CropDialog(WorkspacePage):
             self._preview_side = side
             self._side_actions = side_actions
             self._navigation = navigation
-            self._portrait_preview = False
             self._preview_layout_key = None
             columns = 2
             actions = (
@@ -281,44 +280,21 @@ class CropDialog(WorkspacePage):
         if not self._embedded:
             self.grab_set()
 
-    def _fit_preview_layout(self, width=None, *, portrait=None):
+    def _fit_preview_layout(self, width=None):
+        """Reserve a stable sidebar; orientation only changes image fitting."""
         if not self._embedded or not hasattr(self, '_navigation'):
             return
-        if portrait is not None:
-            self._portrait_preview = portrait
         body = self._preview_body
         width = width or body.winfo_width()
-        portrait = self._portrait_preview
-        side_width = max(230, min(300, int(width * .28))) if portrait else max(260, min(340, int(width * .30)))
-        key = (portrait, side_width)
-        if self._preview_layout_key == key:
+        # DPI changes label widths. Keep both navigation labels fully visible.
+        button_width = max(button.winfo_reqwidth() for button in self._navigation.winfo_children())
+        side_width = max(button_width * 2 + 8, 260, min(340, int(width * .30)))
+        if self._preview_layout_key == side_width:
             return
-        self._preview_layout_key = key
-        navigation = self._navigation
-        navigation.pack_forget()
-        navigation.grid_forget()
-        for column in range(3):
-            body.columnconfigure(column, weight=0, minsize=0)
-        for column in range(2):
-            navigation.columnconfigure(column, weight=0, minsize=0, uniform='')
-        if portrait:
-            body.columnconfigure(1, weight=1)
-            body.columnconfigure(2, minsize=side_width)
-            navigation.grid(row=2, column=0, sticky='n', padx=(0, 8))
-            self.canvas.grid_configure(column=1)
-            self._preview_side.grid_configure(column=2)
-            columns = 1
-        else:
-            body.columnconfigure(0, weight=1)
-            body.columnconfigure(1, minsize=side_width)
-            navigation.pack(in_=self._side_actions, before=self._side_actions.winfo_children()[0],
-                            fill='x', pady=(0, 6))
-            self.canvas.grid_configure(column=0)
-            self._preview_side.grid_configure(column=1)
-            columns = 2
-        navigation.columnconfigure(tuple(range(columns)), weight=1, uniform='crop-actions')
-        for index, button in enumerate(navigation.winfo_children()):
-            button.grid_configure(row=index // columns, column=index % columns)
+        self._preview_layout_key = side_width
+        body.columnconfigure(0, weight=1)
+        body.columnconfigure(1, minsize=side_width)
+        self.participant_status.configure(wraplength=max(100, side_width - 24))
 
     def settings(self):
         return CropSettings.from_dict(dict(
@@ -877,7 +853,6 @@ class CropDialog(WorkspacePage):
                 image_key = self._source_key(asset)
                 cached = self._cached_image(image_key)
                 if cached is not None:
-                    self._fit_preview_layout(portrait=cached.height > cached.width)
                     shown = ImageOps.contain(cached, (preview_width, preview_height))
                     photo = ImageTk.PhotoImage(shown)
                     self.photos.append(photo)
@@ -885,7 +860,6 @@ class CropDialog(WorkspacePage):
                     self._loading_image_key = image_key
                 return
             original, subjects, candidates = prepared
-            self._fit_preview_layout(portrait=original.height > original.width)
             self._selected_boxes = [
                 tuple(item.face) for item in subjects
                 if item and getattr(item, 'face', None)
