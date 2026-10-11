@@ -8,7 +8,7 @@
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[raw,dev]"
-python -m pytest -q
+python -X utf8 -m pytest -q
 python launcher.py
 ```
 
@@ -29,6 +29,10 @@ python launcher.py
 | `build`、`dist` | 被 Git 忽略的构建缓存、发布产物 |
 
 测试使用合成图片或隔离临时目录，不应直接修改真实工作区。真实图片测试需另行指定样本和工作区，不能把合成测试当作模型准确率证明。
+
+Windows 开发测试使用 `-X utf8` 开启本次 Python 进程的 UTF-8 模式。部分测试通过未指定编码的 `Path.read_text()` 读取 UTF-8 JSON；当系统默认编码为 GBK、临时路径含中文时，会出现 `UnicodeDecodeError`。该参数不修改系统语言设置，也不跳过测试或改变断言。需要指定 `--basetemp` 时使用本轮新建的隔离目录，保留失败报告，勿指向照片或现用工作区。
+
+已有 `.venv` 应先检查 `python --version`、模块导入位置、`python -m pip check` 和 Tk 启动；有效环境可以继续使用。`py -3.12` 不一定识别其他工具管理的 Python 3.12，找不到时先用 `py -0p` 核对已安装运行时，以核实后的 Python 3.12 绝对路径创建环境，不依赖默认 Python 版本。
 
 ## 发布 v1.5
 
@@ -69,7 +73,7 @@ git log -1 --oneline
 
 若快进失败，保留现场并比较本地与远端提交，按具体冲突处理；不要使用 `reset --hard`、`clean -fd` 或强制推送。Git 只同步源码与固定基础模型，不会同步用户照片、设置、工作区、私人交接或编译后的程序。
 
-在目标电脑核验 Python 3.12 和当地 `.venv`，按本页安装开发/RAW 依赖；不要复制另一台电脑的虚拟环境。运行 `python body_models/download.py --verify-only`、`python -m pytest -q` 和 `python launcher.py --self-test <临时报告绝对路径>`。pytest 默认使用 Python 层输出捕获，以避开已复现的 Windows Tk 文件描述符捕获干扰，见 [Tk 测试说明](testing-tk.md)。
+在目标电脑核验 Python 3.12 和当地 `.venv`，按本页安装开发/RAW 依赖；不要复制另一台电脑的虚拟环境。运行 `python body_models/download.py --verify-only`、`python -X utf8 -m pytest -q` 和 `python launcher.py --self-test <临时报告绝对路径>`。pytest 默认使用 Python 层输出捕获，以避开已复现的 Windows Tk 文件描述符捕获干扰，见 [Tk 测试说明](testing-tk.md)。
 
 要更新该机本地测试程序，先核对实际程序目录和运行状态，备份程序文件，再按构建清单替换；保留 settings、workspaces、目录联接及全部用户数据。使用 `build_exe.ps1` 构建；仅已核验依赖齐全时使用 `-UseExistingEnvironment`。对构建及安装后的 EXE 都运行 `--self-test`。旧归档按正常选择工作区时恢复，不批量处理用户归档。
 
