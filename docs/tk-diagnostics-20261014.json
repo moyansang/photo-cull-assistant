@@ -1,0 +1,344 @@
+{
+  "source": "Windows full-final-windows-r2.log",
+  "source_sha256": "3b86592b6e23ba480dd567ea87bd939ab56041f0b90433365750adc53aea93a4",
+  "count": 65,
+  "counts_by_callback_suffix": {
+    "_poll_api": 1,
+    "<lambda>": 28,
+    "append": 5,
+    "_poll_processing": 15,
+    "poll": 15,
+    "_save_preferences": 1
+  },
+  "counts_by_form": {
+    "bgerror-original": 29,
+    "direct-after": 36
+  },
+  "events": [
+    {
+      "line": 3,
+      "callback_suffix": "_poll_api",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 6,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 9,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 13,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 15,
+      "callback_suffix": "append",
+      "form": "direct-after"
+    },
+    {
+      "line": 19,
+      "callback_suffix": "append",
+      "form": "direct-after"
+    },
+    {
+      "line": 23,
+      "callback_suffix": "append",
+      "form": "direct-after"
+    },
+    {
+      "line": 27,
+      "callback_suffix": "append",
+      "form": "direct-after"
+    },
+    {
+      "line": 31,
+      "callback_suffix": "append",
+      "form": "direct-after"
+    },
+    {
+      "line": 35,
+      "callback_suffix": "_poll_processing",
+      "form": "direct-after"
+    },
+    {
+      "line": 39,
+      "callback_suffix": "poll",
+      "form": "direct-after"
+    },
+    {
+      "line": 43,
+      "callback_suffix": "_save_preferences",
+      "form": "direct-after"
+    },
+    {
+      "line": 48,
+      "callback_suffix": "poll",
+      "form": "direct-after"
+    },
+    {
+      "line": 52,
+      "callback_suffix": "_poll_processing",
+      "form": "direct-after"
+    },
+    {
+      "line": 56,
+      "callback_suffix": "poll",
+      "form": "direct-after"
+    },
+    {
+      "line": 60,
+      "callback_suffix": "_poll_processing",
+      "form": "direct-after"
+    },
+    {
+      "line": 64,
+      "callback_suffix": "poll",
+      "form": "direct-after"
+    },
+    {
+      "line": 68,
+      "callback_suffix": "_poll_processing",
+      "form": "direct-after"
+    },
+    {
+      "line": 72,
+      "callback_suffix": "_poll_processing",
+      "form": "direct-after"
+    },
+    {
+      "line": 76,
+      "callback_suffix": "poll",
+      "form": "direct-after"
+    },
+    {
+      "line": 80,
+      "callback_suffix": "poll",
+      "form": "direct-after"
+    },
+    {
+      "line": 84,
+      "callback_suffix": "_poll_processing",
+      "form": "direct-after"
+    },
+    {
+      "line": 89,
+      "callback_suffix": "poll",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 92,
+      "callback_suffix": "_poll_processing",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 94,
+      "callback_suffix": "poll",
+      "form": "direct-after"
+    },
+    {
+      "line": 98,
+      "callback_suffix": "_poll_processing",
+      "form": "direct-after"
+    },
+    {
+      "line": 103,
+      "callback_suffix": "poll",
+      "form": "direct-after"
+    },
+    {
+      "line": 107,
+      "callback_suffix": "_poll_processing",
+      "form": "direct-after"
+    },
+    {
+      "line": 112,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 117,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 120,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 123,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 126,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 129,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 131,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 135,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 139,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 144,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 147,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 150,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 153,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 156,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 159,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 164,
+      "callback_suffix": "<lambda>",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 166,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 171,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 177,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 181,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 185,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 189,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 193,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 197,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 202,
+      "callback_suffix": "<lambda>",
+      "form": "direct-after"
+    },
+    {
+      "line": 208,
+      "callback_suffix": "poll",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 211,
+      "callback_suffix": "_poll_processing",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 215,
+      "callback_suffix": "poll",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 218,
+      "callback_suffix": "_poll_processing",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 221,
+      "callback_suffix": "_poll_processing",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 224,
+      "callback_suffix": "poll",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 227,
+      "callback_suffix": "poll",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 230,
+      "callback_suffix": "_poll_processing",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 233,
+      "callback_suffix": "_poll_processing",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 236,
+      "callback_suffix": "poll",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 239,
+      "callback_suffix": "_poll_processing",
+      "form": "bgerror-original"
+    },
+    {
+      "line": 242,
+      "callback_suffix": "poll",
+      "form": "bgerror-original"
+    }
+  ]
+}
