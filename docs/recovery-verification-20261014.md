@@ -2,7 +2,7 @@
 
 ## Provenance
 
-The prior cloud working directory and Git object database were not available after the environment changed. This repository starts a new, explicitly dated recovery history. It does not reproduce the earlier Git commit graph.
+The prior cloud working directory and Git object database were not available at the time of recovery; the cause has not been established. This repository starts a new, explicitly dated recovery history. It does not reproduce the earlier Git commit graph.
 
 Recovery root commit: `7c99377ec720c837d91daeb47d90f43a70d3f5e3`.
 
@@ -43,3 +43,5 @@ No remote push, release, replacement of the user's installed application, or pai
 `tests/test_recovery_guarantees_20261014.py` adds seven new synthetic cases: two owned-RGB transfer paths with redundant copy/convert forbidden; cancellation at the incremental-group checkpoint; cancellation during the final source validation in scan and sheet modes; and late publication rollback with an existing or previously absent source-location marker. The transaction tests compare prior mixed-workspace records and original bytes and then resume to successful completion. A focused run passed all seven in 0.40 seconds. These are new tests, not recovery of the lost nine cases. They do not reproduce historical 24-megapixel native peak-RSS measurements.
 
 The new transaction checks establish cooperative cancellation and rollback after caught exceptions. They do not establish arbitrary process termination/power-loss recovery or cancellation inside publication itself. The supplied Windows full-suite log retains 65 Tk after-command diagnostics after window destruction; zero pytest failures must not be described as zero diagnostics.
+
+Final combined cloud run after adding the seven new cases: 1,037 collected, 831 passed, 24 skipped, 142 failures and 40 setup errors, in 62.13 seconds. The complete failed/error node-ID and message mapping is identical to the 1,030-case recovered baseline above. No additional failure or error was introduced. The seven focused results are included here, not added again to the total.
