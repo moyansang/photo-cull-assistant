@@ -22,8 +22,12 @@ ANCILLARY = ['ai_project.json', 'crop-settings.json', 'export/prior.json', 'focu
 
 
 def files(root):
+    # Windows byte-range locks also deny reads from another handle. The root
+    # lock is synchronization state, not a published artifact or user record;
+    # reading it here prevents the crash injection from reaching publication.
+    lock_path = root / '.publication-operation.lock'
     return {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(root.rglob('*')) if p.is_file()}
+            for p in sorted(root.rglob('*')) if p.is_file() and p != lock_path}
 
 
 def published(root):
