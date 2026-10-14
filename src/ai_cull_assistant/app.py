@@ -406,13 +406,20 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self._discard_workspace_pages()
         self._save_preferences()
         self._save_session()
-        for timer in self.tk.splitlist(self.tk.call('after', 'info')):
-            # Timers may belong to children (for example hover tooltips).
-            # Root.after_cancel deletes their Tcl command without updating
-            # the child's registry, causing a second deletion at destroy.
-            # Cancel scheduling only; each owning widget frees its command.
-            self.tk.call('after', 'cancel', timer)
         self.destroy()
+
+    def destroy(self) -> None:
+        # Teardown also happens directly (tests, embedding, parent destruction),
+        # without the save/confirmation workflow in _close(). Tk destroys Python
+        # callback commands but does not cancel their queued Tcl after scripts.
+        from .tk_lifecycle import cancel_pending_callbacks
+        cancel_pending_callbacks(self, all_callbacks=True)
+        try:
+            super().destroy()
+        finally:
+            # Destroy bindings may have queued additional idle work while the
+            # widget tree was being removed. The Tcl interpreter is still alive.
+            cancel_pending_callbacks(self, all_callbacks=True)
 
     def _show_workspace_error(self):
         if not self._workspace_blocked or not self.winfo_exists():

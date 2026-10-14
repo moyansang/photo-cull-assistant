@@ -3,6 +3,18 @@ from __future__ import annotations
 import tkinter as tk
 
 
+class _PageWindow(tk.Toplevel):
+    """Mark parent teardown before it recursively destroys its content."""
+
+    _destroying = False
+
+    def destroy(self) -> None:
+        if self._destroying:
+            return
+        self._destroying = True
+        super().destroy()
+
+
 class WorkspacePage(tk.Frame):
     """A workspace surface that can live in the main window or in a dialog.
 
@@ -17,7 +29,7 @@ class WorkspacePage(tk.Frame):
         self._host_window: tk.Toplevel | None = None
         master: tk.Misc = parent
         if not self._embedded:
-            self._host_window = tk.Toplevel(parent)
+            self._host_window = _PageWindow(parent)
             self._host_window.withdraw()
             master = self._host_window
         super().__init__(master, borderwidth=0, highlightthickness=0)
@@ -128,16 +140,14 @@ class WorkspacePage(tk.Frame):
         return getattr(host, method)(*args)
 
     def destroy(self) -> None:
+        from .tk_lifecycle import cancel_pending_callbacks
         host = self._host_window
+        cancel_pending_callbacks(self)
         try:
             super().destroy()
         finally:
-            # When callers destroy the page directly, remove the empty wrapper
-            # on the next idle turn.  When the wrapper/root is already closing,
-            # Tk cancels this callback with the window and avoids recursion.
-            if host is not None:
-                try:
-                    if host.winfo_exists():
-                        host.after_idle(lambda: host.destroy() if host.winfo_exists() else None)
-                except tk.TclError:
-                    pass
+            # Remove the wrapper synchronously after the page has left its
+            # children registry. Never enqueue a callback on a closing host:
+            # Tcl after scripts outlive the widgets that registered them.
+            if host is not None and not host._destroying:
+                host.destroy()
