@@ -1,0 +1,52 @@
+{
+  "package_sha256": "eac92fc1eb793cd5d846b884c7bba137f2619c45c9b761efadcd56294f788b48",
+  "results": [
+    {
+      "file": "_pi_heif.cp312-win_amd64.pyd",
+      "bytes": 50176,
+      "sha256": "d45944eeaaa17fd139c9a64ed6d45501534d3b439fa70d325b2f5b8bc7b50413",
+      "record_build_installed_match": true,
+      "v3_exact_sha_match": null
+    },
+    {
+      "file": "libde265-0-aa0625e0aec56a9d4310a2447674dd8a.dll",
+      "bytes": 940544,
+      "sha256": "d7499c1efed7cdf5bb99ab535de4b2d853015df42f8ecc496e720fad1e29c5c1",
+      "record_build_installed_match": true,
+      "v3_exact_sha_match": true
+    },
+    {
+      "file": "libgcc_s_seh-1-70f48b1fbf7790872df2fde4b79a7c3b.dll",
+      "bytes": 150016,
+      "sha256": "df510fab08619449d9e57500f0e0a4d3284fd43aa60ce6301b372518f721665f",
+      "record_build_installed_match": true,
+      "v3_exact_sha_match": true
+    },
+    {
+      "file": "libheif-75127e764628a95f6db9f5070bfc87cb.dll",
+      "bytes": 2125312,
+      "sha256": "00eca3b84743121b1eff89a0538fb88b396ff10b452605782f2c31897d34b491",
+      "record_build_installed_match": true,
+      "v3_exact_sha_match": null
+    },
+    {
+      "file": "libstdc++-6-110c9d51f08f0d1d0f38fa2f49cf7128.dll",
+      "bytes": 2660352,
+      "sha256": "4e9d25ae95db62d51804096544a1bd8fdc4a424990b706c3c4167fc8c5054f79",
+      "record_build_installed_match": true,
+      "v3_exact_sha_match": true
+    },
+    {
+      "file": "libwinpthread-1-1be1ab2940d5d04137beed0ce27c7f8a.dll",
+      "bytes": 62464,
+      "sha256": "1be1ab2940d5d04137beed0ce27c7f8a2461fb783453d3ed26720802a6249341",
+      "record_build_installed_match": true,
+      "v3_exact_sha_match": true
+    }
+  ],
+  "v3_matches": 4,
+  "native_consistency_matches": 6,
+  "binary_payload_received": false,
+  "licenses_actual_texts_verified": 2,
+  "release_ready": false
+}
