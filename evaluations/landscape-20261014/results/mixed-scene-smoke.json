@@ -1,0 +1,579 @@
+{
+  "scope": "60 mixed-content photos, not a landscape benchmark",
+  "n": 60,
+  "recommendations": {
+    "keep": 59,
+    "review": 1
+  },
+  "rows": [
+    {
+      "name": "166528976.jpg",
+      "sha256": "911c704ed6986ccc1a047892d6dae2f2eaa969b64bb841a44c33a9d872ddc398",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 3.3679245282985497,
+      "human_votes": 106
+    },
+    {
+      "name": "1669800671.jpg",
+      "sha256": "28d3737aa60d8af143d55f6ce37899696c4ce3a81ff0da1a8c9570c6a2d45421",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 15,
+      "human_acr_mean": 3.2761904761918097,
+      "human_votes": 105
+    },
+    {
+      "name": "1674951001.jpg",
+      "sha256": "0a7edb4e00a2ef6ebc5cac0d90afbc0623ed238795171d5ffd49f3880e222ffb",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 12,
+      "human_acr_mean": 2.7339449541281997,
+      "human_votes": 109
+    },
+    {
+      "name": "1679551869.jpg",
+      "sha256": "e0f76c55f12dcf9786a013e9bfb7efbb24ab7eceaa5d56d98391462e621af4f5",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 3.49999999999776,
+      "human_votes": 104
+    },
+    {
+      "name": "16799807.jpg",
+      "sha256": "6bdd2cb1efcb9f7c5b9a4e5bcc0d9769ea6f7528969cf0b03abd5bf8c4bda765",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 7,
+      "human_acr_mean": 2.5339805825248,
+      "human_votes": 103
+    },
+    {
+      "name": "168084078.jpg",
+      "sha256": "51b0c6d67c677b48270d489a936d8d71c5b47ca39847271ea37adf298fc5c12c",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 14,
+      "human_acr_mean": null,
+      "human_votes": null
+    },
+    {
+      "name": "1682888994.jpg",
+      "sha256": "841e3b3b8003b79aaddaf9972b43f53e42e407a663b35e5583127c6d0b24d7d3",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 3.5092592592583,
+      "human_votes": 108
+    },
+    {
+      "name": "1693839090.jpg",
+      "sha256": "fe5eb4f174d3f7d5063032266180c405a73bee74a15417578d2f12e69903d94b",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 6,
+      "human_acr_mean": 1.8504672897191,
+      "human_votes": 107
+    },
+    {
+      "name": "169625095.jpg",
+      "sha256": "5635fb4982b21c2455a8398d76cbcd5b60f9472883979bf5c495ed5b0232855f",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 13,
+      "human_acr_mean": 2.6601941747585998,
+      "human_votes": 103
+    },
+    {
+      "name": "169779095.jpg",
+      "sha256": "953135bf24fdfe5791138f762f4eda1250742648742c337df9fc15fb4b0e9f8e",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 12,
+      "human_acr_mean": 3.4903846153878,
+      "human_votes": 104
+    },
+    {
+      "name": "1708787959.jpg",
+      "sha256": "3793605315f9660ef97dc459256a36d7a9f534e5c55e3e2e03066b3cb48593f7",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 3.15596330275205,
+      "human_votes": 109
+    },
+    {
+      "name": "171857013.jpg",
+      "sha256": "08e1d864a3044a42b6783c1bebc12a5b0707106734fbfa35837ccd7014afa4fd",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 13,
+      "human_acr_mean": 2.8301886792459996,
+      "human_votes": 106
+    },
+    {
+      "name": "174715115.jpg",
+      "sha256": "46d5369d8bd1c116345970657ed75752f56b05db72da735d04a27d4db49ba8ac",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 2.058252427184,
+      "human_votes": 103
+    },
+    {
+      "name": "1748861184.jpg",
+      "sha256": "b30b26907ec441c2c739157e9895207dbc67fd399b499d77e40eb7527e45de2d",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 9,
+      "human_acr_mean": 3.23423423423425,
+      "human_votes": 111
+    },
+    {
+      "name": "175326787.jpg",
+      "sha256": "8a4a0590602a30e59c533b9ebaff0510bb8e790e4ab5a93441ea5a1888aae77e",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 13,
+      "human_acr_mean": 2.346534653465,
+      "human_votes": 101
+    },
+    {
+      "name": "1755366250.jpg",
+      "sha256": "34b8169ce1db13bf1326c25bb0a8f3a92432f9d4239f93d0f4dde58b6b6d387c",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 10,
+      "human_acr_mean": 1.5619047619050002,
+      "human_votes": 105
+    },
+    {
+      "name": "17606027.jpg",
+      "sha256": "89c98344a277fc1f89c22613863c89ddda857736fa81969eed8dfe6b0b557ddf",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 3,
+      "human_acr_mean": 3.5871559633018,
+      "human_votes": 109
+    },
+    {
+      "name": "176663631.jpg",
+      "sha256": "49ee9c7c7e034d449f83739e4c49c7a1ef5408b803b0d26a1981c9d42e92d48d",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 11,
+      "human_acr_mean": 3.4851485148522,
+      "human_votes": 101
+    },
+    {
+      "name": "1777841357.jpg",
+      "sha256": "dc83d9eb4e0e20602b60307b9fe60a2de075e5798694cf25047ca8ddbfdeb51e",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 14,
+      "human_acr_mean": 3.03883495145648,
+      "human_votes": 103
+    },
+    {
+      "name": "178277780.jpg",
+      "sha256": "b7f85c018cabfe2921f22c5f3f6ca05991ace2f069cd607650291b670ee2648f",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 12,
+      "human_acr_mean": null,
+      "human_votes": null
+    },
+    {
+      "name": "178403727.jpg",
+      "sha256": "2f8e70357376312c4803d537c13545abfde6e2d95e67837269580c6bb4644c30",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 12,
+      "human_acr_mean": 2.2075471698108,
+      "human_votes": 106
+    },
+    {
+      "name": "1792473649.jpg",
+      "sha256": "2889fb385a2b6c2f1c353ad6187e434e7360b7c5002944f6691a7b40e21d14e4",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 15,
+      "human_acr_mean": 3.72972972973,
+      "human_votes": 111
+    },
+    {
+      "name": "1794888173.jpg",
+      "sha256": "ba289babb82df57507028eb11fc8db5f101b931c51ecc02bf38f27c50a1b6bd8",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 4,
+      "human_acr_mean": 2.814814814815,
+      "human_votes": 108
+    },
+    {
+      "name": "1795186582.jpg",
+      "sha256": "a61c7d2a809bcfa5bed9fb2b5ad5eadab5d2ca7b6d8721dc218a689e5f04d439",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 12,
+      "human_acr_mean": 2.348623853212,
+      "human_votes": 109
+    },
+    {
+      "name": "1796317547.jpg",
+      "sha256": "83dba5d8972400c98dc4208f42d15bf295518371c2c4c9bd458bd1870a1ffe4f",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 3.8557692307711,
+      "human_votes": 104
+    },
+    {
+      "name": "1797683075.jpg",
+      "sha256": "bc44eda66c2e7f3cddf1e974f4a01c767b560bf0ff692ceaab2ca7afdb8a229c",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 9,
+      "human_acr_mean": 2.2990654205616,
+      "human_votes": 107
+    },
+    {
+      "name": "1798554647.jpg",
+      "sha256": "c713af1f1c8053c75718461c02349131013fbd4fd761c14de734cdef38053209",
+      "recommendation": "review",
+      "rejected": false,
+      "clear_regions": 1,
+      "human_acr_mean": 2.8425925925913997,
+      "human_votes": 108
+    },
+    {
+      "name": "1799451312.jpg",
+      "sha256": "4af6d1808ee44eea85151ed391e72523161211d2a9a6df25c26b22f47585993d",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 14,
+      "human_acr_mean": 3.26363636363735,
+      "human_votes": 110
+    },
+    {
+      "name": "1802306299.jpg",
+      "sha256": "6bd9edf790f33904864072309e44fa1591063029707899aa88c7d1eb2095862e",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 11,
+      "human_acr_mean": 2.5566037735842997,
+      "human_votes": 106
+    },
+    {
+      "name": "1805206682.jpg",
+      "sha256": "bff075085e377ce99109189dd3e0c6795e3dcadd482096c977d7202b2e2ddd4f",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 12,
+      "human_acr_mean": 2.1401869158867,
+      "human_votes": 107
+    },
+    {
+      "name": "1807195948.jpg",
+      "sha256": "a698650d41ff74b99c3913b7541e90ee62e8a925b69707009893b91d042df8c9",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 3,
+      "human_acr_mean": 2.23,
+      "human_votes": 100
+    },
+    {
+      "name": "1809848435.jpg",
+      "sha256": "e608202c209ad84c650cbbb20a5e0dd55c2b183221448ddf76a38fa25608eb40",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 10,
+      "human_acr_mean": 1.95145631068,
+      "human_votes": 103
+    },
+    {
+      "name": "1812202754.jpg",
+      "sha256": "4109411fb17f30544f3b6131a43e6f0ecc684efec7ce330fe8182bda13442762",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 3.8773584905689997,
+      "human_votes": 106
+    },
+    {
+      "name": "181220864.jpg",
+      "sha256": "20404a8f72e3142a9ebb5eaf595ef29be7237a771c61cb999adc9dd8dd9b9291",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 15,
+      "human_acr_mean": 2.11538461538532,
+      "human_votes": 104
+    },
+    {
+      "name": "1814122396.jpg",
+      "sha256": "8bdd6abed7a9f6d8f86d1c393011912760136abc1200a7ea1372067479813202",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 15,
+      "human_acr_mean": 3.2702702702702,
+      "human_votes": 111
+    },
+    {
+      "name": "1820291567.jpg",
+      "sha256": "ab05056c786527c8ef4c5076c12e5db5a519acc32b73bda4e8fbc1d4a540d489",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 4,
+      "human_acr_mean": 1.9722222222229397,
+      "human_votes": 108
+    },
+    {
+      "name": "18238731.jpg",
+      "sha256": "b6a2adc02d9517bd32e49d23a697f565fbaabd92b99704c5c228a829a5960898",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 10,
+      "human_acr_mean": 1.8173076923077,
+      "human_votes": 104
+    },
+    {
+      "name": "1826599525.jpg",
+      "sha256": "77e5147d4a587301bc15860c3087be457f72246a4bccfa1e9c8f674cd38de0a1",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 3,
+      "human_acr_mean": null,
+      "human_votes": null
+    },
+    {
+      "name": "182844194.jpg",
+      "sha256": "2df9e4815af34a0fc104dc9d35757bbf5c2c5e3b49b3010040918e33706183f9",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 6,
+      "human_acr_mean": null,
+      "human_votes": null
+    },
+    {
+      "name": "1831009252.jpg",
+      "sha256": "069b4ebb0974b70bbf2710becdc71a267e7ff5ba9f202d4bbd220abf09c2fcd2",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 11,
+      "human_acr_mean": null,
+      "human_votes": null
+    },
+    {
+      "name": "183156510.jpg",
+      "sha256": "788c11c5b07b29c55f5237a559bc3093f10b37c30addab3906a79326018b6771",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 11,
+      "human_acr_mean": 2.88235294117463,
+      "human_votes": 102
+    },
+    {
+      "name": "183643381.jpg",
+      "sha256": "1550a259b029c41a7cd9a940b4e38729b75d104f7cfa3f4fc5d47c67e51430b1",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 6,
+      "human_acr_mean": null,
+      "human_votes": null
+    },
+    {
+      "name": "18438855.jpg",
+      "sha256": "bcd550f7e3bcf77e182bea06ed25a2e7636a4d0c39a1055612e0d368cba287ba",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 15,
+      "human_acr_mean": 3.77570093457804,
+      "human_votes": 107
+    },
+    {
+      "name": "185458280.jpg",
+      "sha256": "e507768dc63b76fee1c5746a59acdb35fc3a1ea5f09a873a88a2105bfd40d51e",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 5,
+      "human_acr_mean": 1.4591836734688,
+      "human_votes": 98
+    },
+    {
+      "name": "186520031.jpg",
+      "sha256": "790f8deaf498361cbc4076451001defaac6884db80fb1a307501fe659b956924",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 3.3163265306122,
+      "human_votes": 98
+    },
+    {
+      "name": "187485230.jpg",
+      "sha256": "474e57e2c6aa0989a9815796bef822a02641b948b13070db9a967b5d5c3da3a7",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 5,
+      "human_acr_mean": 2.72727272727,
+      "human_votes": 99
+    },
+    {
+      "name": "187499391.jpg",
+      "sha256": "92a7a75fe48d06edbe96d01be87b51fa3dce937a096cb9ea9d43eae764c71315",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 7,
+      "human_acr_mean": 2.74757281553348,
+      "human_votes": 103
+    },
+    {
+      "name": "187640892.jpg",
+      "sha256": "98e93ce3ea845b8047917651094d9bc26228e15059dd96dc73059ad98609ea6a",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 2.4099999999999997,
+      "human_votes": 100
+    },
+    {
+      "name": "1896792999.jpg",
+      "sha256": "d12da09b804db43021f8a1a054c2d5d3d8e8fb21f1ca41af959ba9dbaa39e7ba",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 3.4339622641532,
+      "human_votes": 106
+    },
+    {
+      "name": "189899579.jpg",
+      "sha256": "69ab6ab0bb5075b7a0b8b716aefa45eac6f284944c31f2a5f3243d23ddec5f5e",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 4,
+      "human_acr_mean": 2.74,
+      "human_votes": 100
+    },
+    {
+      "name": "1929087646.jpg",
+      "sha256": "5338c40792518fab5fb4cd28e1bab449759e80a5843e49d843f8176509334570",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 7,
+      "human_acr_mean": 2.6981132075482,
+      "human_votes": 106
+    },
+    {
+      "name": "19300996.jpg",
+      "sha256": "140da8dae802028f435e943c66a9aac5369c802d0e4fa77353883ef7c63f06a5",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 9,
+      "human_acr_mean": 1.913461538461,
+      "human_votes": 104
+    },
+    {
+      "name": "194278089.jpg",
+      "sha256": "d7552420b92c9c45acf07c90e02f5b871eab73aefa253bed023c5d6bfc56e985",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 12,
+      "human_acr_mean": 3.2830188679254997,
+      "human_votes": 106
+    },
+    {
+      "name": "194369363.jpg",
+      "sha256": "21c3e7908d8772a1c87fba45d0b0073de1dcb5c21a0a31d458e6816deef5b9f3",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 6,
+      "human_acr_mean": 2.12380952381094,
+      "human_votes": 105
+    },
+    {
+      "name": "1946326263.jpg",
+      "sha256": "b1e8e4a0ff49a07faeaa1bbf786624f19dec722c4b5cf1e584e487ccdf35dd57",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 9,
+      "human_acr_mean": 3.46666666666665,
+      "human_votes": 105
+    },
+    {
+      "name": "1947195937.jpg",
+      "sha256": "5a652699aef099f388066dbea13f952731138849db565c1ea6265f5059d12253",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 10,
+      "human_acr_mean": 2.5858585858564003,
+      "human_votes": 99
+    },
+    {
+      "name": "19502065.jpg",
+      "sha256": "17c1e8d34a314652d15364851ea737285282dc1b843fc8efd050efdc8bbb328f",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 3,
+      "human_acr_mean": 1.166666666667,
+      "human_votes": 102
+    },
+    {
+      "name": "1966235400.jpg",
+      "sha256": "70d125411f7d1ab1b8b11ffc59592cd2591e8a26156060e6fdb56638f65e232b",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 16,
+      "human_acr_mean": 3.49523809523762,
+      "human_votes": 105
+    },
+    {
+      "name": "196734006.jpg",
+      "sha256": "9c41675de4ad12cf70aa843aee4a4d3874994bba8757c87dc6a06694dba95c14",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 13,
+      "human_acr_mean": 3.73786407767116,
+      "human_votes": 103
+    },
+    {
+      "name": "1970440733.jpg",
+      "sha256": "d6ecc496c159500d5accb6527fd89b0c4aa937652e9315f73842ded01e6eea3e",
+      "recommendation": "keep",
+      "rejected": false,
+      "clear_regions": 11,
+      "human_acr_mean": 3.0,
+      "human_votes": 134
+    }
+  ],
+  "missing_human_label_names": [
+    "168084078.jpg",
+    "178277780.jpg",
+    "1826599525.jpg",
+    "182844194.jpg",
+    "1831009252.jpg",
+    "183643381.jpg"
+  ],
+  "exploratory_acr_bins": {
+    "below2": {
+      "n": 8,
+      "recommendations": {
+        "keep": 8
+      }
+    },
+    "2to3": {
+      "n": 23,
+      "recommendations": {
+        "keep": 22,
+        "review": 1
+      }
+    },
+    "3plus": {
+      "n": 23,
+      "recommendations": {
+        "keep": 23
+      }
+    }
+  }
+}

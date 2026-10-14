@@ -1,0 +1,187 @@
+00570.jpg keep 54.84
+00825.jpg keep 18.38
+01517.jpg keep 81.33
+04120.jpg keep 75.27
+04290.jpg keep 75.2
+05673.jpg keep 37.38
+08425.jpg keep 70
+08862.jpg review 16.14
+09114.jpg keep 28
+{
+  "n": 9,
+  "official_landscape_records": 1488,
+  "sampling": "all Landscape>0 in first bounded gzip prefix; convenience archive-order sample, no quality filtering",
+  "recommendations": {
+    "keep": 8,
+    "review": 1
+  },
+  "rejects": 0,
+  "unreadable": 0,
+  "visible_boxes": 0,
+  "sharpness_range": [
+    16.14,
+    81.33
+  ],
+  "full_landscape_sharpness_quartiles": [
+    39.9225,
+    63.290000000000006,
+    75.2175
+  ],
+  "spearman_clear_regions_vs_human_sharpness": 0.6,
+  "human_KDU_labels": 0,
+  "human_comparison_group_labels": 0,
+  "culling_accuracy": null,
+  "runtime_seconds": 2.401854421994358,
+  "original_bytes_unchanged": true,
+  "sharpness_strata": {
+    "1": {
+      "lower": null,
+      "upper": 39.9225,
+      "n": 4,
+      "recommendations": {
+        "keep": 3,
+        "review": 1
+      }
+    },
+    "2": {
+      "lower": 39.9225,
+      "upper": 63.290000000000006,
+      "n": 1,
+      "recommendations": {
+        "keep": 1
+      }
+    },
+    "3": {
+      "lower": 63.290000000000006,
+      "upper": 75.2175,
+      "n": 2,
+      "recommendations": {
+        "keep": 2
+      }
+    },
+    "4": {
+      "lower": 75.2175,
+      "upper": null,
+      "n": 2,
+      "recommendations": {
+        "keep": 2
+      }
+    }
+  },
+  "grouping": {
+    "standard": {
+      "group_count": 9,
+      "members": {
+        "1": [
+          "00570"
+        ],
+        "2": [
+          "00825"
+        ],
+        "3": [
+          "01517"
+        ],
+        "4": [
+          "04120"
+        ],
+        "5": [
+          "04290"
+        ],
+        "6": [
+          "05673"
+        ],
+        "7": [
+          "08425"
+        ],
+        "8": [
+          "08862"
+        ],
+        "9": [
+          "09114"
+        ]
+      },
+      "accuracy": null
+    },
+    "strict": {
+      "group_count": 9,
+      "members": {
+        "1": [
+          "00570"
+        ],
+        "2": [
+          "00825"
+        ],
+        "3": [
+          "01517"
+        ],
+        "4": [
+          "04120"
+        ],
+        "5": [
+          "04290"
+        ],
+        "6": [
+          "05673"
+        ],
+        "7": [
+          "08425"
+        ],
+        "8": [
+          "08862"
+        ],
+        "9": [
+          "09114"
+        ]
+      },
+      "accuracy": null
+    },
+    "loose": {
+      "group_count": 9,
+      "members": {
+        "1": [
+          "00570"
+        ],
+        "2": [
+          "00825"
+        ],
+        "3": [
+          "01517"
+        ],
+        "4": [
+          "04120"
+        ],
+        "5": [
+          "04290"
+        ],
+        "6": [
+          "05673"
+        ],
+        "7": [
+          "08425"
+        ],
+        "8": [
+          "08862"
+        ],
+        "9": [
+          "09114"
+        ]
+      },
+      "accuracy": null
+    }
+  },
+  "versions": {
+    "git": "8a29559de0749ff2a982e05e3524405a055054f2",
+    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+    "pillow": "12.3.0",
+    "numpy": "2.3.5",
+    "opencv": "4.14.0",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+    "source_hashes": {
+      "analysis_modes.py": "b286afac59425f95768955766c9f6f728111e079a7e6bfe685a6411e33da54b2",
+      "grouping.py": "b1ad576993a0494c6fa672bf30bebdd5d4d49d6ffcb5ce99e4d30b5cff3cca9a",
+      "body_focus.py": "0ace85a293af8f8c01fcaa19872f567d357ba367ff8a95c0e05215a32a77d0fe",
+      "shared_decode.py": "efb1badf1387644b5c3cb827d24a86bb470e12167d0f3739cf9a2c85c6dd9ae1"
+    },
+    "annotations_sha256": "ec162c4ff5e1892d2eca399fa26cab5ecbfc0d2037d542385d7abe9d4bcb621f"
+  }
+}

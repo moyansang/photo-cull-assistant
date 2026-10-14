@@ -1,0 +1,420 @@
+{
+  "archive_total_bytes": 34841101349,
+  "downloaded_http_body_bytes": 189437184,
+  "unique_prefix_bytes": 188388608,
+  "source": "https://huggingface.co/datasets/chaofengc/IQA-PyTorch-Datasets/resolve/main/spaq.tgz",
+  "official_endorsement": "https://github.com/h4nwei/SPAQ/issues/38",
+  "selected": [
+    {
+      "name": "00570.jpg",
+      "bytes": 3541367,
+      "landscape": 0.5,
+      "sha256": "d56cb7dd8a3eed95a358a8e128482921076f169a5af7be2c85bf0b0d99ee641f"
+    },
+    {
+      "name": "01517.jpg",
+      "bytes": 6098138,
+      "landscape": 1,
+      "sha256": "d203558735bfbb4551250e24a5c5f6e84e65284d22a8d1ca62b486ce8b0f914f"
+    },
+    {
+      "name": "00825.jpg",
+      "bytes": 1589359,
+      "landscape": 1,
+      "sha256": "2bdbacac2e9282c88c531f7dc2ab2d91c4015e24b3d1033deeabdeba472c49c8"
+    },
+    {
+      "name": "04290.jpg",
+      "bytes": 2020131,
+      "landscape": 1,
+      "sha256": "3fab02f033d13a42100233763f89e6dd0c8b1d1b83f565f08d72fccd342ff14f"
+    },
+    {
+      "name": "05673.jpg",
+      "bytes": 1950114,
+      "landscape": 1,
+      "sha256": "ae6b2d2e7b3457edb1ae38e9c01f7960221a37c11438f28421fc66517179b694"
+    },
+    {
+      "name": "08425.jpg",
+      "bytes": 2715803,
+      "landscape": 0.5,
+      "sha256": "c0c61bd1159b7d6f463b22232b04c282d55f86a782061205d825acaacb17f5b0"
+    },
+    {
+      "name": "09114.jpg",
+      "bytes": 3100681,
+      "landscape": 1,
+      "sha256": "abf05a1b1dbc916482be14f4de005ac47f5c87e953e376895c85c98aa2ff74bb"
+    },
+    {
+      "name": "08862.jpg",
+      "bytes": 1193955,
+      "landscape": 1,
+      "sha256": "6554489f3f35677f7e15b01268a7f7b9022c138ecb6470d361c784cc144c9640"
+    },
+    {
+      "name": "04120.jpg",
+      "bytes": 1748136,
+      "landscape": 1,
+      "sha256": "16eaa99ff2440de12528e06b07ee89ae95ff8a94e950211ecd9a2dd70f9d40cd"
+    }
+  ],
+  "seen": [
+    {
+      "name": "00024.jpg",
+      "bytes": 4325845,
+      "landscape": 0
+    },
+    {
+      "name": "10253.jpg",
+      "bytes": 5041406,
+      "landscape": 0
+    },
+    {
+      "name": "01299.jpg",
+      "bytes": 1358096,
+      "landscape": 0
+    },
+    {
+      "name": "09452.jpg",
+      "bytes": 1281648,
+      "landscape": 0
+    },
+    {
+      "name": "01726.jpg",
+      "bytes": 2940456,
+      "landscape": 0
+    },
+    {
+      "name": "07087.jpg",
+      "bytes": 3607078,
+      "landscape": 0
+    },
+    {
+      "name": "05521.jpg",
+      "bytes": 1977263,
+      "landscape": 0
+    },
+    {
+      "name": "03960.jpg",
+      "bytes": 3790527,
+      "landscape": 0
+    },
+    {
+      "name": "05751.jpg",
+      "bytes": 3043743,
+      "landscape": 0
+    },
+    {
+      "name": "01198.jpg",
+      "bytes": 3702033,
+      "landscape": 0
+    },
+    {
+      "name": "10775.jpg",
+      "bytes": 2471257,
+      "landscape": 0
+    },
+    {
+      "name": "00874.jpg",
+      "bytes": 3533273,
+      "landscape": 0
+    },
+    {
+      "name": "05913.jpg",
+      "bytes": 1580985,
+      "landscape": 0
+    },
+    {
+      "name": "04401.jpg",
+      "bytes": 905146,
+      "landscape": 0
+    },
+    {
+      "name": "03885.jpg",
+      "bytes": 1482178,
+      "landscape": 0
+    },
+    {
+      "name": "00570.jpg",
+      "bytes": 3541367,
+      "landscape": 0.5,
+      "sha256": "d56cb7dd8a3eed95a358a8e128482921076f169a5af7be2c85bf0b0d99ee641f"
+    },
+    {
+      "name": "01517.jpg",
+      "bytes": 6098138,
+      "landscape": 1,
+      "sha256": "d203558735bfbb4551250e24a5c5f6e84e65284d22a8d1ca62b486ce8b0f914f"
+    },
+    {
+      "name": "05259.jpg",
+      "bytes": 3041643,
+      "landscape": 0
+    },
+    {
+      "name": "03841.jpg",
+      "bytes": 1585998,
+      "landscape": 0
+    },
+    {
+      "name": "07679.jpg",
+      "bytes": 2084759,
+      "landscape": 0
+    },
+    {
+      "name": "01021.jpg",
+      "bytes": 4898161,
+      "landscape": 0
+    },
+    {
+      "name": "00389.jpg",
+      "bytes": 1789319,
+      "landscape": 0
+    },
+    {
+      "name": "00825.jpg",
+      "bytes": 1589359,
+      "landscape": 1,
+      "sha256": "2bdbacac2e9282c88c531f7dc2ab2d91c4015e24b3d1033deeabdeba472c49c8"
+    },
+    {
+      "name": "00903.jpg",
+      "bytes": 1491433,
+      "landscape": 0
+    },
+    {
+      "name": "04038.jpg",
+      "bytes": 3808456,
+      "landscape": 0
+    },
+    {
+      "name": "04290.jpg",
+      "bytes": 2020131,
+      "landscape": 1,
+      "sha256": "3fab02f033d13a42100233763f89e6dd0c8b1d1b83f565f08d72fccd342ff14f"
+    },
+    {
+      "name": "05673.jpg",
+      "bytes": 1950114,
+      "landscape": 1,
+      "sha256": "ae6b2d2e7b3457edb1ae38e9c01f7960221a37c11438f28421fc66517179b694"
+    },
+    {
+      "name": "01038.jpg",
+      "bytes": 2482715,
+      "landscape": 0
+    },
+    {
+      "name": "05370.jpg",
+      "bytes": 2930710,
+      "landscape": 0
+    },
+    {
+      "name": "03995.jpg",
+      "bytes": 2568597,
+      "landscape": 0
+    },
+    {
+      "name": "01391.jpg",
+      "bytes": 3002828,
+      "landscape": 0
+    },
+    {
+      "name": "08425.jpg",
+      "bytes": 2715803,
+      "landscape": 0.5,
+      "sha256": "c0c61bd1159b7d6f463b22232b04c282d55f86a782061205d825acaacb17f5b0"
+    },
+    {
+      "name": "06789.jpg",
+      "bytes": 2730474,
+      "landscape": 0
+    },
+    {
+      "name": "01812.jpg",
+      "bytes": 720706,
+      "landscape": 0
+    },
+    {
+      "name": "02750.jpg",
+      "bytes": 1977496,
+      "landscape": 0
+    },
+    {
+      "name": "09114.jpg",
+      "bytes": 3100681,
+      "landscape": 1,
+      "sha256": "abf05a1b1dbc916482be14f4de005ac47f5c87e953e376895c85c98aa2ff74bb"
+    },
+    {
+      "name": "05356.jpg",
+      "bytes": 3158524,
+      "landscape": 0
+    },
+    {
+      "name": "08464.jpg",
+      "bytes": 3187199,
+      "landscape": 0
+    },
+    {
+      "name": "08301.jpg",
+      "bytes": 1829860,
+      "landscape": 0
+    },
+    {
+      "name": "05627.jpg",
+      "bytes": 3273085,
+      "landscape": 0
+    },
+    {
+      "name": "06396.jpg",
+      "bytes": 1340355,
+      "landscape": 0
+    },
+    {
+      "name": "09271.jpg",
+      "bytes": 660421,
+      "landscape": 0
+    },
+    {
+      "name": "02404.jpg",
+      "bytes": 4536033,
+      "landscape": 0
+    },
+    {
+      "name": "02077.jpg",
+      "bytes": 4365753,
+      "landscape": 0
+    },
+    {
+      "name": "00673.jpg",
+      "bytes": 2110983,
+      "landscape": 0
+    },
+    {
+      "name": "06406.jpg",
+      "bytes": 4869733,
+      "landscape": 0
+    },
+    {
+      "name": "09280.jpg",
+      "bytes": 715854,
+      "landscape": 0
+    },
+    {
+      "name": "02792.jpg",
+      "bytes": 5099790,
+      "landscape": 0
+    },
+    {
+      "name": "02082.jpg",
+      "bytes": 5518184,
+      "landscape": 0
+    },
+    {
+      "name": "08333.jpg",
+      "bytes": 2861670,
+      "landscape": 0
+    },
+    {
+      "name": "06922.jpg",
+      "bytes": 2834540,
+      "landscape": 0
+    },
+    {
+      "name": "01682.jpg",
+      "bytes": 1383060,
+      "landscape": 0
+    },
+    {
+      "name": "01154.jpg",
+      "bytes": 4772401,
+      "landscape": 0
+    },
+    {
+      "name": "02516.jpg",
+      "bytes": 1278904,
+      "landscape": 0
+    },
+    {
+      "name": "06275.jpg",
+      "bytes": 1836616,
+      "landscape": 0
+    },
+    {
+      "name": "06344.jpg",
+      "bytes": 3850479,
+      "landscape": 0
+    },
+    {
+      "name": "09085.jpg",
+      "bytes": 3874708,
+      "landscape": 0
+    },
+    {
+      "name": "00689.jpg",
+      "bytes": 2743704,
+      "landscape": 0
+    },
+    {
+      "name": "08862.jpg",
+      "bytes": 1193955,
+      "landscape": 1,
+      "sha256": "6554489f3f35677f7e15b01268a7f7b9022c138ecb6470d361c784cc144c9640"
+    },
+    {
+      "name": "00067.jpg",
+      "bytes": 4090492,
+      "landscape": 0
+    },
+    {
+      "name": "08692.jpg",
+      "bytes": 4190356,
+      "landscape": 0
+    },
+    {
+      "name": "10374.jpg",
+      "bytes": 1991764,
+      "landscape": 0
+    },
+    {
+      "name": "06376.jpg",
+      "bytes": 6965296,
+      "landscape": 0
+    },
+    {
+      "name": "04120.jpg",
+      "bytes": 1748136,
+      "landscape": 1,
+      "sha256": "16eaa99ff2440de12528e06b07ee89ae95ff8a94e950211ecd9a2dd70f9d40cd"
+    },
+    {
+      "name": "04605.jpg",
+      "bytes": 700674,
+      "landscape": 0
+    },
+    {
+      "name": "00300.jpg",
+      "bytes": 2831705,
+      "landscape": 0
+    },
+    {
+      "name": "10855.jpg",
+      "bytes": 1291289,
+      "landscape": 0
+    },
+    {
+      "name": "09499.jpg",
+      "bytes": 2040569,
+      "landscape": 0
+    }
+  ],
+  "annotation_sha256": {
+    "Scene category labels.xlsx": "1ec32dda553133ab1f758d7b53103bc2b50b6c0e139744e0fabf65af79993311",
+    "MOS and Image attribute scores.xlsx": "44c8867593e7397f1de79badedca1e8964c8f7e5c01def4fde967c7d11cc8806",
+    "EXIF_tags.xlsx": "4ffb751e56453230f4aafc8f24ad9b1e28c70bfc7fc7f56272b504d71d8291e4"
+  },
+  "image_headers_seen": 68
+}

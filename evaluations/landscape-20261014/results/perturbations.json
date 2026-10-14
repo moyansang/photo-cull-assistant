@@ -1,0 +1,3322 @@
+[
+  {
+    "asset_id": "1674951001__blur3.jpg",
+    "family": "1674951001.jpg",
+    "variant": "blur3",
+    "recommendation": "review",
+    "rejected": false,
+    "reason": "landscape_needs_review",
+    "seconds": 0.033883390002301894,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "uncertain",
+      "reliability": "adequate",
+      "recommendation": "review",
+      "reasons": [
+        "landscape_focus_needs_review"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0823529427871108,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.011482820846140385,
+          "coarse_laplacian_normalized": 0.005076211877167225,
+          "edge_curvature": 0.11770647764205933,
+          "edge_anisotropy": 2.9306069313387475,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.09803921636193991,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.008463699370622635,
+          "coarse_laplacian_normalized": 0.0037712487392127514,
+          "edge_curvature": 0.12399212270975113,
+          "edge_anisotropy": 2.100644414503592,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.11372548993676901,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.005686398595571518,
+          "coarse_laplacian_normalized": 0.002527419710531831,
+          "edge_curvature": 0.13184082508087158,
+          "edge_anisotropy": 2.0262120935502277,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.09411764703691006,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.007925843819975853,
+          "coarse_laplacian_normalized": 0.0032917759381234646,
+          "edge_curvature": 0.12898609042167664,
+          "edge_anisotropy": 1.064760193254948,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.11764705879613757,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0051907943561673164,
+          "coarse_laplacian_normalized": 0.0022448997478932142,
+          "edge_curvature": 0.11228162795305252,
+          "edge_anisotropy": 3.141189091829263,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0980392168276012,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0059705269522964954,
+          "coarse_laplacian_normalized": 0.0021097904536873102,
+          "edge_curvature": 0.13451819121837616,
+          "edge_anisotropy": 2.5495199159439688,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.18823529593646526,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.00456959055736661,
+          "coarse_laplacian_normalized": 0.0024275905452668667,
+          "edge_curvature": 0.12031100690364838,
+          "edge_anisotropy": 3.032831223470193,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.1254901997745037,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0041723777540028095,
+          "coarse_laplacian_normalized": 0.00162122945766896,
+          "edge_curvature": 0.12109155207872391,
+          "edge_anisotropy": 1.4720349021877488,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.09411764843389392,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.005922676995396614,
+          "coarse_laplacian_normalized": 0.002444649115204811,
+          "edge_curvature": 0.12276105582714081,
+          "edge_anisotropy": 2.3723305098603524,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.17254902375862002,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.001789731439203024,
+          "coarse_laplacian_normalized": 0.0007271849899552763,
+          "edge_curvature": 0.12205168604850769,
+          "edge_anisotropy": 1.6087406953510965,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4823529701679945,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0014645233750343323,
+          "coarse_laplacian_normalized": 0.0008760812343098223,
+          "edge_curvature": 0.12511295080184937,
+          "edge_anisotropy": 2.114525348866296,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.10588235780596733,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.007612149231135845,
+          "coarse_laplacian_normalized": 0.002455397741869092,
+          "edge_curvature": 0.13807354867458344,
+          "edge_anisotropy": 1.1390100464221977,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.015686274971812963,
+          "texture_fraction": 0.05633544921875,
+          "laplacian_normalized": 0.006906251888722181,
+          "coarse_laplacian_normalized": 0.001364610972814262,
+          "edge_curvature": 0.1401551067829132,
+          "edge_anisotropy": 1.4642581166881627,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.007843137253075838,
+          "texture_fraction": 0.00079345703125,
+          "laplacian_normalized": 0.005312588065862656,
+          "coarse_laplacian_normalized": 0.00043918704614043236,
+          "edge_curvature": 0.1980789452791214,
+          "edge_anisotropy": 1.1006821553831612,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.04705882351845503,
+          "texture_fraction": 0.00738525390625,
+          "laplacian_normalized": 0.007879050448536873,
+          "coarse_laplacian_normalized": 0.0007865360239520669,
+          "edge_curvature": 0.13756616413593292,
+          "edge_anisotropy": 1.5921789078383153,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.023529413156211376,
+          "texture_fraction": 0.00079345703125,
+          "laplacian_normalized": 0.0063092526979744434,
+          "coarse_laplacian_normalized": 0.0005861535319127142,
+          "edge_curvature": 0.15726140141487122,
+          "edge_anisotropy": 1.3638529264220087,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        }
+      ],
+      "source_size": [
+        1024,
+        768
+      ],
+      "textured_regions": 7,
+      "clear_regions": 0,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/1674951001__blur3.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          1024,
+          768
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "asset_id": "1674951001__crop5.jpg",
+    "family": "1674951001.jpg",
+    "variant": "crop5",
+    "recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.035554417001549155,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.11764705879613757,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.11253868043422699,
+          "coarse_laplacian_normalized": 0.02188963070511818,
+          "edge_curvature": 0.23948855698108673,
+          "edge_anisotropy": 2.615012766114214,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.12156863464042544,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.18371286988258362,
+          "coarse_laplacian_normalized": 0.03073970042169094,
+          "edge_curvature": 0.28739479184150696,
+          "edge_anisotropy": 2.2106932000845134,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725490821525455,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.23794755339622498,
+          "coarse_laplacian_normalized": 0.02423476241528988,
+          "edge_curvature": 0.3768047094345093,
+          "edge_anisotropy": 2.049947511934842,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.1333333384245634,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.2875698506832123,
+          "coarse_laplacian_normalized": 0.02553187496960163,
+          "edge_curvature": 0.3703325092792511,
+          "edge_anisotropy": 1.4279044796308316,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.1450980450026691,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.06328684091567993,
+          "coarse_laplacian_normalized": 0.011938600800931454,
+          "edge_curvature": 0.234701007604599,
+          "edge_anisotropy": 2.386862911855764,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.10196078522130847,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.1384989619255066,
+          "coarse_laplacian_normalized": 0.021664761006832123,
+          "edge_curvature": 0.31899234652519226,
+          "edge_anisotropy": 2.277451938028638,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.21960784401744604,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.1704009473323822,
+          "coarse_laplacian_normalized": 0.018816422671079636,
+          "edge_curvature": 0.3696102797985077,
+          "edge_anisotropy": 3.2711028885928424,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.16470588371157646,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.22426433861255646,
+          "coarse_laplacian_normalized": 0.015519872307777405,
+          "edge_curvature": 0.3696967363357544,
+          "edge_anisotropy": 1.606889600929212,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.10980392200872302,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.05684748291969299,
+          "coarse_laplacian_normalized": 0.012036094442009926,
+          "edge_curvature": 0.27888500690460205,
+          "edge_anisotropy": 2.069079105511407,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.20000000251457095,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.057636361569166183,
+          "coarse_laplacian_normalized": 0.007334012538194656,
+          "edge_curvature": 0.3582780361175537,
+          "edge_anisotropy": 1.6423119810203053,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.40000000409781933,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.08391664922237396,
+          "coarse_laplacian_normalized": 0.011175863444805145,
+          "edge_curvature": 0.38467955589294434,
+          "edge_anisotropy": 1.9659773761472563,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.184313727542758,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.22419218719005585,
+          "coarse_laplacian_normalized": 0.02585717849433422,
+          "edge_curvature": 0.3857538104057312,
+          "edge_anisotropy": 2.2308470966403164,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0117647061124444,
+          "texture_fraction": 0.0581301834631817,
+          "laplacian_normalized": 0.04731742665171623,
+          "coarse_laplacian_normalized": 0.007051605265587568,
+          "edge_curvature": 0.303983598947525,
+          "edge_anisotropy": 2.384920186134668,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0117647061124444,
+          "texture_fraction": 0.026699697219928435,
+          "laplacian_normalized": 0.03113691322505474,
+          "coarse_laplacian_normalized": 0.0012551118852570653,
+          "edge_curvature": 0.4110732972621918,
+          "edge_anisotropy": 1.04926502399386,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.08235294325277209,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.10441665351390839,
+          "coarse_laplacian_normalized": 0.005108575336635113,
+          "edge_curvature": 0.5003402829170227,
+          "edge_anisotropy": 1.4086047657387903,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.047058823984116316,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.21915754675865173,
+          "coarse_laplacian_normalized": 0.008233819156885147,
+          "edge_curvature": 0.5041714310646057,
+          "edge_anisotropy": 1.0139585845145218,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        }
+      ],
+      "source_size": [
+        922,
+        692
+      ],
+      "textured_regions": 12,
+      "clear_regions": 12,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/1674951001__crop5.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          922,
+          692
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "asset_id": "1679551869__blur3.jpg",
+    "family": "1679551869.jpg",
+    "variant": "blur3",
+    "recommendation": "review",
+    "rejected": false,
+    "reason": "landscape_needs_review",
+    "seconds": 0.039046133002557326,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "uncertain",
+      "reliability": "adequate",
+      "recommendation": "review",
+      "reasons": [
+        "landscape_focus_needs_review"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.384313702583313,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.005249070003628731,
+          "coarse_laplacian_normalized": 0.002752879401668906,
+          "edge_curvature": 0.13156583905220032,
+          "edge_anisotropy": 2.2604873102763663,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.5882352888584137,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.00896411295980215,
+          "coarse_laplacian_normalized": 0.005243414547294378,
+          "edge_curvature": 0.10430017113685608,
+          "edge_anisotropy": 2.1200599827487774,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.43529409170150757,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.021425610408186913,
+          "coarse_laplacian_normalized": 0.013720676302909851,
+          "edge_curvature": 0.08442434668540955,
+          "edge_anisotropy": 3.5639960755817572,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4470587968826294,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0177910178899765,
+          "coarse_laplacian_normalized": 0.011004824191331863,
+          "edge_curvature": 0.08344613760709763,
+          "edge_anisotropy": 3.261617777897004,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.40784314274787903,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0074053192511200905,
+          "coarse_laplacian_normalized": 0.0034487806260585785,
+          "edge_curvature": 0.13265813887119293,
+          "edge_anisotropy": 1.0373619088597337,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4117647111415863,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.02074921876192093,
+          "coarse_laplacian_normalized": 0.012002091854810715,
+          "edge_curvature": 0.10586468875408173,
+          "edge_anisotropy": 3.8298723687856926,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.45098036527633667,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.019235096871852875,
+          "coarse_laplacian_normalized": 0.012248448096215725,
+          "edge_curvature": 0.08376632630825043,
+          "edge_anisotropy": 4.318251837613987,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.48627451062202454,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.013284092769026756,
+          "coarse_laplacian_normalized": 0.008554109372198582,
+          "edge_curvature": 0.08406691998243332,
+          "edge_anisotropy": 3.3081853579434193,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.48235295712947845,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.004241534508764744,
+          "coarse_laplacian_normalized": 0.001934729632921517,
+          "edge_curvature": 0.1365201622247696,
+          "edge_anisotropy": 1.2505576969125838,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.364705890417099,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.02474239282310009,
+          "coarse_laplacian_normalized": 0.014076671563088894,
+          "edge_curvature": 0.10625159740447998,
+          "edge_anisotropy": 4.041787562641056,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.38823530077934265,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.023158343508839607,
+          "coarse_laplacian_normalized": 0.014624519273638725,
+          "edge_curvature": 0.08647079020738602,
+          "edge_anisotropy": 4.384495396730222,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.42352941632270813,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.01654437556862831,
+          "coarse_laplacian_normalized": 0.010168714448809624,
+          "edge_curvature": 0.08642560243606567,
+          "edge_anisotropy": 3.1140272842424004,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.34117649495601654,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0072033037431538105,
+          "coarse_laplacian_normalized": 0.003789825364947319,
+          "edge_curvature": 0.11947339028120041,
+          "edge_anisotropy": 1.4759757797691178,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4156862795352936,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.01359129324555397,
+          "coarse_laplacian_normalized": 0.007738971151411533,
+          "edge_curvature": 0.1120581179857254,
+          "edge_anisotropy": 2.8624740906506227,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.40392157435417175,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.017121661454439163,
+          "coarse_laplacian_normalized": 0.010620239190757275,
+          "edge_curvature": 0.08956313878297806,
+          "edge_anisotropy": 3.7552669140369885,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4745098054409027,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.009536035358905792,
+          "coarse_laplacian_normalized": 0.005934121552854776,
+          "edge_curvature": 0.09129548817873001,
+          "edge_anisotropy": 2.8233581671839905,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        }
+      ],
+      "source_size": [
+        1024,
+        768
+      ],
+      "textured_regions": 16,
+      "clear_regions": 0,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/1679551869__blur3.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          1024,
+          768
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "asset_id": "1679551869__crop5.jpg",
+    "family": "1679551869.jpg",
+    "variant": "crop5",
+    "recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.03914025400445098,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.7843137234449387,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.526268482208252,
+          "coarse_laplacian_normalized": 0.0391012579202652,
+          "edge_curvature": 0.48538967967033386,
+          "edge_anisotropy": 2.186114263770361,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.894117645919323,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.7303399443626404,
+          "coarse_laplacian_normalized": 0.0547729916870594,
+          "edge_curvature": 0.38404393196105957,
+          "edge_anisotropy": 3.1886383796830753,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.894117645919323,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.6849043965339661,
+          "coarse_laplacian_normalized": 0.059766754508018494,
+          "edge_curvature": 0.35887935757637024,
+          "edge_anisotropy": 2.9480598290562527,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8784313723444939,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.4928400218486786,
+          "coarse_laplacian_normalized": 0.05433255061507225,
+          "edge_curvature": 0.37156420946121216,
+          "edge_anisotropy": 2.396842139911027,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8901960775256157,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.8346214294433594,
+          "coarse_laplacian_normalized": 0.05464283004403114,
+          "edge_curvature": 0.3376355469226837,
+          "edge_anisotropy": 3.2770946076318506,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9215686246752739,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.6868571043014526,
+          "coarse_laplacian_normalized": 0.0515238493680954,
+          "edge_curvature": 0.35293635725975037,
+          "edge_anisotropy": 3.288095716057804,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9058823511004448,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.5911036133766174,
+          "coarse_laplacian_normalized": 0.053616300225257874,
+          "edge_curvature": 0.3586581349372864,
+          "edge_anisotropy": 2.996944317434988,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8823529407382011,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.42948082089424133,
+          "coarse_laplacian_normalized": 0.04872926324605942,
+          "edge_curvature": 0.36533528566360474,
+          "edge_anisotropy": 2.413194483335462,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8078431412577629,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.9294557571411133,
+          "coarse_laplacian_normalized": 0.06368996948003769,
+          "edge_curvature": 0.344756156206131,
+          "edge_anisotropy": 3.3130050690033066,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8352941237390041,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.7477741837501526,
+          "coarse_laplacian_normalized": 0.05674344301223755,
+          "edge_curvature": 0.35709136724472046,
+          "edge_anisotropy": 3.2751066619098523,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8313725516200066,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.6189471483230591,
+          "coarse_laplacian_normalized": 0.057635847479104996,
+          "edge_curvature": 0.35517773032188416,
+          "edge_anisotropy": 2.974794641722822,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8039215728640556,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.451118528842926,
+          "coarse_laplacian_normalized": 0.05277220532298088,
+          "edge_curvature": 0.3579951226711273,
+          "edge_anisotropy": 2.4087277588739964,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.7215686365962029,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.5796568393707275,
+          "coarse_laplacian_normalized": 0.04454663768410683,
+          "edge_curvature": 0.38440951704978943,
+          "edge_anisotropy": 2.6235337053769157,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.7921568714082241,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.5627889633178711,
+          "coarse_laplacian_normalized": 0.04458485543727875,
+          "edge_curvature": 0.38034215569496155,
+          "edge_anisotropy": 3.025698753403308,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.7921568714082241,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.523463249206543,
+          "coarse_laplacian_normalized": 0.049279432743787766,
+          "edge_curvature": 0.3624255359172821,
+          "edge_anisotropy": 2.8180722962258082,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.7725490257143974,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.34948018193244934,
+          "coarse_laplacian_normalized": 0.04362001642584801,
+          "edge_curvature": 0.3511846661567688,
+          "edge_anisotropy": 2.266376377022256,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        }
+      ],
+      "source_size": [
+        922,
+        692
+      ],
+      "textured_regions": 16,
+      "clear_regions": 16,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/1679551869__crop5.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          922,
+          692
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "asset_id": "169779095__blur3.jpg",
+    "family": "169779095.jpg",
+    "variant": "blur3",
+    "recommendation": "review",
+    "rejected": false,
+    "reason": "landscape_needs_review",
+    "seconds": 0.032849522001924925,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "uncertain",
+      "reliability": "adequate",
+      "recommendation": "review",
+      "reasons": [
+        "landscape_focus_needs_review"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4470587968826294,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0009672563173808157,
+          "coarse_laplacian_normalized": 0.0005912575288675725,
+          "edge_curvature": 0.11356300115585327,
+          "edge_anisotropy": 3.576214044363804,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4627450704574585,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0011447207070887089,
+          "coarse_laplacian_normalized": 0.0007471135468222201,
+          "edge_curvature": 0.1116066426038742,
+          "edge_anisotropy": 3.271546027279555,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.43921566009521484,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0008876576321199536,
+          "coarse_laplacian_normalized": 0.000502993818372488,
+          "edge_curvature": 0.10666000843048096,
+          "edge_anisotropy": 3.8780432929947164,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "severe_blur",
+          "reason": "weak_detail_at_both_scales",
+          "contrast": 0.7882352918386459,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0005052782944403589,
+          "coarse_laplacian_normalized": 0.0003066152858082205,
+          "edge_curvature": 0.10791373252868652,
+          "edge_anisotropy": 2.0586561206643372,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3176470696926117,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0033829391468316317,
+          "coarse_laplacian_normalized": 0.001795255928300321,
+          "edge_curvature": 0.1142704114317894,
+          "edge_anisotropy": 1.6813741838957195,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3647059053182602,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0023794209118932486,
+          "coarse_laplacian_normalized": 0.001225170330144465,
+          "edge_curvature": 0.1127888411283493,
+          "edge_anisotropy": 1.937745780748123,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3450980484485626,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0021966719068586826,
+          "coarse_laplacian_normalized": 0.0011152810184285045,
+          "edge_curvature": 0.11402571201324463,
+          "edge_anisotropy": 1.5201401738513876,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.41960786283016205,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0013595736818388104,
+          "coarse_laplacian_normalized": 0.0006833789520896971,
+          "edge_curvature": 0.11547919362783432,
+          "edge_anisotropy": 1.5768094901227816,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.2235294133424759,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.009786362759768963,
+          "coarse_laplacian_normalized": 0.005456021521240473,
+          "edge_curvature": 0.11358784139156342,
+          "edge_anisotropy": 1.421847266014325,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.26274509727954865,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.007523845415562391,
+          "coarse_laplacian_normalized": 0.004156807903200388,
+          "edge_curvature": 0.11074592918157578,
+          "edge_anisotropy": 1.3720799184006183,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.2705882340669632,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.005975299049168825,
+          "coarse_laplacian_normalized": 0.003235897747799754,
+          "edge_curvature": 0.10683711618185043,
+          "edge_anisotropy": 1.227483694933154,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.2862745076417923,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.004682906903326511,
+          "coarse_laplacian_normalized": 0.0025857510045170784,
+          "edge_curvature": 0.10775750130414963,
+          "edge_anisotropy": 1.214697166027044,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        }
+      ],
+      "source_size": [
+        1024,
+        768
+      ],
+      "textured_regions": 12,
+      "clear_regions": 0,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/169779095__blur3.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          1024,
+          768
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "asset_id": "169779095__crop5.jpg",
+    "family": "169779095.jpg",
+    "variant": "crop5",
+    "recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.03644377100135898,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5411764681339264,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.24464288353919983,
+          "coarse_laplacian_normalized": 0.008495460264384747,
+          "edge_curvature": 0.5208529829978943,
+          "edge_anisotropy": 1.216421702863144,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5529411733150482,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.22612924873828888,
+          "coarse_laplacian_normalized": 0.008035421371459961,
+          "edge_curvature": 0.5093883275985718,
+          "edge_anisotropy": 1.101503379435583,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5019607841968536,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.27218154072761536,
+          "coarse_laplacian_normalized": 0.008209899999201298,
+          "edge_curvature": 0.5229119658470154,
+          "edge_anisotropy": 1.1611076571340175,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.7333333194255829,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.1948699653148651,
+          "coarse_laplacian_normalized": 0.006861493922770023,
+          "edge_curvature": 0.5114578008651733,
+          "edge_anisotropy": 1.126968875156855,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6000000089406967,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.8159793019294739,
+          "coarse_laplacian_normalized": 0.021361660212278366,
+          "edge_curvature": 0.5142840147018433,
+          "edge_anisotropy": 1.7320362993279106,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6156862825155258,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.7968751788139343,
+          "coarse_laplacian_normalized": 0.019461343064904213,
+          "edge_curvature": 0.5110332369804382,
+          "edge_anisotropy": 2.210433681423213,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5843137353658676,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.7896391749382019,
+          "coarse_laplacian_normalized": 0.019309282302856445,
+          "edge_curvature": 0.5251399278640747,
+          "edge_anisotropy": 1.9963955842786045,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6000000089406967,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.6813623309135437,
+          "coarse_laplacian_normalized": 0.017010990530252457,
+          "edge_curvature": 0.5202827453613281,
+          "edge_anisotropy": 2.1001998956542653,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6039215885102749,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.9711608290672302,
+          "coarse_laplacian_normalized": 0.029568618163466454,
+          "edge_curvature": 0.4948703944683075,
+          "edge_anisotropy": 1.7285552206859902,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6274509988725185,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.8689181208610535,
+          "coarse_laplacian_normalized": 0.02675805054605007,
+          "edge_curvature": 0.49199116230010986,
+          "edge_anisotropy": 1.9038366146794627,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6313725672662258,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.8234592080116272,
+          "coarse_laplacian_normalized": 0.024223534390330315,
+          "edge_curvature": 0.49085137248039246,
+          "edge_anisotropy": 1.6276725705321946,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6117647252976894,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.8229978680610657,
+          "coarse_laplacian_normalized": 0.02419215440750122,
+          "edge_curvature": 0.4941208064556122,
+          "edge_anisotropy": 1.6446564605627758,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        }
+      ],
+      "source_size": [
+        922,
+        692
+      ],
+      "textured_regions": 12,
+      "clear_regions": 12,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/169779095__crop5.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          922,
+          692
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "asset_id": "1708787959__blur3.jpg",
+    "family": "1708787959.jpg",
+    "variant": "blur3",
+    "recommendation": "review",
+    "rejected": false,
+    "reason": "landscape_needs_review",
+    "seconds": 0.0338583619959536,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "uncertain",
+      "reliability": "adequate",
+      "recommendation": "review",
+      "reasons": [
+        "landscape_focus_needs_review"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.26274510473012924,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.004930773749947548,
+          "coarse_laplacian_normalized": 0.0031315514352172613,
+          "edge_curvature": 0.10880495607852936,
+          "edge_anisotropy": 1.2266852805042647,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.14901961386203766,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.009896566160023212,
+          "coarse_laplacian_normalized": 0.005425736773759127,
+          "edge_curvature": 0.1339123696088791,
+          "edge_anisotropy": 1.1039373499784408,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.2235294133424759,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.004710816778242588,
+          "coarse_laplacian_normalized": 0.002686693100258708,
+          "edge_curvature": 0.1270880401134491,
+          "edge_anisotropy": 1.1602990316981434,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.26274510473012924,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.004046819172799587,
+          "coarse_laplacian_normalized": 0.0025163099635392427,
+          "edge_curvature": 0.10413426905870438,
+          "edge_anisotropy": 1.0752839761246913,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.46666669100522995,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0012961741304025054,
+          "coarse_laplacian_normalized": 0.0007821936742402613,
+          "edge_curvature": 0.10348879545927048,
+          "edge_anisotropy": 1.2279098665663224,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4784313887357712,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0009735955391079187,
+          "coarse_laplacian_normalized": 0.0005831929738633335,
+          "edge_curvature": 0.1311468780040741,
+          "edge_anisotropy": 1.9141735951938568,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.5215686410665512,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0007356404676102102,
+          "coarse_laplacian_normalized": 0.0004338346188887954,
+          "edge_curvature": 0.12631607055664062,
+          "edge_anisotropy": 1.214507385836178,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.32549019902944565,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0021851379424333572,
+          "coarse_laplacian_normalized": 0.0012690025614574552,
+          "edge_curvature": 0.09764956682920456,
+          "edge_anisotropy": 2.4742371502244516,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3019607961177826,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0012336944928392768,
+          "coarse_laplacian_normalized": 0.0005982311558909714,
+          "edge_curvature": 0.11923813819885254,
+          "edge_anisotropy": 4.392985202412854,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0627450942993164,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.011755411513149738,
+          "coarse_laplacian_normalized": 0.003969957586377859,
+          "edge_curvature": 0.12798193097114563,
+          "edge_anisotropy": 7.023909590750857,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.07843136787414551,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.007782165426760912,
+          "coarse_laplacian_normalized": 0.0026343557983636856,
+          "edge_curvature": 0.13014936447143555,
+          "edge_anisotropy": 6.517151455809151,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "severe_blur",
+          "reason": "weak_detail_at_both_scales",
+          "contrast": 0.5254902169108391,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.000599815568421036,
+          "coarse_laplacian_normalized": 0.00032626534812152386,
+          "edge_curvature": 0.10885418951511383,
+          "edge_anisotropy": 2.223080646918409,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.10980391502380371,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.004102974198758602,
+          "coarse_laplacian_normalized": 0.001362212817184627,
+          "edge_curvature": 0.12582756578922272,
+          "edge_anisotropy": 4.632969933521478,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.10196077823638916,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.004658323246985674,
+          "coarse_laplacian_normalized": 0.001650467049330473,
+          "edge_curvature": 0.12238563597202301,
+          "edge_anisotropy": 5.234050416170617,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.10980391502380371,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0039057000540196896,
+          "coarse_laplacian_normalized": 0.001333344029262662,
+          "edge_curvature": 0.12366701662540436,
+          "edge_anisotropy": 4.3626556605202405,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.08627450466156006,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0065450603142380714,
+          "coarse_laplacian_normalized": 0.002250685589388013,
+          "edge_curvature": 0.1209217831492424,
+          "edge_anisotropy": 5.530423615305592,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        }
+      ],
+      "source_size": [
+        1024,
+        768
+      ],
+      "textured_regions": 13,
+      "clear_regions": 0,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/1708787959__blur3.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          1024,
+          768
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "asset_id": "1708787959__crop5.jpg",
+    "family": "1708787959.jpg",
+    "variant": "crop5",
+    "recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.036142542005109135,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.32549019902944565,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.2021813690662384,
+          "coarse_laplacian_normalized": 0.028025949373841286,
+          "edge_curvature": 0.307697057723999,
+          "edge_anisotropy": 1.5035468627121256,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.3647058755159378,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.11323125660419464,
+          "coarse_laplacian_normalized": 0.019248617812991142,
+          "edge_curvature": 0.3349989652633667,
+          "edge_anisotropy": 1.3170585065581064,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5686274692416191,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.03656903654336929,
+          "coarse_laplacian_normalized": 0.00664731627330184,
+          "edge_curvature": 0.3219566345214844,
+          "edge_anisotropy": 1.1374273189483866,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.27450980991125107,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.1783909648656845,
+          "coarse_laplacian_normalized": 0.026411164551973343,
+          "edge_curvature": 0.3145001232624054,
+          "edge_anisotropy": 1.3192745020745618,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5333333536982536,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.05864335596561432,
+          "coarse_laplacian_normalized": 0.007744092494249344,
+          "edge_curvature": 0.318875253200531,
+          "edge_anisotropy": 1.4463239025412298,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5054902106523509,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.026901479810476303,
+          "coarse_laplacian_normalized": 0.004181648138910532,
+          "edge_curvature": 0.3624955117702484,
+          "edge_anisotropy": 1.7351140758244583,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5607843324542046,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.01843690127134323,
+          "coarse_laplacian_normalized": 0.003127806354314089,
+          "edge_curvature": 0.3431200087070465,
+          "edge_anisotropy": 1.174876583943351,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.43529414385557175,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.07278425991535187,
+          "coarse_laplacian_normalized": 0.010178318247199059,
+          "edge_curvature": 0.31505927443504333,
+          "edge_anisotropy": 1.8480643898882898,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.20000001788139343,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.17640025913715363,
+          "coarse_laplacian_normalized": 0.010709318332374096,
+          "edge_curvature": 0.4024883806705475,
+          "edge_anisotropy": 5.4811479948062525,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.10588234663009644,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.6177405118942261,
+          "coarse_laplacian_normalized": 0.025889389216899872,
+          "edge_curvature": 0.4402312636375427,
+          "edge_anisotropy": 5.642603472231261,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.12156862020492554,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.5431844592094421,
+          "coarse_laplacian_normalized": 0.02325577475130558,
+          "edge_curvature": 0.45203667879104614,
+          "edge_anisotropy": 4.828988273731179,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.4117647260427475,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.07614703476428986,
+          "coarse_laplacian_normalized": 0.00620165653526783,
+          "edge_curvature": 0.40234076976776123,
+          "edge_anisotropy": 3.57523178390287,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.16862744092941284,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.393378883600235,
+          "coarse_laplacian_normalized": 0.01176027674227953,
+          "edge_curvature": 0.496094286441803,
+          "edge_anisotropy": 4.4642182865903886,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.14117646217346191,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.6116402745246887,
+          "coarse_laplacian_normalized": 0.018669500946998596,
+          "edge_curvature": 0.5089698433876038,
+          "edge_anisotropy": 3.918040589122115,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.15294116735458374,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.6551610231399536,
+          "coarse_laplacian_normalized": 0.01680680736899376,
+          "edge_curvature": 0.5311559438705444,
+          "edge_anisotropy": 3.871994954807962,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.14117646217346191,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.8444995284080505,
+          "coarse_laplacian_normalized": 0.019812392070889473,
+          "edge_curvature": 0.5390548706054688,
+          "edge_anisotropy": 4.269297941779599,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        }
+      ],
+      "source_size": [
+        922,
+        692
+      ],
+      "textured_regions": 16,
+      "clear_regions": 16,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/1708787959__crop5.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          922,
+          692
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "asset_id": "196734006__blur3.jpg",
+    "family": "196734006.jpg",
+    "variant": "blur3",
+    "recommendation": "review",
+    "rejected": false,
+    "reason": "landscape_needs_review",
+    "seconds": 0.03401518600003328,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "uncertain",
+      "reliability": "adequate",
+      "recommendation": "review",
+      "reasons": [
+        "landscape_focus_needs_review"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.9098039194941521,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0029784406069666147,
+          "coarse_laplacian_normalized": 0.0018692793091759086,
+          "edge_curvature": 0.09385793656110764,
+          "edge_anisotropy": 1.7144252003901241,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.8627450987696648,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.003517367411404848,
+          "coarse_laplacian_normalized": 0.002174281282350421,
+          "edge_curvature": 0.09732736647129059,
+          "edge_anisotropy": 1.3984353936132592,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.8117647022008896,
+          "texture_fraction": 0.198974609375,
+          "laplacian_normalized": 0.0005981890135444701,
+          "coarse_laplacian_normalized": 0.0002689569955691695,
+          "edge_curvature": 0.16277113556861877,
+          "edge_anisotropy": 3.243679178261735,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.07843136787414551,
+          "texture_fraction": 0.14451090494791666,
+          "laplacian_normalized": 0.01761578395962715,
+          "coarse_laplacian_normalized": 0.010081419721245766,
+          "edge_curvature": 0.17368490993976593,
+          "edge_anisotropy": 1.0961861779611988,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.8156862817704678,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0033053292427212,
+          "coarse_laplacian_normalized": 0.0020904340781271458,
+          "edge_curvature": 0.10822340846061707,
+          "edge_anisotropy": 1.0406750677778442,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.8705882355570793,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.00359206716530025,
+          "coarse_laplacian_normalized": 0.0021705017425119877,
+          "edge_curvature": 0.09759486466646194,
+          "edge_anisotropy": 1.2122995517674224,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.7960784286260605,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.001768733374774456,
+          "coarse_laplacian_normalized": 0.0010574859334155917,
+          "edge_curvature": 0.12044273316860199,
+          "edge_anisotropy": 1.3793203916572463,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.08235293626785278,
+          "texture_fraction": 0.14335123697916666,
+          "laplacian_normalized": 0.012467299588024616,
+          "coarse_laplacian_normalized": 0.00694702984765172,
+          "edge_curvature": 0.1729249358177185,
+          "edge_anisotropy": 3.5661106349311003,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.7215686365962029,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.003324344288557768,
+          "coarse_laplacian_normalized": 0.0020803925581276417,
+          "edge_curvature": 0.10089843720197678,
+          "edge_anisotropy": 1.2131081180227672,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.9058823511004448,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.003564820159226656,
+          "coarse_laplacian_normalized": 0.002250181045383215,
+          "edge_curvature": 0.09832322597503662,
+          "edge_anisotropy": 1.2630713182117244,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.9176470562815666,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.001210973714478314,
+          "coarse_laplacian_normalized": 0.0007441647467203438,
+          "edge_curvature": 0.1161566749215126,
+          "edge_anisotropy": 1.162322775700745,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.011764705181121826,
+          "texture_fraction": 0.024617513020833332,
+          "laplacian_normalized": 0.009442359209060669,
+          "coarse_laplacian_normalized": 0.00503757456317544,
+          "edge_curvature": 0.16900067031383514,
+          "edge_anisotropy": 1.3777933647303195,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.709803931415081,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0019620396196842194,
+          "coarse_laplacian_normalized": 0.001286124810576439,
+          "edge_curvature": 0.10639387369155884,
+          "edge_anisotropy": 1.2437017460112652,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.7686274498701096,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0028254955541342497,
+          "coarse_laplacian_normalized": 0.0018538625445216894,
+          "edge_curvature": 0.08896325528621674,
+          "edge_anisotropy": 1.6376338310965735,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.823529414832592,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.002488943049684167,
+          "coarse_laplacian_normalized": 0.0017004124820232391,
+          "edge_curvature": 0.09637954831123352,
+          "edge_anisotropy": 1.9153387124236625,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.6627450883388519,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.0015882598236203194,
+          "coarse_laplacian_normalized": 0.001001778058707714,
+          "edge_curvature": 0.11747083812952042,
+          "edge_anisotropy": 1.668805220922243,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            192
+          ]
+        }
+      ],
+      "source_size": [
+        1024,
+        768
+      ],
+      "textured_regions": 13,
+      "clear_regions": 0,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/196734006__blur3.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          1024,
+          768
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "asset_id": "196734006__crop5.jpg",
+    "family": "196734006.jpg",
+    "variant": "crop5",
+    "recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.034032232004392426,
+    "face_found": false,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9333333298563957,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.18276742100715637,
+          "coarse_laplacian_normalized": 0.021784992888569832,
+          "edge_curvature": 0.4107349216938019,
+          "edge_anisotropy": 1.4314227489441598,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9450980387628078,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.2348615676164627,
+          "coarse_laplacian_normalized": 0.026544712483882904,
+          "edge_curvature": 0.4063558876514435,
+          "edge_anisotropy": 1.0966516117267047,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9215686246752739,
+          "texture_fraction": 0.24697845507094063,
+          "laplacian_normalized": 0.08232580125331879,
+          "coarse_laplacian_normalized": 0.007090820465236902,
+          "edge_curvature": 0.57987380027771,
+          "edge_anisotropy": 1.679194425479688,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0156862735748291,
+          "texture_fraction": 0.07821060567981905,
+          "laplacian_normalized": 14.032048225402832,
+          "coarse_laplacian_normalized": 0.766842246055603,
+          "edge_curvature": 0.6451848149299622,
+          "edge_anisotropy": 1.1312190277436225,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9450980387628078,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.1466895043849945,
+          "coarse_laplacian_normalized": 0.015088735148310661,
+          "edge_curvature": 0.4810282588005066,
+          "edge_anisotropy": 1.2346366042523205,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9450980387628078,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.23592710494995117,
+          "coarse_laplacian_normalized": 0.022954227402806282,
+          "edge_curvature": 0.43171054124832153,
+          "edge_anisotropy": 1.005571331520999,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9098039194941521,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.1763904094696045,
+          "coarse_laplacian_normalized": 0.01586872525513172,
+          "edge_curvature": 0.5090043544769287,
+          "edge_anisotropy": 1.0933751935664242,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0156862735748291,
+          "texture_fraction": 0.06928876602161348,
+          "laplacian_normalized": 18.70186424255371,
+          "coarse_laplacian_normalized": 0.7810786366462708,
+          "edge_curvature": 0.711428165435791,
+          "edge_anisotropy": 3.719032319265022,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9058823548257351,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.2420663982629776,
+          "coarse_laplacian_normalized": 0.021909546107053757,
+          "edge_curvature": 0.45961323380470276,
+          "edge_anisotropy": 1.0340017044165668,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9490196071565151,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.16569490730762482,
+          "coarse_laplacian_normalized": 0.02047402784228325,
+          "edge_curvature": 0.43895232677459717,
+          "edge_anisotropy": 1.4181824607842157,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.9294117614626884,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.14091622829437256,
+          "coarse_laplacian_normalized": 0.012724283151328564,
+          "edge_curvature": 0.5048955678939819,
+          "edge_anisotropy": 1.2954971560702662,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.011764705181121826,
+          "texture_fraction": 0.0008796179944709727,
+          "laplacian_normalized": 0.18687409162521362,
+          "coarse_laplacian_normalized": 0.010567470453679562,
+          "edge_curvature": 0.6146708130836487,
+          "edge_anisotropy": 1.0987823029152375,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8313725516200066,
+          "texture_fraction": 0.3,
+          "laplacian_normalized": 0.21495984494686127,
+          "coarse_laplacian_normalized": 0.015177040360867977,
+          "edge_curvature": 0.47324445843696594,
+          "edge_anisotropy": 1.4931906344258008,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8745098039507866,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.20288299024105072,
+          "coarse_laplacian_normalized": 0.018660904839634895,
+          "edge_curvature": 0.4116698205471039,
+          "edge_anisotropy": 1.3105767278423741,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.8862745091319084,
+          "texture_fraction": 0.30000250231464104,
+          "laplacian_normalized": 0.22215919196605682,
+          "coarse_laplacian_normalized": 0.01811685413122177,
+          "edge_curvature": 0.4376247823238373,
+          "edge_anisotropy": 1.0219152116935566,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            231,
+            173
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.7921568602323532,
+          "texture_fraction": 0.2791153556169892,
+          "laplacian_normalized": 0.18246401846408844,
+          "coarse_laplacian_normalized": 0.01063243392854929,
+          "edge_curvature": 0.64605313539505,
+          "edge_anisotropy": 1.2675496676936708,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            230,
+            173
+          ]
+        }
+      ],
+      "source_size": [
+        922,
+        692
+      ],
+      "textured_regions": 13,
+      "clear_regions": 13,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/landscape-evaluation-data/variants/196734006__crop5.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          922,
+          692
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  }
+]

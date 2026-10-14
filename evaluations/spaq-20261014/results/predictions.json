@@ -1,0 +1,3170 @@
+[
+  {
+    "name": "00570.jpg",
+    "sha256": "d56cb7dd8a3eed95a358a8e128482921076f169a5af7be2c85bf0b0d99ee641f",
+    "size": [
+      4160,
+      3120
+    ],
+    "official_annotations": {
+      "Image name": "00570.jpg",
+      "Animal": 0,
+      "Cityscape": 0,
+      "Human": 0.5,
+      "Indoor scene": 0,
+      "Landscape": 0.5,
+      "Night scene": 0,
+      "Plant": 0,
+      "Still-life": 0,
+      "Others": 0,
+      "MOS": 60.95,
+      "Brightness": 68.95,
+      "Colorfulness": 72.22,
+      "Contrast": 69.58,
+      "Noisiness": 58.05,
+      "Sharpness": 54.84
+    },
+    "local_recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.3238929920044029,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.3450980633497238,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.12539294362068176,
+          "coarse_laplacian_normalized": 0.03367360308766365,
+          "edge_curvature": 0.3363831341266632,
+          "edge_anisotropy": 6.076574778523749,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5490196198225021,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0649678111076355,
+          "coarse_laplacian_normalized": 0.01866433583199978,
+          "edge_curvature": 0.3386775553226471,
+          "edge_anisotropy": 5.126765963285005,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.7098039090633392,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.07808863371610641,
+          "coarse_laplacian_normalized": 0.02119564451277256,
+          "edge_curvature": 0.28055477142333984,
+          "edge_anisotropy": 4.12804553764224,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.39215683937072754,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.029853958636522293,
+          "coarse_laplacian_normalized": 0.007313652895390987,
+          "edge_curvature": 0.33149734139442444,
+          "edge_anisotropy": 4.1877793923569255,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6941176578402519,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.011625654064118862,
+          "coarse_laplacian_normalized": 0.0031922911293804646,
+          "edge_curvature": 0.2939924895763397,
+          "edge_anisotropy": 3.8749031504329863,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.40000002086162567,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.01825251244008541,
+          "coarse_laplacian_normalized": 0.004782095085829496,
+          "edge_curvature": 0.27811774611473083,
+          "edge_anisotropy": 2.636930479688734,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.4941176623106003,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.02599058300256729,
+          "coarse_laplacian_normalized": 0.007490323390811682,
+          "edge_curvature": 0.2789480984210968,
+          "edge_anisotropy": 3.316303518902681,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.47058823704719543,
+          "texture_fraction": 0.3000081380208333,
+          "laplacian_normalized": 0.05731944367289543,
+          "coarse_laplacian_normalized": 0.016558917239308357,
+          "edge_curvature": 0.2484002262353897,
+          "edge_anisotropy": 4.98973029489013,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.25882352888584137,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.07264872640371323,
+          "coarse_laplacian_normalized": 0.019299190491437912,
+          "edge_curvature": 0.2648000121116638,
+          "edge_anisotropy": 1.872854576607676,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.2705882340669632,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.061410531401634216,
+          "coarse_laplacian_normalized": 0.017389949411153793,
+          "edge_curvature": 0.27535706758499146,
+          "edge_anisotropy": 1.6061670365210174,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.376470610499382,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.03561019524931908,
+          "coarse_laplacian_normalized": 0.011175607331097126,
+          "edge_curvature": 0.2851683795452118,
+          "edge_anisotropy": 4.800833824949126,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.37254902720451355,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.05656883120536804,
+          "coarse_laplacian_normalized": 0.014759036712348461,
+          "edge_curvature": 0.26813849806785583,
+          "edge_anisotropy": 2.305409656041417,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5372549146413803,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.023876098915934563,
+          "coarse_laplacian_normalized": 0.006690294947475195,
+          "edge_curvature": 0.28558793663978577,
+          "edge_anisotropy": 1.3134645639427303,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5019607841968536,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.017715908586978912,
+          "coarse_laplacian_normalized": 0.004902712069451809,
+          "edge_curvature": 0.27975696325302124,
+          "edge_anisotropy": 1.2093475973632355,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5333333313465118,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.01876644231379032,
+          "coarse_laplacian_normalized": 0.005541432648897171,
+          "edge_curvature": 0.2748459279537201,
+          "edge_anisotropy": 1.5001144419142476,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5450980365276337,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.028022004291415215,
+          "coarse_laplacian_normalized": 0.007836300879716873,
+          "edge_curvature": 0.2893329858779907,
+          "edge_anisotropy": 1.6908495098732232,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        }
+      ],
+      "source_size": [
+        4160,
+        3120
+      ],
+      "textured_regions": 16,
+      "clear_regions": 16,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/00570.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          4160,
+          3120
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "name": "00825.jpg",
+    "sha256": "2bdbacac2e9282c88c531f7dc2ab2d91c4015e24b3d1033deeabdeba472c49c8",
+    "size": [
+      2448,
+      3264
+    ],
+    "official_annotations": {
+      "Image name": "00825.jpg",
+      "Animal": 0,
+      "Cityscape": 0,
+      "Human": 0,
+      "Indoor scene": 0,
+      "Landscape": 1,
+      "Night scene": 0,
+      "Plant": 0,
+      "Still-life": 0,
+      "Others": 0,
+      "MOS": 30.13,
+      "Brightness": 27.5,
+      "Colorfulness": 46.5,
+      "Contrast": 32,
+      "Noisiness": 51.63,
+      "Sharpness": 18.38
+    },
+    "local_recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.21992224799760152,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.03529411554336548,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.315814733505249,
+          "coarse_laplacian_normalized": 0.010565710254013538,
+          "edge_curvature": 0.46117284893989563,
+          "edge_anisotropy": 1.004673883980413,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0313725471496582,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.22230270504951477,
+          "coarse_laplacian_normalized": 0.008223575539886951,
+          "edge_curvature": 0.4358612895011902,
+          "edge_anisotropy": 1.036158530071857,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0313725471496582,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.21721412241458893,
+          "coarse_laplacian_normalized": 0.00806406233459711,
+          "edge_curvature": 0.4328756332397461,
+          "edge_anisotropy": 1.0074673188699956,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0313725471496582,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.286670446395874,
+          "coarse_laplacian_normalized": 0.009322489611804485,
+          "edge_curvature": 0.46413105726242065,
+          "edge_anisotropy": 1.0500759409413782,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.039215683937072754,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.17546875774860382,
+          "coarse_laplacian_normalized": 0.006737477146089077,
+          "edge_curvature": 0.42412468791007996,
+          "edge_anisotropy": 1.0146602204419086,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.11764705181121826,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.02362649142742157,
+          "coarse_laplacian_normalized": 0.0009533948614262044,
+          "edge_curvature": 0.3797857463359833,
+          "edge_anisotropy": 1.4435195859978536,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.027450978755950928,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.13294605910778046,
+          "coarse_laplacian_normalized": 0.005189527291804552,
+          "edge_curvature": 0.4134824872016907,
+          "edge_anisotropy": 1.0207663258738697,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.027450978755950928,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.17410239577293396,
+          "coarse_laplacian_normalized": 0.006738980300724506,
+          "edge_curvature": 0.4243173599243164,
+          "edge_anisotropy": 1.0171914896777596,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3607843145728111,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0026785247027873993,
+          "coarse_laplacian_normalized": 0.00011161519796587527,
+          "edge_curvature": 0.35885751247406006,
+          "edge_anisotropy": 2.059729619258108,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.411764707416296,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0015257889172062278,
+          "coarse_laplacian_normalized": 6.584302172996104e-05,
+          "edge_curvature": 0.33538997173309326,
+          "edge_anisotropy": 1.7916011853801415,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3960784338414669,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0015123342163860798,
+          "coarse_laplacian_normalized": 6.464499165304005e-05,
+          "edge_curvature": 0.3184707760810852,
+          "edge_anisotropy": 2.2143717806209016,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.39215686544775963,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0020896284841001034,
+          "coarse_laplacian_normalized": 8.407047425862402e-05,
+          "edge_curvature": 0.3765755295753479,
+          "edge_anisotropy": 1.6865918574836418,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.10588236153125763,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.06276822090148926,
+          "coarse_laplacian_normalized": 0.002117108553647995,
+          "edge_curvature": 0.4303772747516632,
+          "edge_anisotropy": 1.12144891378783,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.12941177189350128,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.02713119052350521,
+          "coarse_laplacian_normalized": 0.0009931421373039484,
+          "edge_curvature": 0.41309303045272827,
+          "edge_anisotropy": 1.0609473194763532,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.07843136787414551,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.07478586584329605,
+          "coarse_laplacian_normalized": 0.0027604263741523027,
+          "edge_curvature": 0.41842809319496155,
+          "edge_anisotropy": 1.0022872466109634,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.07843136787414551,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.09718350321054459,
+          "coarse_laplacian_normalized": 0.003372615436092019,
+          "edge_curvature": 0.4409354329109192,
+          "edge_anisotropy": 1.0340159744480661,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        }
+      ],
+      "source_size": [
+        2448,
+        3264
+      ],
+      "textured_regions": 7,
+      "clear_regions": 3,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/00825.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          2448,
+          3264
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "name": "01517.jpg",
+    "sha256": "d203558735bfbb4551250e24a5c5f6e84e65284d22a8d1ca62b486ce8b0f914f",
+    "size": [
+      4160,
+      3120
+    ],
+    "official_annotations": {
+      "Image name": "01517.jpg",
+      "Animal": 0,
+      "Cityscape": 0,
+      "Human": 0,
+      "Indoor scene": 0,
+      "Landscape": 1,
+      "Night scene": 0,
+      "Plant": 0,
+      "Still-life": 0,
+      "Others": 0,
+      "MOS": 82.38,
+      "Brightness": 81.78,
+      "Colorfulness": 79.11,
+      "Contrast": 76.67,
+      "Noisiness": 80.78,
+      "Sharpness": 81.33
+    },
+    "local_recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.2529465919942595,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.05882352590560913,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.2354206144809723,
+          "coarse_laplacian_normalized": 0.011404265649616718,
+          "edge_curvature": 0.4416346251964569,
+          "edge_anisotropy": 1.0281426937607308,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.2078431248664856,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.5122742652893066,
+          "coarse_laplacian_normalized": 0.048714060336351395,
+          "edge_curvature": 0.5429769158363342,
+          "edge_anisotropy": 1.2516072625406878,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6117647141218185,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.4599490761756897,
+          "coarse_laplacian_normalized": 0.035429440438747406,
+          "edge_curvature": 0.3829037547111511,
+          "edge_anisotropy": 1.2504142188825156,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.054901957511901855,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.32464927434921265,
+          "coarse_laplacian_normalized": 0.015277615748345852,
+          "edge_curvature": 0.44720542430877686,
+          "edge_anisotropy": 1.0380826389306113,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.3803921565413475,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.23499608039855957,
+          "coarse_laplacian_normalized": 0.020090321078896523,
+          "edge_curvature": 0.3734474182128906,
+          "edge_anisotropy": 1.0363803026044343,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5843137465417385,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.40640026330947876,
+          "coarse_laplacian_normalized": 0.034296710044145584,
+          "edge_curvature": 0.4134313762187958,
+          "edge_anisotropy": 1.1200832790559614,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.690196093171835,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.3626689016819,
+          "coarse_laplacian_normalized": 0.03842657059431076,
+          "edge_curvature": 0.3598327040672302,
+          "edge_anisotropy": 1.0107264407173557,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5960784256458282,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.10370222479104996,
+          "coarse_laplacian_normalized": 0.010952404700219631,
+          "edge_curvature": 0.4646807909011841,
+          "edge_anisotropy": 1.2328204680242356,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.1764705926179886,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.2690686881542206,
+          "coarse_laplacian_normalized": 0.01519397646188736,
+          "edge_curvature": 0.4171895980834961,
+          "edge_anisotropy": 2.760120631584072,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5019608102738857,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.1777995526790619,
+          "coarse_laplacian_normalized": 0.016300685703754425,
+          "edge_curvature": 0.43564900755882263,
+          "edge_anisotropy": 1.1080657037260977,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5647059073671699,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.2735675573348999,
+          "coarse_laplacian_normalized": 0.027515875175595284,
+          "edge_curvature": 0.4516828954219818,
+          "edge_anisotropy": 1.1018361142858881,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5529411882162094,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.3074345290660858,
+          "coarse_laplacian_normalized": 0.019729558378458023,
+          "edge_curvature": 0.43661394715309143,
+          "edge_anisotropy": 1.6703621046308486,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.10588237643241882,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.2954578101634979,
+          "coarse_laplacian_normalized": 0.011280326172709465,
+          "edge_curvature": 0.473391056060791,
+          "edge_anisotropy": 1.017773278940918,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.2352941334247589,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.1655188351869583,
+          "coarse_laplacian_normalized": 0.010620473884046078,
+          "edge_curvature": 0.462904155254364,
+          "edge_anisotropy": 1.5655229529897758,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.29411764442920685,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.17166191339492798,
+          "coarse_laplacian_normalized": 0.011406602337956429,
+          "edge_curvature": 0.4495813250541687,
+          "edge_anisotropy": 1.3354758059056222,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.23137256503105164,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.06165219843387604,
+          "coarse_laplacian_normalized": 0.002425815910100937,
+          "edge_curvature": 0.4752238988876343,
+          "edge_anisotropy": 1.0068095391156806,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        }
+      ],
+      "source_size": [
+        4160,
+        3120
+      ],
+      "textured_regions": 14,
+      "clear_regions": 14,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/01517.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          4160,
+          3120
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "name": "04120.jpg",
+    "sha256": "16eaa99ff2440de12528e06b07ee89ae95ff8a94e950211ecd9a2dd70f9d40cd",
+    "size": [
+      4032,
+      3024
+    ],
+    "official_annotations": {
+      "Image name": "04120.jpg",
+      "Animal": 0,
+      "Cityscape": 0,
+      "Human": 0,
+      "Indoor scene": 0,
+      "Landscape": 1,
+      "Night scene": 0,
+      "Plant": 0,
+      "Still-life": 0,
+      "Others": 0,
+      "MOS": 76.45,
+      "Brightness": 70.83,
+      "Colorfulness": 73.83,
+      "Contrast": 72.5,
+      "Noisiness": 79.64,
+      "Sharpness": 75.27
+    },
+    "local_recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.22159544999885838,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.2549019455909729,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0024482361041009426,
+          "coarse_laplacian_normalized": 0.00026370619889348745,
+          "edge_curvature": 0.262624055147171,
+          "edge_anisotropy": 1.545897409543117,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3176470398902893,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0023982091806828976,
+          "coarse_laplacian_normalized": 0.0002659390738699585,
+          "edge_curvature": 0.26123306155204773,
+          "edge_anisotropy": 1.2511517850662568,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3333333134651184,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0018216627649962902,
+          "coarse_laplacian_normalized": 0.0002238884480902925,
+          "edge_curvature": 0.24246041476726532,
+          "edge_anisotropy": 1.4116066984597766,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3019607663154602,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.002118941629305482,
+          "coarse_laplacian_normalized": 0.00023794728622306138,
+          "edge_curvature": 0.26518312096595764,
+          "edge_anisotropy": 1.2872006250588803,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.21568626165390015,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.004400718957185745,
+          "coarse_laplacian_normalized": 0.0005570198991335928,
+          "edge_curvature": 0.24052958190441132,
+          "edge_anisotropy": 1.6846509223327903,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.2745097875595093,
+          "texture_fraction": 0.2950642903645833,
+          "laplacian_normalized": 0.0018022664589807391,
+          "coarse_laplacian_normalized": 0.00022333909873850644,
+          "edge_curvature": 0.2471184879541397,
+          "edge_anisotropy": 1.9281043333927284,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.1921568512916565,
+          "texture_fraction": 0.2217339409722222,
+          "laplacian_normalized": 0.002671273425221443,
+          "coarse_laplacian_normalized": 0.0002839372318703681,
+          "edge_curvature": 0.253075510263443,
+          "edge_anisotropy": 1.5807310129046457,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.1607843041419983,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.18682372570037842,
+          "coarse_laplacian_normalized": 0.024504760280251503,
+          "edge_curvature": 0.3855917155742645,
+          "edge_anisotropy": 3.228048425698914,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.09411764144897461,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.026431022211909294,
+          "coarse_laplacian_normalized": 0.002621916588395834,
+          "edge_curvature": 0.2988281846046448,
+          "edge_anisotropy": 2.0875208041954507,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.10980391502380371,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.06649678200483322,
+          "coarse_laplacian_normalized": 0.008309717290103436,
+          "edge_curvature": 0.3056611716747284,
+          "edge_anisotropy": 7.230234468679573,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6705882400274277,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.011930315755307674,
+          "coarse_laplacian_normalized": 0.0016157424543052912,
+          "edge_curvature": 0.38008350133895874,
+          "edge_anisotropy": 1.0884084487888275,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725489377975464,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.010782575234770775,
+          "coarse_laplacian_normalized": 0.001420451095327735,
+          "edge_curvature": 0.25034990906715393,
+          "edge_anisotropy": 2.892492226207762,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.36862747371196747,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.01450730673968792,
+          "coarse_laplacian_normalized": 0.001474569784477353,
+          "edge_curvature": 0.3721102774143219,
+          "edge_anisotropy": 2.700689778410351,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.4745098277926445,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.016780393198132515,
+          "coarse_laplacian_normalized": 0.0021916183177381754,
+          "edge_curvature": 0.3680802583694458,
+          "edge_anisotropy": 1.7681878647412232,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5372549220919609,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.01380957942456007,
+          "coarse_laplacian_normalized": 0.0017789287958294153,
+          "edge_curvature": 0.39188483357429504,
+          "edge_anisotropy": 1.5426261576044622,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.4078431408852339,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.011883801780641079,
+          "coarse_laplacian_normalized": 0.0011795073514804244,
+          "edge_curvature": 0.368613600730896,
+          "edge_anisotropy": 2.142015274437779,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        }
+      ],
+      "source_size": [
+        3024,
+        4032
+      ],
+      "textured_regions": 15,
+      "clear_regions": 8,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/04120.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          3024,
+          4032
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "name": "04290.jpg",
+    "sha256": "3fab02f033d13a42100233763f89e6dd0c8b1d1b83f565f08d72fccd342ff14f",
+    "size": [
+      4032,
+      3024
+    ],
+    "official_annotations": {
+      "Image name": "04290.jpg",
+      "Animal": 0,
+      "Cityscape": 0,
+      "Human": 0,
+      "Indoor scene": 0,
+      "Landscape": 1,
+      "Night scene": 0,
+      "Plant": 0,
+      "Still-life": 0,
+      "Others": 0,
+      "MOS": 69.64,
+      "Brightness": 62.64,
+      "Colorfulness": 71.5,
+      "Contrast": 67.45,
+      "Noisiness": 73.3,
+      "Sharpness": 75.2
+    },
+    "local_recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.6089235830004327,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.3803921341896057,
+          "texture_fraction": 0.2810194227430556,
+          "laplacian_normalized": 0.02312304638326168,
+          "coarse_laplacian_normalized": 0.007658134680241346,
+          "edge_curvature": 0.2846929132938385,
+          "edge_anisotropy": 1.5073860561372563,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.023529410362243652,
+          "texture_fraction": 0.0727267795138889,
+          "laplacian_normalized": 0.451558381319046,
+          "coarse_laplacian_normalized": 0.1208263486623764,
+          "edge_curvature": 0.36061984300613403,
+          "edge_anisotropy": 1.5069355398547424,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5176470577716827,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.023580607026815414,
+          "coarse_laplacian_normalized": 0.0064917984418570995,
+          "edge_curvature": 0.2606566548347473,
+          "edge_anisotropy": 1.2110535376374592,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6117646992206573,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.07704105228185654,
+          "coarse_laplacian_normalized": 0.02180444821715355,
+          "edge_curvature": 0.23923319578170776,
+          "edge_anisotropy": 3.1056993400556507,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.47058823704719543,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.01963909901678562,
+          "coarse_laplacian_normalized": 0.006052692420780659,
+          "edge_curvature": 0.2353539764881134,
+          "edge_anisotropy": 1.0483025310228489,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.4117647111415863,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.03813008964061737,
+          "coarse_laplacian_normalized": 0.010942214168608189,
+          "edge_curvature": 0.23317858576774597,
+          "edge_anisotropy": 1.111033916699787,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5411764830350876,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.09489645808935165,
+          "coarse_laplacian_normalized": 0.026173405349254608,
+          "edge_curvature": 0.2543516457080841,
+          "edge_anisotropy": 1.006053664612748,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.4117647260427475,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.07357818633317947,
+          "coarse_laplacian_normalized": 0.021791068837046623,
+          "edge_curvature": 0.24552839994430542,
+          "edge_anisotropy": 1.3323184918048334,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.43529412150382996,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0010239562252536416,
+          "coarse_laplacian_normalized": 0.00026508670998737216,
+          "edge_curvature": 0.19806520640850067,
+          "edge_anisotropy": 1.1537776668113446,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.5686274617910385,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.00328253791667521,
+          "coarse_laplacian_normalized": 0.0011324570514261723,
+          "edge_curvature": 0.22516420483589172,
+          "edge_anisotropy": 5.823754838668089,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5490196198225021,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.007982864044606686,
+          "coarse_laplacian_normalized": 0.0025147474370896816,
+          "edge_curvature": 0.23175868391990662,
+          "edge_anisotropy": 1.5602231685605237,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6156862825155258,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.04411008581519127,
+          "coarse_laplacian_normalized": 0.012580462731420994,
+          "edge_curvature": 0.28326213359832764,
+          "edge_anisotropy": 1.093585430579153,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.08235293626785278,
+          "texture_fraction": 0.06461588541666667,
+          "laplacian_normalized": 0.014795167371630669,
+          "coarse_laplacian_normalized": 0.0027413147035986185,
+          "edge_curvature": 0.275097131729126,
+          "edge_anisotropy": 1.165512148292145,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.09019607305526733,
+          "texture_fraction": 0.08936225043402778,
+          "laplacian_normalized": 0.015086650848388672,
+          "coarse_laplacian_normalized": 0.0028853469993919134,
+          "edge_curvature": 0.2617589235305786,
+          "edge_anisotropy": 1.1542864243995101,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0941176563501358,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.044917117804288864,
+          "coarse_laplacian_normalized": 0.01071920059621334,
+          "edge_curvature": 0.24901486933231354,
+          "edge_anisotropy": 1.1129354656832815,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.24313725531101227,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.013614722527563572,
+          "coarse_laplacian_normalized": 0.003753375494852662,
+          "edge_curvature": 0.24049127101898193,
+          "edge_anisotropy": 1.2475673438007373,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        }
+      ],
+      "source_size": [
+        4032,
+        3024
+      ],
+      "textured_regions": 12,
+      "clear_regions": 10,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/04290.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          4032,
+          3024
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "name": "05673.jpg",
+    "sha256": "ae6b2d2e7b3457edb1ae38e9c01f7960221a37c11438f28421fc66517179b694",
+    "size": [
+      2336,
+      4160
+    ],
+    "official_annotations": {
+      "Image name": "05673.jpg",
+      "Animal": 0,
+      "Cityscape": 0,
+      "Human": 0,
+      "Indoor scene": 0,
+      "Landscape": 1,
+      "Night scene": 0,
+      "Plant": 0,
+      "Still-life": 0,
+      "Others": 0,
+      "MOS": 48.71,
+      "Brightness": 47.71,
+      "Colorfulness": 46.88,
+      "Contrast": 41.75,
+      "Noisiness": 32.5,
+      "Sharpness": 37.38
+    },
+    "local_recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.20620579100068426,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.047058820724487305,
+          "texture_fraction": 0.10638427734375,
+          "laplacian_normalized": 0.07005457580089569,
+          "coarse_laplacian_normalized": 0.002132126595824957,
+          "edge_curvature": 0.46047624945640564,
+          "edge_anisotropy": 1.00290086938374,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0313725471496582,
+          "texture_fraction": 0.05866834852430555,
+          "laplacian_normalized": 0.04493441805243492,
+          "coarse_laplacian_normalized": 0.0013731323415413499,
+          "edge_curvature": 0.4339321255683899,
+          "edge_anisotropy": 1.0277416354516733,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.05098038911819458,
+          "texture_fraction": 0.08972846137152778,
+          "laplacian_normalized": 0.05283196270465851,
+          "coarse_laplacian_normalized": 0.0017456086352467537,
+          "edge_curvature": 0.42595160007476807,
+          "edge_anisotropy": 1.0894506994261082,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.03529411554336548,
+          "texture_fraction": 0.08209228515625,
+          "laplacian_normalized": 0.05341632291674614,
+          "coarse_laplacian_normalized": 0.0017372437287122011,
+          "edge_curvature": 0.42707738280296326,
+          "edge_anisotropy": 1.0868320993523688,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.2549019753932953,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.021477168425917625,
+          "coarse_laplacian_normalized": 0.002728052670136094,
+          "edge_curvature": 0.29206162691116333,
+          "edge_anisotropy": 3.2541593233862276,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.3019607961177826,
+          "texture_fraction": 0.1727023654513889,
+          "laplacian_normalized": 0.004527207463979721,
+          "coarse_laplacian_normalized": 0.00039777150959707797,
+          "edge_curvature": 0.32433372735977173,
+          "edge_anisotropy": 1.5533623824534388,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4000000059604645,
+          "texture_fraction": 0.23771837022569445,
+          "laplacian_normalized": 0.0028046502266079187,
+          "coarse_laplacian_normalized": 0.00027214051806367934,
+          "edge_curvature": 0.31146031618118286,
+          "edge_anisotropy": 1.2401842303949462,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4588235318660736,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.005387231707572937,
+          "coarse_laplacian_normalized": 0.0004639451508410275,
+          "edge_curvature": 0.331528902053833,
+          "edge_anisotropy": 1.1189262482289348,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.054901957511901855,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.15301205217838287,
+          "coarse_laplacian_normalized": 0.008908390067517757,
+          "edge_curvature": 0.3917901813983917,
+          "edge_anisotropy": 1.398365856604636,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.05098038911819458,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.11282044649124146,
+          "coarse_laplacian_normalized": 0.005981028079986572,
+          "edge_curvature": 0.3885866105556488,
+          "edge_anisotropy": 1.3177619286369506,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.054901957511901855,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.09923189878463745,
+          "coarse_laplacian_normalized": 0.004985356703400612,
+          "edge_curvature": 0.4035424590110779,
+          "edge_anisotropy": 1.222821968950936,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.047058820724487305,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.17441271245479584,
+          "coarse_laplacian_normalized": 0.00864245556294918,
+          "edge_curvature": 0.4034474492073059,
+          "edge_anisotropy": 1.0954322995546326,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.15294118225574493,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.07842084765434265,
+          "coarse_laplacian_normalized": 0.0049752346239984035,
+          "edge_curvature": 0.3989895284175873,
+          "edge_anisotropy": 1.2127358977640652,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.18431372940540314,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.04094599932432175,
+          "coarse_laplacian_normalized": 0.0025497404858469963,
+          "edge_curvature": 0.3958902359008789,
+          "edge_anisotropy": 1.2925605387351538,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.1411764770746231,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.06492321938276291,
+          "coarse_laplacian_normalized": 0.004120966419577599,
+          "edge_curvature": 0.38592463731765747,
+          "edge_anisotropy": 1.3744974594627422,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.18431372940540314,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.05556128919124603,
+          "coarse_laplacian_normalized": 0.0035785725340247154,
+          "edge_curvature": 0.4090799391269684,
+          "edge_anisotropy": 1.4082571350913535,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        }
+      ],
+      "source_size": [
+        2336,
+        4160
+      ],
+      "textured_regions": 8,
+      "clear_regions": 5,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/05673.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          2336,
+          4160
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "name": "08425.jpg",
+    "sha256": "c0c61bd1159b7d6f463b22232b04c282d55f86a782061205d825acaacb17f5b0",
+    "size": [
+      3024,
+      4032
+    ],
+    "official_annotations": {
+      "Image name": "08425.jpg",
+      "Animal": 0,
+      "Cityscape": 0,
+      "Human": 0,
+      "Indoor scene": 0,
+      "Landscape": 0.5,
+      "Night scene": 0,
+      "Plant": 0,
+      "Still-life": 0.5,
+      "Others": 0,
+      "MOS": 77.67,
+      "Brightness": 75,
+      "Colorfulness": 70.67,
+      "Contrast": 75,
+      "Noisiness": 58.33,
+      "Sharpness": 70
+    },
+    "local_recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.20251572300185217,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5725490152835846,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.08115427941083908,
+          "coarse_laplacian_normalized": 0.014871528372168541,
+          "edge_curvature": 0.31244370341300964,
+          "edge_anisotropy": 2.4149231379773544,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5725490152835846,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.08100351691246033,
+          "coarse_laplacian_normalized": 0.01541335228830576,
+          "edge_curvature": 0.34637007117271423,
+          "edge_anisotropy": 2.2358231019735366,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6705882400274277,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.07355751097202301,
+          "coarse_laplacian_normalized": 0.014934790320694447,
+          "edge_curvature": 0.3587508201599121,
+          "edge_anisotropy": 1.2805003331155722,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.039215683937072754,
+          "texture_fraction": 0.05241563585069445,
+          "laplacian_normalized": 0.03470383957028389,
+          "coarse_laplacian_normalized": 0.002125610364601016,
+          "edge_curvature": 0.32812201976776123,
+          "edge_anisotropy": 1.0733835919272232,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6078431308269501,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.036108314990997314,
+          "coarse_laplacian_normalized": 0.007023892365396023,
+          "edge_curvature": 0.30835893750190735,
+          "edge_anisotropy": 1.2299775888958548,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5372548997402191,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.05424416437745094,
+          "coarse_laplacian_normalized": 0.01003272831439972,
+          "edge_curvature": 0.3825192153453827,
+          "edge_anisotropy": 1.1332434770892257,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6313725560903549,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.07934162765741348,
+          "coarse_laplacian_normalized": 0.016443777829408646,
+          "edge_curvature": 0.35318633913993835,
+          "edge_anisotropy": 1.194098930088055,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.054901957511901855,
+          "texture_fraction": 0.05323621961805555,
+          "laplacian_normalized": 0.028818100690841675,
+          "coarse_laplacian_normalized": 0.0018004064913839102,
+          "edge_curvature": 0.32359787821769714,
+          "edge_anisotropy": 1.0738789558450874,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.533333346247673,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.050090812146663666,
+          "coarse_laplacian_normalized": 0.008326120674610138,
+          "edge_curvature": 0.33329907059669495,
+          "edge_anisotropy": 1.6669958370758065,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5568627566099167,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0521794818341732,
+          "coarse_laplacian_normalized": 0.008910873904824257,
+          "edge_curvature": 0.38946789503097534,
+          "edge_anisotropy": 2.0413452103508782,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5803921669721603,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.23760004341602325,
+          "coarse_laplacian_normalized": 0.03777899965643883,
+          "edge_curvature": 0.3793116807937622,
+          "edge_anisotropy": 1.108529951448152,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.07843136787414551,
+          "texture_fraction": 0.15865071614583334,
+          "laplacian_normalized": 0.025170238688588142,
+          "coarse_laplacian_normalized": 0.0015334986383095384,
+          "edge_curvature": 0.3625883162021637,
+          "edge_anisotropy": 1.0937273702246133,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5372549146413803,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.024484748020768166,
+          "coarse_laplacian_normalized": 0.004100692458450794,
+          "edge_curvature": 0.38519108295440674,
+          "edge_anisotropy": 2.280717862976665,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5019608065485954,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.02679862454533577,
+          "coarse_laplacian_normalized": 0.004422258120030165,
+          "edge_curvature": 0.3556571304798126,
+          "edge_anisotropy": 1.0076583201958569,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.2705882489681244,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.010217403993010521,
+          "coarse_laplacian_normalized": 0.0011727410601451993,
+          "edge_curvature": 0.36779865622520447,
+          "edge_anisotropy": 1.3880810355842785,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5019608065485954,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.018609728664159775,
+          "coarse_laplacian_normalized": 0.0027060427237302065,
+          "edge_curvature": 0.36214032769203186,
+          "edge_anisotropy": 1.1646636019784695,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        }
+      ],
+      "source_size": [
+        3024,
+        4032
+      ],
+      "textured_regions": 13,
+      "clear_regions": 13,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/08425.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          3024,
+          4032
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "name": "08862.jpg",
+    "sha256": "6554489f3f35677f7e15b01268a7f7b9022c138ecb6470d361c784cc144c9640",
+    "size": [
+      1920,
+      2560
+    ],
+    "official_annotations": {
+      "Image name": "08862.jpg",
+      "Animal": 0,
+      "Cityscape": 0,
+      "Human": 0,
+      "Indoor scene": 0,
+      "Landscape": 1,
+      "Night scene": 0,
+      "Plant": 0,
+      "Still-life": 0,
+      "Others": 0,
+      "MOS": 35.63,
+      "Brightness": 44.13,
+      "Colorfulness": 62.88,
+      "Contrast": 50.63,
+      "Noisiness": 49.75,
+      "Sharpness": 16.14
+    },
+    "local_recommendation": "review",
+    "rejected": false,
+    "reason": "landscape_needs_review",
+    "seconds": 0.13279787699866574,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "uncertain",
+      "reliability": "adequate",
+      "recommendation": "review",
+      "reasons": [
+        "landscape_focus_needs_review"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.03529411554336548,
+          "texture_fraction": 0.048319498697916664,
+          "laplacian_normalized": 0.00518890842795372,
+          "coarse_laplacian_normalized": 0.0003807199827861041,
+          "edge_curvature": 0.22986751794815063,
+          "edge_anisotropy": 3.5941257726987508,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.2588235139846802,
+          "texture_fraction": 0.1346774631076389,
+          "laplacian_normalized": 0.002338084625080228,
+          "coarse_laplacian_normalized": 9.41077305469662e-05,
+          "edge_curvature": 0.35564854741096497,
+          "edge_anisotropy": 1.064845034941493,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.5764705836772919,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.002878932747989893,
+          "coarse_laplacian_normalized": 0.0001054162421496585,
+          "edge_curvature": 0.33241161704063416,
+          "edge_anisotropy": 2.044048037599511,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.46666663885116577,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0019865063950419426,
+          "coarse_laplacian_normalized": 7.896048919064924e-05,
+          "edge_curvature": 0.30578628182411194,
+          "edge_anisotropy": 2.1890337645238107,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.1294117569923401,
+          "texture_fraction": 0.10089111328125,
+          "laplacian_normalized": 0.0034444956108927727,
+          "coarse_laplacian_normalized": 0.00015296481433324516,
+          "edge_curvature": 0.29440268874168396,
+          "edge_anisotropy": 5.001928974903123,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.04313725233078003,
+          "texture_fraction": 0.03228759765625,
+          "laplacian_normalized": 0.008702890016138554,
+          "coarse_laplacian_normalized": 0.00036920211277902126,
+          "edge_curvature": 0.2984997630119324,
+          "edge_anisotropy": 1.0170945785828827,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.7843137234449387,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0019172128522768617,
+          "coarse_laplacian_normalized": 7.380885654129088e-05,
+          "edge_curvature": 0.3057660758495331,
+          "edge_anisotropy": 3.232521467533262,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.7098039239645004,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.001996102975681424,
+          "coarse_laplacian_normalized": 7.702060975134373e-05,
+          "edge_curvature": 0.2800259590148926,
+          "edge_anisotropy": 2.6432560204346776,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.5372549146413803,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0031336494721472263,
+          "coarse_laplacian_normalized": 0.00011556876415852457,
+          "edge_curvature": 0.3381572663784027,
+          "edge_anisotropy": 1.4242237896483911,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.7960784286260605,
+          "texture_fraction": 0.2851155598958333,
+          "laplacian_normalized": 0.0007101771770976484,
+          "coarse_laplacian_normalized": 4.278730557416566e-05,
+          "edge_curvature": 0.29261618852615356,
+          "edge_anisotropy": 10.01057896102739,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.6313725411891937,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0029031068552285433,
+          "coarse_laplacian_normalized": 0.00010387683869339526,
+          "edge_curvature": 0.3698766231536865,
+          "edge_anisotropy": 1.3947087564317546,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.47843137383461,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.006106316577643156,
+          "coarse_laplacian_normalized": 0.00018179835751652718,
+          "edge_curvature": 0.40959006547927856,
+          "edge_anisotropy": 1.542219710650458,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.2549019753932953,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.025978004559874535,
+          "coarse_laplacian_normalized": 0.0007957806228660047,
+          "edge_curvature": 0.44054895639419556,
+          "edge_anisotropy": 1.1452109271979087,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.43529412150382996,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.00512766744941473,
+          "coarse_laplacian_normalized": 0.00017343269428238273,
+          "edge_curvature": 0.39537325501441956,
+          "edge_anisotropy": 2.1600190284496845,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        }
+      ],
+      "source_size": [
+        1920,
+        2560
+      ],
+      "textured_regions": 12,
+      "clear_regions": 1,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/08862.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          1920,
+          2560
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  },
+  {
+    "name": "09114.jpg",
+    "sha256": "abf05a1b1dbc916482be14f4de005ac47f5c87e953e376895c85c98aa2ff74bb",
+    "size": [
+      3016,
+      4032
+    ],
+    "official_annotations": {
+      "Image name": "09114.jpg",
+      "Animal": 0,
+      "Cityscape": 0,
+      "Human": 0,
+      "Indoor scene": 0,
+      "Landscape": 1,
+      "Night scene": 0,
+      "Plant": 0,
+      "Still-life": 0,
+      "Others": 0,
+      "MOS": 44.8,
+      "Brightness": 66.4,
+      "Colorfulness": 64.2,
+      "Contrast": 60.2,
+      "Noisiness": 47.8,
+      "Sharpness": 28
+    },
+    "local_recommendation": "keep",
+    "rejected": false,
+    "reason": "landscape_detail_clear",
+    "seconds": 0.23305416599760065,
+    "evidence": {
+      "version": "manual-modes-v1",
+      "mode": "landscape",
+      "state": "clear",
+      "reliability": "adequate",
+      "recommendation": "keep",
+      "reasons": [
+        "supported_detail_in_textured_regions"
+      ],
+      "subjects": [],
+      "visible_boxes": [],
+      "eye_evidence": false,
+      "regions": [
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4627450704574585,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.004428963642567396,
+          "coarse_laplacian_normalized": 0.0006786030135117471,
+          "edge_curvature": 0.23959389328956604,
+          "edge_anisotropy": 1.320398554585282,
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.6196078360080719,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.004660176113247871,
+          "coarse_laplacian_normalized": 0.0006585086812265217,
+          "edge_curvature": 0.263863742351532,
+          "edge_anisotropy": 2.0847044774784735,
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.27450981736183167,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.02829599753022194,
+          "coarse_laplacian_normalized": 0.002630949253216386,
+          "edge_curvature": 0.3144367039203644,
+          "edge_anisotropy": 1.8692782696599684,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.4156862944364548,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.017465461045503616,
+          "coarse_laplacian_normalized": 0.0016341179143637419,
+          "edge_curvature": 0.3070859909057617,
+          "edge_anisotropy": 1.8025829064218628,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.4156862795352936,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.006589645519852638,
+          "coarse_laplacian_normalized": 0.0006806900491937995,
+          "edge_curvature": 0.283484548330307,
+          "edge_anisotropy": 1.13477858146027,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.35686276853084564,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.028231628239154816,
+          "coarse_laplacian_normalized": 0.003973294515162706,
+          "edge_curvature": 0.28663137555122375,
+          "edge_anisotropy": 1.3833347225561883,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.29411764442920685,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.07277294248342514,
+          "coarse_laplacian_normalized": 0.00988199282437563,
+          "edge_curvature": 0.31239113211631775,
+          "edge_anisotropy": 2.049654929863191,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.3019607812166214,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.04521768167614937,
+          "coarse_laplacian_normalized": 0.005817700177431107,
+          "edge_curvature": 0.3006773889064789,
+          "edge_anisotropy": 1.5115544382890598,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.21176469326019287,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.04488833621144295,
+          "coarse_laplacian_normalized": 0.006325968541204929,
+          "edge_curvature": 0.31581366062164307,
+          "edge_anisotropy": 1.680385783191641,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.2666666507720947,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.060633521527051926,
+          "coarse_laplacian_normalized": 0.00921675469726324,
+          "edge_curvature": 0.33399638533592224,
+          "edge_anisotropy": 2.6112271695654377,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "uncertain",
+          "reason": "borderline_body_detail",
+          "contrast": 0.5725490152835846,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.005611850414425135,
+          "coarse_laplacian_normalized": 0.0006943118060007691,
+          "edge_curvature": 0.3039079010486603,
+          "edge_anisotropy": 2.269602611224407,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.23529410362243652,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.03157193958759308,
+          "coarse_laplacian_normalized": 0.0019592279568314552,
+          "edge_curvature": 0.3539223372936249,
+          "edge_anisotropy": 1.0650898056625024,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.18039214611053467,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.09765147417783737,
+          "coarse_laplacian_normalized": 0.013042336329817772,
+          "edge_curvature": 0.30482596158981323,
+          "edge_anisotropy": 3.3260820371551727,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.15686273574829102,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.06866592168807983,
+          "coarse_laplacian_normalized": 0.010122505947947502,
+          "edge_curvature": 0.2765492796897888,
+          "edge_anisotropy": 3.979735176879323,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.1764705777168274,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.0318320132791996,
+          "coarse_laplacian_normalized": 0.004782297182828188,
+          "edge_curvature": 0.26629218459129333,
+          "edge_anisotropy": 3.530439606847615,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.15294116735458374,
+          "texture_fraction": 0.3000013563368056,
+          "laplacian_normalized": 0.05284646898508072,
+          "coarse_laplacian_normalized": 0.006977748591452837,
+          "edge_curvature": 0.28644800186157227,
+          "edge_anisotropy": 3.647355284817393,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            384,
+            384
+          ]
+        }
+      ],
+      "source_size": [
+        3016,
+        4032
+      ],
+      "textured_regions": 16,
+      "clear_regions": 12,
+      "decode": {
+        "version": "source-first-v1",
+        "source_path": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/09114.jpg",
+        "source_kind": "standard_image",
+        "source_size": [
+          3016,
+          4032
+        ],
+        "full_resolution": true,
+        "color_space": "sRGB",
+        "warnings": [],
+        "evidence_sufficient": true
+      }
+    }
+  }
+]

@@ -1,0 +1,63 @@
+{
+  "n": 5,
+  "recommendations": {
+    "keep": 5
+  },
+  "rejected": 0,
+  "face_boxes": 0,
+  "runtime_seconds": 0.2727136090034037,
+  "spearman_clear_regions_vs_human_acr": 0.31622776601683794,
+  "human_KDU_labels": 0,
+  "culling_precision": null,
+  "culling_recall": null,
+  "human_group_labels": 0,
+  "acr_by_recommendation": {
+    "keep": {
+      "n": 5,
+      "mean": 3.3236313899873933
+    }
+  },
+  "synthetic_perturbation_recommendations": {
+    "blur3": {
+      "review": 5
+    },
+    "crop5": {
+      "keep": 5
+    }
+  },
+  "version": {
+    "git": "8a29559de0749ff2a982e05e3524405a055054f2",
+    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+    "pillow": "12.3.0",
+    "numpy": "2.3.5",
+    "opencv": "4.14.0",
+    "grouping": "workspace-dhash64-block-ssim-v1",
+    "source_hashes": {
+      "src/ai_cull_assistant/analysis_modes.py": "b286afac59425f95768955766c9f6f728111e079a7e6bfe685a6411e33da54b2",
+      "src/ai_cull_assistant/grouping.py": "b1ad576993a0494c6fa672bf30bebdd5d4d49d6ffcb5ce99e4d30b5cff3cca9a",
+      "src/ai_cull_assistant/body_focus.py": "0ace85a293af8f8c01fcaa19872f567d357ba367ff8a95c0e05215a32a77d0fe",
+      "src/ai_cull_assistant/shared_decode.py": "efb1badf1387644b5c3cb827d24a86bb470e12167d0f3739cf9a2c85c6dd9ae1"
+    },
+    "metadata_sha256": "d0bd1ad54a60bc36fe172049e46ac76c83554e50ab84acebfd47b82b3e698a0a",
+    "scene_selection_sha256": "fa02e585f36f5eabfead490d5a76130ce846e142f40726b2bb7765f39b697769",
+    "presets": {
+      "strict": {
+        "hash_distance": 8,
+        "structure": 0.86,
+        "aspect": 1.08
+      },
+      "standard": {
+        "hash_distance": 10,
+        "structure": 0.78,
+        "aspect": 1.15
+      },
+      "loose": {
+        "hash_distance": 12,
+        "structure": 0.68,
+        "aspect": 1.25
+      }
+    }
+  },
+  "original_bytes_unchanged": true
+}
