@@ -1,0 +1,277 @@
+[
+  {
+    "name": "00570.jpg",
+    "results": {
+      "native_centres_replay": {
+        "clear_regions": 16,
+        "states": {
+          "clear": 16
+        },
+        "recommendation": "keep"
+      },
+      "native_full_tiles": {
+        "clear_regions": 16,
+        "states": {
+          "clear": 16
+        },
+        "recommendation": "keep"
+      },
+      "same_centres_half_scale": {
+        "clear_regions": 16,
+        "states": {
+          "clear": 16
+        },
+        "recommendation": "keep"
+      }
+    },
+    "combined_probe_seconds": 0.7454646909973235
+  },
+  {
+    "name": "00825.jpg",
+    "results": {
+      "native_centres_replay": {
+        "clear_regions": 3,
+        "states": {
+          "insufficient": 9,
+          "clear": 3,
+          "uncertain": 4
+        },
+        "recommendation": "keep"
+      },
+      "native_full_tiles": {
+        "clear_regions": 2,
+        "states": {
+          "insufficient": 7,
+          "clear": 2,
+          "uncertain": 7
+        },
+        "recommendation": "keep"
+      },
+      "same_centres_half_scale": {
+        "clear_regions": 1,
+        "states": {
+          "insufficient": 9,
+          "uncertain": 6,
+          "clear": 1
+        },
+        "recommendation": "review"
+      }
+    },
+    "combined_probe_seconds": 0.509421200993529
+  },
+  {
+    "name": "01517.jpg",
+    "results": {
+      "native_centres_replay": {
+        "clear_regions": 14,
+        "states": {
+          "insufficient": 2,
+          "clear": 14
+        },
+        "recommendation": "keep"
+      },
+      "native_full_tiles": {
+        "clear_regions": 16,
+        "states": {
+          "clear": 16
+        },
+        "recommendation": "keep"
+      },
+      "same_centres_half_scale": {
+        "clear_regions": 14,
+        "states": {
+          "insufficient": 2,
+          "clear": 14
+        },
+        "recommendation": "keep"
+      }
+    },
+    "combined_probe_seconds": 0.6556187360038166
+  },
+  {
+    "name": "04120.jpg",
+    "results": {
+      "native_centres_replay": {
+        "clear_regions": 8,
+        "states": {
+          "uncertain": 7,
+          "clear": 8,
+          "insufficient": 1
+        },
+        "recommendation": "keep"
+      },
+      "native_full_tiles": {
+        "clear_regions": 10,
+        "states": {
+          "uncertain": 6,
+          "clear": 10
+        },
+        "recommendation": "keep"
+      },
+      "same_centres_half_scale": {
+        "clear_regions": 9,
+        "states": {
+          "uncertain": 6,
+          "clear": 9,
+          "insufficient": 1
+        },
+        "recommendation": "keep"
+      }
+    },
+    "combined_probe_seconds": 0.5852927019950585
+  },
+  {
+    "name": "04290.jpg",
+    "results": {
+      "native_centres_replay": {
+        "clear_regions": 10,
+        "states": {
+          "clear": 10,
+          "insufficient": 4,
+          "uncertain": 2
+        },
+        "recommendation": "keep"
+      },
+      "native_full_tiles": {
+        "clear_regions": 15,
+        "states": {
+          "clear": 15,
+          "uncertain": 1
+        },
+        "recommendation": "keep"
+      },
+      "same_centres_half_scale": {
+        "clear_regions": 11,
+        "states": {
+          "clear": 11,
+          "insufficient": 4,
+          "uncertain": 1
+        },
+        "recommendation": "keep"
+      }
+    },
+    "combined_probe_seconds": 0.5569069699995453
+  },
+  {
+    "name": "05673.jpg",
+    "results": {
+      "native_centres_replay": {
+        "clear_regions": 5,
+        "states": {
+          "insufficient": 8,
+          "clear": 5,
+          "uncertain": 3
+        },
+        "recommendation": "keep"
+      },
+      "native_full_tiles": {
+        "clear_regions": 9,
+        "states": {
+          "insufficient": 4,
+          "clear": 9,
+          "uncertain": 3
+        },
+        "recommendation": "keep"
+      },
+      "same_centres_half_scale": {
+        "clear_regions": 8,
+        "states": {
+          "insufficient": 8,
+          "clear": 8
+        },
+        "recommendation": "keep"
+      }
+    },
+    "combined_probe_seconds": 0.5494927989930147
+  },
+  {
+    "name": "08425.jpg",
+    "results": {
+      "native_centres_replay": {
+        "clear_regions": 13,
+        "states": {
+          "clear": 13,
+          "insufficient": 3
+        },
+        "recommendation": "keep"
+      },
+      "native_full_tiles": {
+        "clear_regions": 15,
+        "states": {
+          "clear": 15,
+          "insufficient": 1
+        },
+        "recommendation": "keep"
+      },
+      "same_centres_half_scale": {
+        "clear_regions": 13,
+        "states": {
+          "clear": 13,
+          "insufficient": 3
+        },
+        "recommendation": "keep"
+      }
+    },
+    "combined_probe_seconds": 0.5900661009945907
+  },
+  {
+    "name": "08862.jpg",
+    "results": {
+      "native_centres_replay": {
+        "clear_regions": 1,
+        "states": {
+          "insufficient": 4,
+          "uncertain": 11,
+          "clear": 1
+        },
+        "recommendation": "review"
+      },
+      "native_full_tiles": {
+        "clear_regions": 0,
+        "states": {
+          "insufficient": 4,
+          "uncertain": 12
+        },
+        "recommendation": "review"
+      },
+      "same_centres_half_scale": {
+        "clear_regions": 0,
+        "states": {
+          "insufficient": 4,
+          "uncertain": 12
+        },
+        "recommendation": "review"
+      }
+    },
+    "combined_probe_seconds": 0.27641121100168675
+  },
+  {
+    "name": "09114.jpg",
+    "results": {
+      "native_centres_replay": {
+        "clear_regions": 12,
+        "states": {
+          "uncertain": 4,
+          "clear": 12
+        },
+        "recommendation": "keep"
+      },
+      "native_full_tiles": {
+        "clear_regions": 9,
+        "states": {
+          "uncertain": 7,
+          "clear": 9
+        },
+        "recommendation": "keep"
+      },
+      "same_centres_half_scale": {
+        "clear_regions": 16,
+        "states": {
+          "clear": 16
+        },
+        "recommendation": "keep"
+      }
+    },
+    "combined_probe_seconds": 0.6865994550025789
+  }
+]

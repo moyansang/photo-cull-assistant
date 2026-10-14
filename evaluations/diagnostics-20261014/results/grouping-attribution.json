@@ -1,0 +1,1819 @@
+{
+  "summary": {
+    "source_count": 14,
+    "positive_pairs": 84,
+    "different_source_proxy_pairs": 1183,
+    "bank_fractions": [
+      0,
+      0.025,
+      0.05,
+      0.1
+    ],
+    "probe_fractions": [
+      0.01,
+      0.02,
+      0.03,
+      0.05,
+      0.07,
+      0.1
+    ],
+    "results": {
+      "baseline": {
+        "same_source_recovered": 21,
+        "different_source_matches": 0,
+        "by_crop": {
+          "0.01": 13,
+          "0.02": 7,
+          "0.03": 1,
+          "0.05": 0,
+          "0.07": 0,
+          "0.1": 0
+        }
+      },
+      "hash20_only": {
+        "same_source_recovered": 21,
+        "different_source_matches": 0,
+        "by_crop": {
+          "0.01": 13,
+          "0.02": 7,
+          "0.03": 1,
+          "0.05": 0,
+          "0.07": 0,
+          "0.1": 0
+        }
+      },
+      "hash20_structure05": {
+        "same_source_recovered": 53,
+        "different_source_matches": 0,
+        "by_crop": {
+          "0.01": 14,
+          "0.02": 13,
+          "0.03": 12,
+          "0.05": 8,
+          "0.07": 5,
+          "0.1": 1
+        }
+      },
+      "center_crop_bank": {
+        "same_source_recovered": 73,
+        "different_source_matches": 0,
+        "by_crop": {
+          "0.01": 13,
+          "0.02": 14,
+          "0.03": 14,
+          "0.05": 14,
+          "0.07": 4,
+          "0.1": 14
+        }
+      }
+    },
+    "feature_times": {
+      "koniq_1674951001.jpg": {
+        "single_feature_seconds": 0.008307663003506605,
+        "bank_feature_seconds": 0.022320798998407554
+      },
+      "koniq_1679551869.jpg": {
+        "single_feature_seconds": 0.005591091998212505,
+        "bank_feature_seconds": 0.01971387999947183
+      },
+      "koniq_169779095.jpg": {
+        "single_feature_seconds": 0.0056879160038079135,
+        "bank_feature_seconds": 0.02012265800294699
+      },
+      "koniq_1708787959.jpg": {
+        "single_feature_seconds": 0.00548967099894071,
+        "bank_feature_seconds": 0.019941999002185185
+      },
+      "koniq_196734006.jpg": {
+        "single_feature_seconds": 0.005608086998108774,
+        "bank_feature_seconds": 0.019512329999997746
+      },
+      "spaq_00570.jpg": {
+        "single_feature_seconds": 0.08574107100139372,
+        "bank_feature_seconds": 0.3858307269983925
+      },
+      "spaq_00825.jpg": {
+        "single_feature_seconds": 0.05141194500174606,
+        "bank_feature_seconds": 0.1882937629998196
+      },
+      "spaq_01517.jpg": {
+        "single_feature_seconds": 0.08447856300335843,
+        "bank_feature_seconds": 0.3127402770041954
+      },
+      "spaq_04120.jpg": {
+        "single_feature_seconds": 0.07891909000318265,
+        "bank_feature_seconds": 0.2992248859954998
+      },
+      "spaq_04290.jpg": {
+        "single_feature_seconds": 0.08212698400166119,
+        "bank_feature_seconds": 0.2958567680034321
+      },
+      "spaq_05673.jpg": {
+        "single_feature_seconds": 0.0614403340005083,
+        "bank_feature_seconds": 0.22741930900519947
+      },
+      "spaq_08425.jpg": {
+        "single_feature_seconds": 0.07601573799911421,
+        "bank_feature_seconds": 0.2989161020013853
+      },
+      "spaq_08862.jpg": {
+        "single_feature_seconds": 0.03319662599824369,
+        "bank_feature_seconds": 0.12199182999756886
+      },
+      "spaq_09114.jpg": {
+        "single_feature_seconds": 0.07722926999849733,
+        "bank_feature_seconds": 0.28202605999831576
+      }
+    }
+  },
+  "baseline_pair_details": [
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 0,
+      "structure": 0.9258031845092773,
+      "aspect_ratio": 1.0013297872340425,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 3,
+      "structure": 0.8025842905044556,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 5,
+      "structure": 0.7083317041397095,
+      "aspect_ratio": 1.0006930006930006,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 9,
+      "structure": 0.5905476808547974,
+      "aspect_ratio": 1.0007230657989876,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 13,
+      "structure": 0.5159707069396973,
+      "aspect_ratio": 1.0,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 16,
+      "structure": 0.4679677188396454,
+      "aspect_ratio": 1.001628664495114,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 6,
+      "structure": 0.6617363095283508,
+      "aspect_ratio": 1.0013297872340425,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 9,
+      "structure": 0.3737463355064392,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 12,
+      "structure": 0.47839444875717163,
+      "aspect_ratio": 1.0006930006930006,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 12,
+      "structure": 0.25064629316329956,
+      "aspect_ratio": 1.0007230657989876,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 16,
+      "structure": 0.240105539560318,
+      "aspect_ratio": 1.0,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 20,
+      "structure": 0.17956453561782837,
+      "aspect_ratio": 1.001628664495114,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 2,
+      "structure": 0.9347659349441528,
+      "aspect_ratio": 1.0013297872340425,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 5,
+      "structure": 0.8322760462760925,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 7,
+      "structure": 0.7433704137802124,
+      "aspect_ratio": 1.0006930006930006,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 9,
+      "structure": 0.635504961013794,
+      "aspect_ratio": 1.0007230657989876,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 13,
+      "structure": 0.5615879893302917,
+      "aspect_ratio": 1.0,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 18,
+      "structure": 0.48069342970848083,
+      "aspect_ratio": 1.001628664495114,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 2,
+      "structure": 0.8776445984840393,
+      "aspect_ratio": 1.0013297872340425,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 3,
+      "structure": 0.6590571403503418,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 7,
+      "structure": 0.5003288984298706,
+      "aspect_ratio": 1.0006930006930006,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 11,
+      "structure": 0.4142615795135498,
+      "aspect_ratio": 1.0007230657989876,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 13,
+      "structure": 0.3498679995536804,
+      "aspect_ratio": 1.0,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 18,
+      "structure": 0.30948442220687866,
+      "aspect_ratio": 1.001628664495114,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 2,
+      "structure": 0.8972742557525635,
+      "aspect_ratio": 1.0013297872340425,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 3,
+      "structure": 0.7270920276641846,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 3,
+      "structure": 0.586745023727417,
+      "aspect_ratio": 1.0006930006930006,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 4,
+      "structure": 0.4835735261440277,
+      "aspect_ratio": 1.0007230657989876,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 8,
+      "structure": 0.41394662857055664,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 11,
+      "structure": 0.3100398778915405,
+      "aspect_ratio": 1.001628664495114,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 0,
+      "structure": 0.9026817083358765,
+      "aspect_ratio": 1.0003271180896303,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 2,
+      "structure": 0.7041715979576111,
+      "aspect_ratio": 1.00016691704223,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 5,
+      "structure": 0.5299856662750244,
+      "aspect_ratio": 1.0001705320600274,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 9,
+      "structure": 0.3430531620979309,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 11,
+      "structure": 0.24623151123523712,
+      "aspect_ratio": 1.0001863238308177,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 18,
+      "structure": 0.15541204810142517,
+      "aspect_ratio": 1.0,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 3,
+      "structure": 0.9561752080917358,
+      "aspect_ratio": 1.0006253908692933,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 6,
+      "structure": 0.8633424043655396,
+      "aspect_ratio": 1.000212765957447,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 6,
+      "structure": 0.7675386667251587,
+      "aspect_ratio": 1.0004345936549326,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 12,
+      "structure": 0.6524362564086914,
+      "aspect_ratio": 1.0002269117313365,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 18,
+      "structure": 0.6093117594718933,
+      "aspect_ratio": 1.0,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 23,
+      "structure": 0.5813260078430176,
+      "aspect_ratio": 1.0005107252298264,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 1,
+      "structure": 0.9461498856544495,
+      "aspect_ratio": 1.0003271180896303,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 1,
+      "structure": 0.841431736946106,
+      "aspect_ratio": 1.00016691704223,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 2,
+      "structure": 0.7282701730728149,
+      "aspect_ratio": 1.0001705320600274,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 6,
+      "structure": 0.5597163438796997,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 8,
+      "structure": 0.448598712682724,
+      "aspect_ratio": 1.0001863238308177,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 17,
+      "structure": 0.337891161441803,
+      "aspect_ratio": 1.0,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 1,
+      "structure": 0.9114749431610107,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 4,
+      "structure": 0.7161222696304321,
+      "aspect_ratio": 1.0005167958656331,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 4,
+      "structure": 0.5350916385650635,
+      "aspect_ratio": 1.0001759324419424,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 5,
+      "structure": 0.3346153199672699,
+      "aspect_ratio": 1.0003675119441382,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 12,
+      "structure": 0.24376237392425537,
+      "aspect_ratio": 1.0003846153846154,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 16,
+      "structure": 0.16390734910964966,
+      "aspect_ratio": 1.0002066542674106,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 1,
+      "structure": 0.9286969900131226,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 3,
+      "structure": 0.7828315496444702,
+      "aspect_ratio": 1.0005167958656331,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 8,
+      "structure": 0.656287670135498,
+      "aspect_ratio": 1.0001759324419424,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 12,
+      "structure": 0.5149704813957214,
+      "aspect_ratio": 1.0003675119441382,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 14,
+      "structure": 0.4324498772621155,
+      "aspect_ratio": 1.0003846153846154,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 23,
+      "structure": 0.33341941237449646,
+      "aspect_ratio": 1.0002066542674106,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 5,
+      "structure": 0.9379687309265137,
+      "aspect_ratio": 1.0005108419481898,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 7,
+      "structure": 0.811017632484436,
+      "aspect_ratio": 1.0003499622589722,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 9,
+      "structure": 0.7138547301292419,
+      "aspect_ratio": 1.0001751742984268,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 12,
+      "structure": 0.6261347532272339,
+      "aspect_ratio": 1.0001902949571837,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 14,
+      "structure": 0.5852594375610352,
+      "aspect_ratio": 1.000589947900705,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 19,
+      "structure": 0.5780744552612305,
+      "aspect_ratio": 1.0004282655246253,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 0,
+      "structure": 0.8692101836204529,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 2,
+      "structure": 0.6024320125579834,
+      "aspect_ratio": 1.0005167958656331,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 5,
+      "structure": 0.39791348576545715,
+      "aspect_ratio": 1.0001759324419424,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 11,
+      "structure": 0.2213670313358307,
+      "aspect_ratio": 1.0003675119441382,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 16,
+      "structure": 0.17055290937423706,
+      "aspect_ratio": 1.0003846153846154,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 18,
+      "structure": 0.10951694846153259,
+      "aspect_ratio": 1.0002066542674106,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 3,
+      "structure": 0.9662531614303589,
+      "aspect_ratio": 1.0005316321105795,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 4,
+      "structure": 0.8805251121520996,
+      "aspect_ratio": 1.0002712232167073,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 5,
+      "structure": 0.7810214757919312,
+      "aspect_ratio": 1.0002771618625277,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 5,
+      "structure": 0.6346424221992493,
+      "aspect_ratio": 1.0,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 8,
+      "structure": 0.521316647529602,
+      "aspect_ratio": 1.0003027550711474,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 16,
+      "structure": 0.3939196467399597,
+      "aspect_ratio": 1.0,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.01,
+      "hash_distance": 5,
+      "structure": 0.9228224158287048,
+      "aspect_ratio": 1.0000536976179737,
+      "hash_pass": true,
+      "structure_pass": true,
+      "aspect_pass": true,
+      "match": true
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.02,
+      "hash_distance": 6,
+      "structure": 0.7704000473022461,
+      "aspect_ratio": 1.000407130960459,
+      "hash_pass": true,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.03,
+      "hash_distance": 13,
+      "structure": 0.6520553827285767,
+      "aspect_ratio": 1.0003597348879854,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.05,
+      "hash_distance": 14,
+      "structure": 0.5185188055038452,
+      "aspect_ratio": 1.0000731124557303,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.07,
+      "hash_distance": 19,
+      "structure": 0.42309290170669556,
+      "aspect_ratio": 1.0000458934537577,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.1,
+      "hash_distance": 18,
+      "structure": 0.31556886434555054,
+      "aspect_ratio": 1.0004557240253757,
+      "hash_pass": false,
+      "structure_pass": false,
+      "aspect_pass": true,
+      "match": false
+    }
+  ],
+  "candidate_positive_pairs": [
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "koniq_1674951001.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "koniq_1679551869.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "koniq_169779095.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "koniq_1708787959.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "koniq_196734006.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "spaq_00570.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_00825.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_01517.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "spaq_04120.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "spaq_04290.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_05673.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "spaq_08425.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_08862.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.01,
+      "baseline": true,
+      "hash20_only": true,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 0
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.02,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.03,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 1
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.05,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": true,
+      "center_crop_bank": true,
+      "bank_winner": 2
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.07,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": false,
+      "bank_winner": null
+    },
+    {
+      "source": "spaq_09114.jpg",
+      "crop_each_edge": 0.1,
+      "baseline": false,
+      "hash20_only": false,
+      "hash20_structure05": false,
+      "center_crop_bank": true,
+      "bank_winner": 3
+    }
+  ],
+  "different_source_matches": {
+    "baseline": [],
+    "hash20_only": [],
+    "hash20_structure05": [],
+    "center_crop_bank": []
+  }
+}

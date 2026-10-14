@@ -1,0 +1,12 @@
+{
+  "production_similar_equivalence_pairs": 84,
+  "landscape_transform_rows": 45,
+  "noise_replicate_rows": 40,
+  "coverage_control_sources": 9,
+  "script_sha256": {
+    "verify_results.py": "3665f614a635fa6c2416959ea4e79b2603f34c9cede291cddbbda2e9d5935a1b",
+    "coverage_and_scale.py": "924aeaa87e44d5cdd0c517f411a13007b6f7f09fa337f19e2f3d03b6a9744c94",
+    "diagnose.py": "628a93a27104af5ee5e849429885f10486434b8bacbadf993bb87b0405573970",
+    "probe_detail_persistence.py": "f08afb4958f7211b66b6ac99d36b011cbc0f19f29d4345d20e61aa2aa593c6dc"
+  }
+}

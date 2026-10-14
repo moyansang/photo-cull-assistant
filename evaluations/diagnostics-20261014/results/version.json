@@ -1,0 +1,26 @@
+{
+  "git": "52bd1b4e70db93a2c39e521ba1b8b37370ab0fa3",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "source_hashes": {
+    "analysis_modes.py": "b286afac59425f95768955766c9f6f728111e079a7e6bfe685a6411e33da54b2",
+    "body_focus.py": "0ace85a293af8f8c01fcaa19872f567d357ba367ff8a95c0e05215a32a77d0fe",
+    "grouping.py": "b1ad576993a0494c6fa672bf30bebdd5d4d49d6ffcb5ce99e4d30b5cff3cca9a"
+  },
+  "input_sha256": {
+    "koniq_1674951001.jpg": "0a7edb4e00a2ef6ebc5cac0d90afbc0623ed238795171d5ffd49f3880e222ffb",
+    "koniq_1679551869.jpg": "e0f76c55f12dcf9786a013e9bfb7efbb24ab7eceaa5d56d98391462e621af4f5",
+    "koniq_169779095.jpg": "953135bf24fdfe5791138f762f4eda1250742648742c337df9fc15fb4b0e9f8e",
+    "koniq_1708787959.jpg": "3793605315f9660ef97dc459256a36d7a9f534e5c55e3e2e03066b3cb48593f7",
+    "koniq_196734006.jpg": "9c41675de4ad12cf70aa843aee4a4d3874994bba8757c87dc6a06694dba95c14",
+    "spaq_00570.jpg": "d56cb7dd8a3eed95a358a8e128482921076f169a5af7be2c85bf0b0d99ee641f",
+    "spaq_00825.jpg": "2bdbacac2e9282c88c531f7dc2ab2d91c4015e24b3d1033deeabdeba472c49c8",
+    "spaq_01517.jpg": "d203558735bfbb4551250e24a5c5f6e84e65284d22a8d1ca62b486ce8b0f914f",
+    "spaq_04120.jpg": "16eaa99ff2440de12528e06b07ee89ae95ff8a94e950211ecd9a2dd70f9d40cd",
+    "spaq_04290.jpg": "3fab02f033d13a42100233763f89e6dd0c8b1d1b83f565f08d72fccd342ff14f",
+    "spaq_05673.jpg": "ae6b2d2e7b3457edb1ae38e9c01f7960221a37c11438f28421fc66517179b694",
+    "spaq_08425.jpg": "c0c61bd1159b7d6f463b22232b04c282d55f86a782061205d825acaacb17f5b0",
+    "spaq_08862.jpg": "6554489f3f35677f7e15b01268a7f7b9022c138ecb6470d361c784cc144c9640",
+    "spaq_09114.jpg": "abf05a1b1dbc916482be14f4de005ac47f5c87e953e376895c85c98aa2ff74bb"
+  },
+  "original_bytes_unchanged": true
+}

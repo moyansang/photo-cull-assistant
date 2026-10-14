@@ -1,0 +1,95 @@
+{
+  "originals": {
+    "baseline": {
+      "keep": 13,
+      "review": 1
+    },
+    "0.05": {
+      "keep": 11,
+      "review": 3
+    },
+    "0.1": {
+      "keep": 10,
+      "review": 4
+    },
+    "0.2": {
+      "keep": 4,
+      "review": 10
+    }
+  },
+  "noise": {
+    "spaq_08862": {
+      "0": {
+        "baseline_keep": 0,
+        "ratio0.05_keep": 0,
+        "ratio0.1_keep": 0,
+        "ratio0.2_keep": 0,
+        "prefilter1_keep": 0
+      },
+      "4": {
+        "baseline_keep": 0,
+        "ratio0.05_keep": 0,
+        "ratio0.1_keep": 0,
+        "ratio0.2_keep": 0,
+        "prefilter1_keep": 0
+      },
+      "8": {
+        "baseline_keep": 5,
+        "ratio0.05_keep": 0,
+        "ratio0.1_keep": 0,
+        "ratio0.2_keep": 0,
+        "prefilter1_keep": 2
+      },
+      "16": {
+        "baseline_keep": 5,
+        "ratio0.05_keep": 0,
+        "ratio0.1_keep": 0,
+        "ratio0.2_keep": 0,
+        "prefilter1_keep": 5
+      }
+    },
+    "koniq_field_blur3": {
+      "0": {
+        "baseline_keep": 0,
+        "ratio0.05_keep": 0,
+        "ratio0.1_keep": 0,
+        "ratio0.2_keep": 0,
+        "prefilter1_keep": 0
+      },
+      "4": {
+        "baseline_keep": 5,
+        "ratio0.05_keep": 5,
+        "ratio0.1_keep": 5,
+        "ratio0.2_keep": 0,
+        "prefilter1_keep": 0
+      },
+      "8": {
+        "baseline_keep": 5,
+        "ratio0.05_keep": 5,
+        "ratio0.1_keep": 0,
+        "ratio0.2_keep": 0,
+        "prefilter1_keep": 0
+      },
+      "16": {
+        "baseline_keep": 5,
+        "ratio0.05_keep": 0,
+        "ratio0.1_keep": 0,
+        "ratio0.2_keep": 0,
+        "prefilter1_keep": 5
+      }
+    }
+  },
+  "two_tile_control": {
+    "baseline": "keep",
+    "clear_regions": 2,
+    "clear_ratios": [
+      0.05248054854388429,
+      0.05248054854388429
+    ],
+    "ratio_candidates": {
+      "0.05": "keep",
+      "0.1": "review",
+      "0.2": "review"
+    }
+  }
+}

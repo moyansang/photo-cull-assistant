@@ -1,0 +1,10 @@
+{
+  "pillow": "12.3.0",
+  "numpy": "2.3.5",
+  "opencv": "4.14.0",
+  "auxiliary_input_sha256": {
+    "169779095__blur3.jpg": "4032f58b584045f22a5516e1a85600f654102a7f2b0efc496ee04bf903311a20",
+    "scene_selection.json": "fa02e585f36f5eabfead490d5a76130ce846e142f40726b2bb7765f39b697769",
+    "annotations.json": "ec162c4ff5e1892d2eca399fa26cab5ecbfc0d2037d542385d7abe9d4bcb621f"
+  }
+}
