@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import hashlib
 from io import BytesIO
 import os
@@ -15,9 +15,12 @@ from PIL import Image, ImageOps
 from .models import PhotoAsset, RAW_EXTENSIONS, source_identity_path
 
 # Stored for diagnostics, not used to invalidate or silently regroup old sessions.
-GROUPING_VERSION = "workspace-dhash64-block-ssim-v1"
+GROUPING_VERSION = "workspace-dhash64-block-ssim-crop-v2"
 GRAY_SIZE = 64
 BLOCK_SIZE = 8
+# One-sided central alignment only; at least 81% of the source area remains.
+_CROP_FRACTIONS = (.025, .05)
+_CROP_PREVIEW_EDGE = 512
 _C1 = (0.01 * 255) ** 2
 _C2 = (0.03 * 255) ** 2
 
@@ -44,6 +47,8 @@ class GroupingStats:
     hash_candidates: int = 0
     structure_comparisons: int = 0
     missing_visuals: int = 0
+    crop_candidates: int = 0
+    crop_matches: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +58,7 @@ class VisualFeatures:
     blocks: np.ndarray
     means: np.ndarray
     variances: np.ndarray
+    crop_variants: tuple["VisualFeatures", ...] = ()
 
 
 def _image_dhash(image: Image.Image, hash_size: int = 8) -> str:
@@ -73,7 +79,7 @@ def hamming_distance(hash_a: str, hash_b: str) -> int:
     return (int(hash_a, 16) ^ int(hash_b, 16)).bit_count()
 
 
-def _visual_from_image(image: Image.Image) -> VisualFeatures:
+def _base_visual_from_image(image: Image.Image) -> VisualFeatures:
     gray = image.convert("L").resize((GRAY_SIZE, GRAY_SIZE), Image.Resampling.LANCZOS)
     grid = GRAY_SIZE // BLOCK_SIZE
     blocks = np.asarray(gray).reshape(grid, BLOCK_SIZE, grid, BLOCK_SIZE)
@@ -85,6 +91,24 @@ def _visual_from_image(image: Image.Image) -> VisualFeatures:
         array.flags.writeable = False
     return VisualFeatures(int(_image_dhash(image), 16), image.width / image.height,
                           blocks, means, variances)
+
+
+def _visual_from_image(image: Image.Image) -> VisualFeatures:
+    # All views derive from the same oriented immutable source snapshot. Keep
+    # only descriptors, never extra raster images, in the content-keyed cache.
+    base = _base_visual_from_image(image)
+    if min(image.size) < 128:
+        return base  # Insufficient pixels for another approximate crop view.
+    gray = image.convert("L")
+    gray.thumbnail((_CROP_PREVIEW_EDGE, _CROP_PREVIEW_EDGE), Image.Resampling.LANCZOS)
+    if min(gray.size) < 64:
+        return base
+    variants = []
+    for fraction in _CROP_FRACTIONS:
+        box = (round(gray.width * fraction), round(gray.height * fraction),
+               round(gray.width * (1 - fraction)), round(gray.height * (1 - fraction)))
+        variants.append(_base_visual_from_image(gray.crop(box)))
+    return replace(base, crop_variants=tuple(variants))
 
 
 _VISUAL_CACHE_SIZE = 256
@@ -272,6 +296,85 @@ def _first_matching_representative(asset: PhotoAsset, visual: VisualFeatures,
     return None
 
 
+def _crop_aligned_similar(a: PhotoAsset, b: PhotoAsset, left: VisualFeatures,
+                          right: VisualFeatures, cfg: GroupingConfig,
+                          stats: GroupingStats) -> bool:
+    """Fallback with stricter gates; never crop both sides or change an anchor.
+
+    The whole-frame aspect and subject gates still apply. Only 2.5%/5%
+    central trims are supported: this is not arbitrary crop/rotation matching.
+    """
+    if (max(left.aspect, right.aspect) / min(left.aspect, right.aspect) > cfg.max_aspect_ratio
+            or not _subject_compatible(a, b, cfg)):
+        return False
+    aligned_cfg = GroupingConfig(min(cfg.hash_distance_threshold, 8),
+                                 max(cfg.structure_threshold, .86), cfg.max_aspect_ratio)
+    return (any(_similar(a, b, view, right, aligned_cfg, stats) for view in left.crop_variants)
+            or any(_similar(a, b, left, view, aligned_cfg, stats) for view in right.crop_variants))
+
+
+def _first_crop_matching_representative(asset: PhotoAsset, visual: VisualFeatures,
+                                        candidates, representatives, cfg: GroupingConfig,
+                                        stats: GroupingStats) -> int | None:
+    if len(candidates) < 16:
+        for _distance, position in candidates:
+            anchor, anchor_visual, _group_id = representatives[position]
+            if _crop_aligned_similar(anchor, asset, anchor_visual, visual, cfg, stats):
+                return position
+        return None
+    aligned = GroupingConfig(min(cfg.hash_distance_threshold, 8),
+                             max(cfg.structure_threshold, .86), cfg.max_aspect_ratio)
+    # Four bounded alignment passes retain exact candidate order. In a hash
+    # collision pool, vectorize structure products rather than doing four
+    # Python/scalar comparisons per representative. Never build all-pairs data.
+    for start in range(0, len(candidates), 64):
+        eligible = []
+        for _distance, position in candidates[start:start + 64]:
+            anchor, left, _group_id = representatives[position]
+            if (max(left.aspect, visual.aspect) / min(left.aspect, visual.aspect) <= cfg.max_aspect_ratio
+                    and _subject_compatible(anchor, asset, cfg)
+                    and _subject_compatible(anchor, asset, aligned)):
+                eligible.append((position, left))
+        matched = set()
+        for side in ('anchor', 'query'):
+            for scale in range(len(_CROP_FRACTIONS)):
+                positions, lefts = [], []
+                if side == 'query' and scale >= len(visual.crop_variants):
+                    continue
+                right = visual if side == 'anchor' else visual.crop_variants[scale]
+                for position, whole in eligible:
+                    if position in matched:
+                        continue
+                    if side == 'anchor' and scale >= len(whole.crop_variants):
+                        continue
+                    left = whole.crop_variants[scale] if side == 'anchor' else whole
+                    if ((left.whole ^ right.whole).bit_count() <= aligned.hash_distance_threshold
+                            and max(left.aspect, right.aspect) / min(left.aspect, right.aspect)
+                            <= aligned.max_aspect_ratio):
+                        positions.append(position)
+                        lefts.append(left)
+                matches = _batch_structure_matches(lefts, right, aligned.structure_threshold, stats)
+                matched.update(positions[i] for i in np.flatnonzero(matches))
+        for position, _left in eligible:
+            if position in matched:
+                return position
+    return None
+
+
+def _crop_candidate_positions(visual: VisualFeatures, index, crop_index,
+                              cfg: GroupingConfig) -> list[tuple[int, int]]:
+    # Separate whole/crop indexes avoid admitting crop-to-crop-only matches.
+    # Deduplicate positions so each fixed representative is verified once.
+    radius = min(cfg.hash_distance_threshold, 8)
+    distances = {}
+    for distance, position in crop_index.find(visual.whole, radius):
+        distances[position] = min(distance, distances.get(position, distance))
+    for view in visual.crop_variants:
+        for distance, position in index.find(view.whole, radius):
+            distances[position] = min(distance, distances.get(position, distance))
+    return sorted((distance, position) for position, distance in distances.items())
+
+
 @dataclass(slots=True)
 class _HashNode:
     value: int
@@ -341,6 +444,7 @@ def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
     stats = stats if stats is not None else GroupingStats()
     stats.photos = len(assets)
     stats.representatives = stats.hash_candidates = stats.structure_comparisons = stats.missing_visuals = 0
+    stats.crop_candidates = stats.crop_matches = 0
     protected = set(protected_group_ids)
     ordered = sorted(assets, key=_asset_order)
     existing: dict[int, list[PhotoAsset]] = {}
@@ -355,9 +459,12 @@ def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
     next_id = max((*existing, *protected), default=0) + 1
     representatives: list[tuple[PhotoAsset, VisualFeatures, int]] = []
     index = _HashIndex()
+    crop_index = _HashIndex()
 
     def add_representative(asset, visual, group_id):
         index.add(visual.whole, len(representatives))
+        for view in visual.crop_variants:
+            crop_index.add(view.whole, len(representatives))
         representatives.append((asset, visual, group_id))
 
     for group_id, members in sorted(existing.items()):
@@ -394,6 +501,13 @@ def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
             # Closest hash first, stable representative insertion order breaks ties.
             # Every addition matches the original representative, never a chain.
             position = _first_matching_representative(asset, visual, candidates, representatives, cfg, stats)
+            if position is None:
+                crop_candidates = _crop_candidate_positions(visual, index, crop_index, cfg)
+                stats.crop_candidates += len(crop_candidates)
+                position = _first_crop_matching_representative(
+                    asset, visual, crop_candidates, representatives, cfg, stats)
+                if position is not None:
+                    stats.crop_matches += 1
             if position is not None:
                 anchor, anchor_visual, group_id = representatives[position]
                 chosen = group_id

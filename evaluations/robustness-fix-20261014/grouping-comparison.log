@@ -1,0 +1,46 @@
+{
+  "baseline_commit": "70f73a99b1902f37a135701898a462feac68df80",
+  "source_count": 14,
+  "synthetic_positive_pair_count": 84,
+  "different_source_proxy_pair_count": 1183,
+  "positive_matches": {
+    "baseline": 21,
+    "candidate": 55
+  },
+  "by_crop": {
+    "0.01": {
+      "baseline": 13,
+      "candidate": 13
+    },
+    "0.02": {
+      "baseline": 7,
+      "candidate": 13
+    },
+    "0.03": {
+      "baseline": 1,
+      "candidate": 14
+    },
+    "0.05": {
+      "baseline": 0,
+      "candidate": 14
+    },
+    "0.07": {
+      "baseline": 0,
+      "candidate": 1
+    },
+    "0.1": {
+      "baseline": 0,
+      "candidate": 0
+    }
+  },
+  "different_source_matches": {
+    "baseline": 0,
+    "candidate": 0
+  },
+  "feature_seconds": {
+    "baseline": 0.73591050698451,
+    "candidate": 0.9451519820067915
+  },
+  "production_grouping_sha256": "2db19002cae21767cb28554c36dfde50d359a9dbfe15fbe32f35d928c5782782"
+}
+e2e [('baseline', {'seconds': 3.6388840340005117, 'group_count': 38, 'cross_source_groups': 0, 'crop_matches': 0}), ('candidate', {'seconds': 4.01977690399508, 'group_count': 14, 'cross_source_groups': 0, 'crop_matches': 24})]

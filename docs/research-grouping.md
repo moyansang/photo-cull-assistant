@@ -1,6 +1,7 @@
 # Workspace-wide similarity grouping
 
-Implemented 2026-10-13. Algorithm version: `workspace-dhash64-block-ssim-v1`.
+Implemented 2026-10-13; bounded crop fallback added 2026-10-14. Algorithm version:
+`workspace-dhash64-block-ssim-crop-v2`.
 
 ## Research and reuse decision
 
@@ -72,12 +73,26 @@ The grayscale descriptor is EXIF-oriented, resized to 64×64, and divided into
 K1=.01 and K2=.03. Scores are averaged across blocks. This is a similarity
 feature, never a measure of technical quality or a reason to discard a photo.
 
+### Bounded central-crop fallback
+
+Whole-frame matching is tried first with the unchanged preset. If it fails,
+compare the whole frame on one side against a 2.5% or 5% central trim on the
+other. Never compare two trims. The original aspect and subject gates remain;
+the aligned hash distance is at most 8 and block SSIM at least .86 (or the
+configured stricter values). A trim retains at least 81% of the frame area.
+Variants come from the same oriented snapshot, reduced to a maximum 512-pixel
+edge before trimming. Tiny images do not receive variants. There is no
+translation, arbitrary crop, rotation or representative-changing search.
+Saved memberships are not silently regrouped when the algorithm version changes.
+
 ## Scaling and limitations
 
 Each image is decoded once per cached source signature, storing only about
-4.5 KiB of grayscale descriptor data per retained representative. The file
-feature cache holds at most 256 entries. Only representative hashes are indexed
-in a Hamming-distance BK-tree. A pair's covariance/pixel products are evaluated
+13.5 KiB of grayscale descriptor arrays per cached image (one whole-frame and
+two optional crop descriptors; no retained full raster). The file feature cache
+holds at most 256 entries. Only fixed representative hashes are indexed in
+separate whole-frame and crop Hamming-distance BK-trees, at most three indexed
+entries per representative. A pair's covariance/pixel products are evaluated
 only after the hash, aspect and subject tests and a cheap SSIM upper bound.
 The upper bound follows Cauchy-Schwarz, so it cannot reject a pair that could
 meet the threshold, apart from bounded floating-point roundoff.
@@ -150,3 +165,23 @@ execution requires a display; model-level grouping/editor checks do not.
   `verification/redesign-grouping/synthetic-scaling.json`.
 - A broader exploratory run reached 78 passed and one Tk initialization failure
   because no DISPLAY was available. This is not a GUI verification pass.
+
+### 2026-10-14 crop robustness evaluation
+
+On 14 existing public landscape originals and six controlled central crops
+each, matching increased from 21/84 to 55/84; all fourteen 5% crops matched.
+There were zero matches in 1,183 different-source proxy pairs before and after.
+These are transformation/source-identity proxies, not human grouping accuracy.
+A real 42-file import (14 originals plus 2.5%/5% JPEG crops) changed from 38
+groups to 14, with no cross-source groups. Measured wall time was 3.64 to 4.02
+seconds; descriptor extraction for 14 originals was .74 to .95 seconds. This
+is a small, warm-machine observation, not a throughput guarantee. See
+`evaluations/robustness-fix-20261014/` for reproducible scripts and raw evidence.
+Large crops, asymmetric framing, color-only changes and adversarial lookalikes
+remain outside this validation.
+
+The crop-enabled collision regression also verifies bounded 64-candidate
+batches: 256 deliberately colliding 512px images take .859 s with the final
+batch implementation versus 5.137 s with scalar fallback and .178 s before
+crop support. All remain separate. The fivefold comparison increase is an
+explicit worst-case cost; batching prevents disproportionate scalar overhead.

@@ -17,6 +17,10 @@ from .crop_settings import CropSettings
 from .screening import ScreeningResult
 
 VERSION = 'manual-modes-v1'
+LANDSCAPE_VERSION = 'landscape-noise-guard-v1'
+# Squared impulse-response energy of body_focus's Gaussian(sigma=.65) followed
+# by its 3x3 Laplacian. White input noise variance is multiplied by this gain.
+_LANDSCAPE_FINE_NOISE_GAIN = 9.690651
 MODES = ('portrait', 'landscape')
 
 
@@ -177,6 +181,41 @@ def _portrait_result(face_result, *, bodies=(), include_face=True):
                    face_found=bool(face_subjects), focus_evidence=evidence, analysis_version=VERSION)
 
 
+def _landscape_detail_support(bgr: np.ndarray, measured: dict[str, Any]) -> dict[str, Any]:
+    """Veto clear tiles whose apparent fine detail is mostly estimated noise.
+
+    A separable second-difference kernel has unit squared energy. Its absolute
+    median, divided by the Gaussian MAD constant, estimates grayscale noise
+    sigma while ignoring sparse edges. Compare the expected noise contribution
+    through the *same* fine-detail filter with the measured fine-detail power.
+    Require more residual signal power than noise power (estimated SNR > 1).
+
+    This is a conservative support gate, not a calibrated noise measurement or
+    blur diagnosis. Dense stochastic texture may inflate the estimate; spatially
+    correlated, compressed or structured noise can evade it. Never use this
+    estimate to establish a reject, or to promote an originally non-clear tile.
+    """
+    if bgr.ndim != 3 or bgr.shape[2] != 3 or min(bgr.shape[:2]) < 32:
+        return {'state':'uncertain', 'reason':'noise_support_unavailable'}
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    difference = np.array([1.0, -2.0, 1.0], dtype=np.float32)
+    kernel = np.outer(difference, difference) / 6.0
+    residual = cv2.filter2D(gray, cv2.CV_32F, kernel)
+    # Exclude reflected boundaries from the noise estimate.
+    sigma = float(np.median(np.abs(residual[2:-2, 2:-2])) / 0.67448975)
+    contrast = float(measured['contrast'])
+    fine_power = float(measured['laplacian_normalized']) * max(contrast ** 2, 0.0025)
+    if not np.isfinite((sigma, contrast, fine_power)).all() or fine_power <= 0:
+        return {'state':'uncertain', 'reason':'noise_support_unavailable'}
+    noise_power = _LANDSCAPE_FINE_NOISE_GAIN * (sigma / 255.0) ** 2
+    fraction = noise_power / fine_power
+    supported = fraction < 0.5
+    return {'state':'clear' if supported else 'uncertain',
+            'estimated_noise_sigma':sigma, 'estimated_noise_fraction':fraction,
+            'reason':'detail_energy_exceeds_noise_floor' if supported else
+                     'fine_detail_may_be_noise_dominated'}
+
+
 def landscape_evidence(image: Image.Image) -> dict[str, Any]:
     """Whole-frame checks with texture gating and no visible selection boxes.
 
@@ -203,19 +242,26 @@ def landscape_evidence(image: Image.Image) -> dict[str, Any]:
             bgr = cv2.cvtColor(tile, cv2.COLOR_RGB2BGR)
             th, tw = bgr.shape[:2]
             measured = _region_metrics(bgr, np.full((th,tw),255,np.uint8), (0,0,tw,th))
+            if measured['state'] == 'clear':
+                measured['detail_support'] = _landscape_detail_support(bgr, measured)
             checks.append(dict(measured, tile=[column,row], native_size=[tw,th]))
     clear = [item for item in checks if item['state']=='clear']
     textured = [item for item in checks if item['state']!='insufficient']
-    enough = len(clear) >= 2
+    supported_clear = [item for item in clear if item['detail_support']['state'] == 'clear']
+    enough = len(supported_clear) >= 2
     reasons = (['supported_detail_in_textured_regions'] if enough else
+               ['landscape_detail_may_be_noise_dominated'] if len(clear) >= 2 else
                ['low_texture_scene_is_not_a_quality_failure'] if not textured else
                ['landscape_focus_needs_review'])
-    return {'version':VERSION, 'mode':'landscape', 'state':'clear' if enough else 'uncertain',
+    return {'version':LANDSCAPE_VERSION, 'mode':'landscape', 'state':'clear' if enough else 'uncertain',
             'reliability':'adequate' if len(textured) >= 2 else 'insufficient',
             'recommendation':'keep' if enough else 'review', 'reasons':reasons,
             'subjects':[], 'visible_boxes':[], 'eye_evidence':False,
             'regions':checks, 'source_size':[width,height],
-            'textured_regions':len(textured), 'clear_regions':len(clear)}
+            # Keep the original clear count as a diagnostic, distinct from the
+            # noise-supported count that now controls the keep recommendation.
+            'textured_regions':len(textured), 'clear_regions':len(clear),
+            'supported_clear_regions':len(supported_clear)}
 
 
 def assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=None, body_check=False):
@@ -231,10 +277,10 @@ def assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=N
                 if decode:
                     evidence['decode'] = dict(decode)
             return ScreeningResult(False, 'landscape_detail_clear' if evidence['state']=='clear' else 'landscape_needs_review',
-                                   False, analysis_version=VERSION, source_size=tuple(evidence['source_size']), focus_evidence=evidence)
+                                   False, analysis_version=LANDSCAPE_VERSION, source_size=tuple(evidence['source_size']), focus_evidence=evidence)
         except (OSError, ValueError, cv2.error):
-            return ScreeningResult(False, 'source_unreadable_for_analysis', False, analysis_version=VERSION,
-                                   focus_evidence={'mode':mode,'state':'uncertain','reliability':'insufficient',
+            return ScreeningResult(False, 'source_unreadable_for_analysis', False, analysis_version=LANDSCAPE_VERSION,
+                                   focus_evidence={'version':LANDSCAPE_VERSION, 'mode':mode,'state':'uncertain','reliability':'insufficient',
                                                    'recommendation':'review','subjects':[],'visible_boxes':[],
                                                    'reasons':['source_unreadable_for_analysis']})
     from .face_focus import assess_asset_focus

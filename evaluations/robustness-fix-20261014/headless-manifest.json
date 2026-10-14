@@ -1,0 +1,19 @@
+{
+  "baseline_head": "70f73a99b1902f37a135701898a462feac68df80",
+  "test_count": 983,
+  "original_reviewed_cases": 873,
+  "original_cases_retained": true,
+  "new_crop_cases": 46,
+  "new_noise_cases": 64,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 80.29,
+  "scope": "exact reviewed headless selection plus robustness modules, not full GUI/Windows validation",
+  "sha256": {
+    "src/ai_cull_assistant/grouping.py": "2db19002cae21767cb28554c36dfde50d359a9dbfe15fbe32f35d928c5782782",
+    "src/ai_cull_assistant/analysis_modes.py": "1a0bcf801a2a2c0873878d0392b4614040aff374be2188942d899b733227cedb",
+    "tests/test_grouping_crop_alignment.py": "e6ffba79250ce4f9b5206e5eb6b7222d83f2739bcc0fd3a654a87dd5a3449862",
+    "tests/test_landscape_noise_guard.py": "5512d5c2170ac8922c311bbd8158c5460814daf7bb9b534ea4c81f54126699b4"
+  }
+}

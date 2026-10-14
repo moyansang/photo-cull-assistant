@@ -1,0 +1,149 @@
+{
+  "baseline_commit": "70f73a99b1902f37a135701898a462feac68df80",
+  "production_grouping_sha256": "2db19002cae21767cb28554c36dfde50d359a9dbfe15fbe32f35d928c5782782",
+  "fixture": {
+    "seed": 983,
+    "source_size": [
+      64,
+      64
+    ],
+    "prepared_size": [
+      512,
+      512
+    ],
+    "resampling": "NEAREST",
+    "description": "Eight independently shuffled 4-black/4-white row blocks, tiled across columns; all whole/crop dHashes zero."
+  },
+  "limits": "Index/comparison timing on precomputed synthetic features. Excludes image loading and extraction. Single runs, not throughput or accuracy claims.",
+  "results": [
+    {
+      "variant": "baseline",
+      "count": 64,
+      "seconds": 0.01943228299933253,
+      "group_count": 64,
+      "stats": {
+        "photos": 64,
+        "representatives": 64,
+        "hash_candidates": 2016,
+        "structure_comparisons": 2016,
+        "missing_visuals": 0
+      }
+    },
+    {
+      "variant": "baseline",
+      "count": 128,
+      "seconds": 0.0563392109979759,
+      "group_count": 128,
+      "stats": {
+        "photos": 128,
+        "representatives": 128,
+        "hash_candidates": 8128,
+        "structure_comparisons": 8128,
+        "missing_visuals": 0
+      }
+    },
+    {
+      "variant": "baseline",
+      "count": 256,
+      "seconds": 0.177546638995409,
+      "group_count": 256,
+      "stats": {
+        "photos": 256,
+        "representatives": 256,
+        "hash_candidates": 32640,
+        "structure_comparisons": 32640,
+        "missing_visuals": 0
+      }
+    },
+    {
+      "variant": "scalar_crop",
+      "count": 64,
+      "seconds": 0.3147921909985598,
+      "group_count": 64,
+      "stats": {
+        "photos": 64,
+        "representatives": 64,
+        "hash_candidates": 2016,
+        "structure_comparisons": 10080,
+        "missing_visuals": 0,
+        "crop_candidates": 2016,
+        "crop_matches": 0
+      }
+    },
+    {
+      "variant": "scalar_crop",
+      "count": 128,
+      "seconds": 1.3541436939995037,
+      "group_count": 128,
+      "stats": {
+        "photos": 128,
+        "representatives": 128,
+        "hash_candidates": 8128,
+        "structure_comparisons": 40640,
+        "missing_visuals": 0,
+        "crop_candidates": 8128,
+        "crop_matches": 0
+      }
+    },
+    {
+      "variant": "scalar_crop",
+      "count": 256,
+      "seconds": 5.136537431004399,
+      "group_count": 256,
+      "stats": {
+        "photos": 256,
+        "representatives": 256,
+        "hash_candidates": 32640,
+        "structure_comparisons": 163200,
+        "missing_visuals": 0,
+        "crop_candidates": 32640,
+        "crop_matches": 0
+      }
+    },
+    {
+      "variant": "batched_crop",
+      "count": 64,
+      "seconds": 0.07733240100060357,
+      "group_count": 64,
+      "stats": {
+        "photos": 64,
+        "representatives": 64,
+        "hash_candidates": 2016,
+        "structure_comparisons": 10080,
+        "missing_visuals": 0,
+        "crop_candidates": 2016,
+        "crop_matches": 0
+      }
+    },
+    {
+      "variant": "batched_crop",
+      "count": 128,
+      "seconds": 0.22506408499612007,
+      "group_count": 128,
+      "stats": {
+        "photos": 128,
+        "representatives": 128,
+        "hash_candidates": 8128,
+        "structure_comparisons": 40640,
+        "missing_visuals": 0,
+        "crop_candidates": 8128,
+        "crop_matches": 0
+      }
+    },
+    {
+      "variant": "batched_crop",
+      "count": 256,
+      "seconds": 0.8585350259963889,
+      "group_count": 256,
+      "stats": {
+        "photos": 256,
+        "representatives": 256,
+        "hash_candidates": 32640,
+        "structure_comparisons": 163200,
+        "missing_visuals": 0,
+        "crop_candidates": 32640,
+        "crop_matches": 0
+      }
+    }
+  ]
+}

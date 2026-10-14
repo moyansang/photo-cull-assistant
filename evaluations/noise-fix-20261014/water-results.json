@@ -1,0 +1,3064 @@
+{
+  "source": "/workspace/scratch/d4e33c625c08/spaq-evaluation-data/images/04290.jpg",
+  "source_sha256": "3fab02f033d13a42100233763f89e6dd0c8b1d1b83f565f08d72fccd342ff14f",
+  "boxes": [
+    [
+      1384,
+      1762,
+      1640,
+      2018
+    ],
+    [
+      2392,
+      1762,
+      2648,
+      2018
+    ]
+  ],
+  "baseline_ref": "70f73a99",
+  "baseline_source_sha256": "b286afac59425f95768955766c9f6f728111e079a7e6bfe685a6411e33da54b2",
+  "records": [
+    {
+      "sigma_8bit": 0,
+      "seed": 123,
+      "baseline": "keep",
+      "candidate": "keep",
+      "raw_clear": 2,
+      "supported_clear": 2,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5686274617910385,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.004289328586310148,
+          "coarse_laplacian_normalized": 0.0015189191326498985,
+          "edge_curvature": 0.212625190615654,
+          "edge_anisotropy": 7.65925656535075,
+          "detail_support": {
+            "state": "clear",
+            "estimated_noise_sigma": 0.24710221588611603,
+            "estimated_noise_fraction": 0.0065611640278532635,
+            "reason": "detail_energy_exceeds_noise_floor"
+          },
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5686274617910385,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.005423902068287134,
+          "coarse_laplacian_normalized": 0.0017605265602469444,
+          "edge_curvature": 0.22171910107135773,
+          "edge_anisotropy": 3.063277443380057,
+          "detail_support": {
+            "state": "clear",
+            "estimated_noise_sigma": 0.2471018135547638,
+            "estimated_noise_fraction": 0.005188680847326546,
+            "reason": "detail_energy_exceeds_noise_floor"
+          },
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        }
+      ]
+    },
+    {
+      "sigma_8bit": 0,
+      "seed": 456,
+      "baseline": "keep",
+      "candidate": "keep",
+      "raw_clear": 2,
+      "supported_clear": 2,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5686274617910385,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.004289328586310148,
+          "coarse_laplacian_normalized": 0.0015189191326498985,
+          "edge_curvature": 0.212625190615654,
+          "edge_anisotropy": 7.65925656535075,
+          "detail_support": {
+            "state": "clear",
+            "estimated_noise_sigma": 0.24710221588611603,
+            "estimated_noise_fraction": 0.0065611640278532635,
+            "reason": "detail_energy_exceeds_noise_floor"
+          },
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5686274617910385,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.005423902068287134,
+          "coarse_laplacian_normalized": 0.0017605265602469444,
+          "edge_curvature": 0.22171910107135773,
+          "edge_anisotropy": 3.063277443380057,
+          "detail_support": {
+            "state": "clear",
+            "estimated_noise_sigma": 0.2471018135547638,
+            "estimated_noise_fraction": 0.005188680847326546,
+            "reason": "detail_energy_exceeds_noise_floor"
+          },
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        }
+      ]
+    },
+    {
+      "sigma_8bit": 0,
+      "seed": 789,
+      "baseline": "keep",
+      "candidate": "keep",
+      "raw_clear": 2,
+      "supported_clear": 2,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5686274617910385,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.004289328586310148,
+          "coarse_laplacian_normalized": 0.0015189191326498985,
+          "edge_curvature": 0.212625190615654,
+          "edge_anisotropy": 7.65925656535075,
+          "detail_support": {
+            "state": "clear",
+            "estimated_noise_sigma": 0.24710221588611603,
+            "estimated_noise_fraction": 0.0065611640278532635,
+            "reason": "detail_energy_exceeds_noise_floor"
+          },
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5686274617910385,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.005423902068287134,
+          "coarse_laplacian_normalized": 0.0017605265602469444,
+          "edge_curvature": 0.22171910107135773,
+          "edge_anisotropy": 3.063277443380057,
+          "detail_support": {
+            "state": "clear",
+            "estimated_noise_sigma": 0.2471018135547638,
+            "estimated_noise_fraction": 0.005188680847326546,
+            "reason": "detail_energy_exceeds_noise_floor"
+          },
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.0,
+          "texture_fraction": 0.0,
+          "laplacian_normalized": 0.0,
+          "coarse_laplacian_normalized": 0.0,
+          "edge_curvature": 0.0,
+          "edge_anisotropy": 0.0,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        }
+      ]
+    },
+    {
+      "sigma_8bit": 8,
+      "seed": 123,
+      "baseline": "keep",
+      "candidate": "review",
+      "raw_clear": 2,
+      "supported_clear": 0,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5764705985784531,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.017119718715548515,
+          "coarse_laplacian_normalized": 0.0016347157070413232,
+          "edge_curvature": 0.3137917220592499,
+          "edge_anisotropy": 5.000010442390774,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 5.43620491027832,
+            "estimated_noise_fraction": 0.7741288988227227,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5764705985784531,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.018019655719399452,
+          "coarse_laplacian_normalized": 0.0018588613020256162,
+          "edge_curvature": 0.3138059377670288,
+          "edge_anisotropy": 2.6014032385147967,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 5.18911600112915,
+            "estimated_noise_fraction": 0.6701291928695317,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9550100564956665,
+          "coarse_laplacian_normalized": 0.011128767393529415,
+          "edge_curvature": 0.631458044052124,
+          "edge_anisotropy": 1.022022121038505,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9668911099433899,
+          "coarse_laplacian_normalized": 0.01137551385909319,
+          "edge_curvature": 0.6303113102912903,
+          "edge_anisotropy": 1.0035992912722602,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9741784334182739,
+          "coarse_laplacian_normalized": 0.01141229085624218,
+          "edge_curvature": 0.6236138939857483,
+          "edge_anisotropy": 1.0312189442895079,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9437395334243774,
+          "coarse_laplacian_normalized": 0.011255545541644096,
+          "edge_curvature": 0.6243518590927124,
+          "edge_anisotropy": 1.009918229672519,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9658167362213135,
+          "coarse_laplacian_normalized": 0.011226511560380459,
+          "edge_curvature": 0.6270955801010132,
+          "edge_anisotropy": 1.0109246707503807,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9661439657211304,
+          "coarse_laplacian_normalized": 0.011795373633503914,
+          "edge_curvature": 0.6202316284179688,
+          "edge_anisotropy": 1.0021209186832174,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9706278443336487,
+          "coarse_laplacian_normalized": 0.011341248638927937,
+          "edge_curvature": 0.6265130639076233,
+          "edge_anisotropy": 1.0012816201375099,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9734449982643127,
+          "coarse_laplacian_normalized": 0.011611178517341614,
+          "edge_curvature": 0.6194584965705872,
+          "edge_anisotropy": 1.0300880001033892,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9510033130645752,
+          "coarse_laplacian_normalized": 0.011381197720766068,
+          "edge_curvature": 0.6203763484954834,
+          "edge_anisotropy": 1.0173639031726573,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9495347142219543,
+          "coarse_laplacian_normalized": 0.011090882122516632,
+          "edge_curvature": 0.6273552179336548,
+          "edge_anisotropy": 1.021947351237635,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9579125046730042,
+          "coarse_laplacian_normalized": 0.011302430182695389,
+          "edge_curvature": 0.6310068368911743,
+          "edge_anisotropy": 1.0142673464722223,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9651846289634705,
+          "coarse_laplacian_normalized": 0.011545678600668907,
+          "edge_curvature": 0.6261200904846191,
+          "edge_anisotropy": 1.020094331218345,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9672320485115051,
+          "coarse_laplacian_normalized": 0.01143630314618349,
+          "edge_curvature": 0.6263752579689026,
+          "edge_anisotropy": 1.0006576459794525,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.300018310546875,
+          "laplacian_normalized": 0.9675881266593933,
+          "coarse_laplacian_normalized": 0.011321659199893475,
+          "edge_curvature": 0.6249903440475464,
+          "edge_anisotropy": 1.002948947837212,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        }
+      ]
+    },
+    {
+      "sigma_8bit": 8,
+      "seed": 456,
+      "baseline": "keep",
+      "candidate": "review",
+      "raw_clear": 2,
+      "supported_clear": 0,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5764705985784531,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.017154226079583168,
+          "coarse_laplacian_normalized": 0.0016261512646451592,
+          "edge_curvature": 0.31387779116630554,
+          "edge_anisotropy": 5.124484525278157,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 5.436207294464111,
+            "estimated_noise_fraction": 0.7725723422733269,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5764705985784531,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.018142592161893845,
+          "coarse_laplacian_normalized": 0.0018720505759119987,
+          "edge_curvature": 0.31596529483795166,
+          "edge_anisotropy": 2.5844366075952974,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 5.436206817626953,
+            "estimated_noise_fraction": 0.7304842758396903,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9673658013343811,
+          "coarse_laplacian_normalized": 0.011479408480226994,
+          "edge_curvature": 0.6260046362876892,
+          "edge_anisotropy": 1.0204929016688058,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9804660677909851,
+          "coarse_laplacian_normalized": 0.011639372445642948,
+          "edge_curvature": 0.6236056089401245,
+          "edge_anisotropy": 1.004475573391173,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9646109938621521,
+          "coarse_laplacian_normalized": 0.01120681595057249,
+          "edge_curvature": 0.6328655481338501,
+          "edge_anisotropy": 1.0030532025229424,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9730042219161987,
+          "coarse_laplacian_normalized": 0.011243537068367004,
+          "edge_curvature": 0.6315681338310242,
+          "edge_anisotropy": 1.0013645130319775,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9656975865364075,
+          "coarse_laplacian_normalized": 0.011288872919976711,
+          "edge_curvature": 0.6238619685173035,
+          "edge_anisotropy": 1.0184512753855162,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9483632445335388,
+          "coarse_laplacian_normalized": 0.011467307806015015,
+          "edge_curvature": 0.6158375144004822,
+          "edge_anisotropy": 1.0120977091556769,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9556384086608887,
+          "coarse_laplacian_normalized": 0.011241283267736435,
+          "edge_curvature": 0.6236527562141418,
+          "edge_anisotropy": 1.0122355176202185,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9638291597366333,
+          "coarse_laplacian_normalized": 0.011664862744510174,
+          "edge_curvature": 0.6175347566604614,
+          "edge_anisotropy": 1.003616902755685,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9664081931114197,
+          "coarse_laplacian_normalized": 0.011334258131682873,
+          "edge_curvature": 0.626703143119812,
+          "edge_anisotropy": 1.006619094439285,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9527857303619385,
+          "coarse_laplacian_normalized": 0.011235049925744534,
+          "edge_curvature": 0.6247578263282776,
+          "edge_anisotropy": 1.016691919425045,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9596701860427856,
+          "coarse_laplacian_normalized": 0.011384029872715473,
+          "edge_curvature": 0.6227689385414124,
+          "edge_anisotropy": 1.0129101113956551,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.972139298915863,
+          "coarse_laplacian_normalized": 0.011419873684644699,
+          "edge_curvature": 0.6235889196395874,
+          "edge_anisotropy": 1.0059619008117808,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9503628015518188,
+          "coarse_laplacian_normalized": 0.011243415996432304,
+          "edge_curvature": 0.625592827796936,
+          "edge_anisotropy": 1.0098318860482645,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9740042686462402,
+          "coarse_laplacian_normalized": 0.011405527591705322,
+          "edge_curvature": 0.6262263059616089,
+          "edge_anisotropy": 1.0217807562749213,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        }
+      ]
+    },
+    {
+      "sigma_8bit": 8,
+      "seed": 789,
+      "baseline": "keep",
+      "candidate": "review",
+      "raw_clear": 2,
+      "supported_clear": 0,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5725490301847458,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.017353737726807594,
+          "coarse_laplacian_normalized": 0.0016744642052799463,
+          "edge_curvature": 0.31545746326446533,
+          "edge_anisotropy": 5.050267690248023,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 5.4362077713012695,
+            "estimated_noise_fraction": 0.7741877410021382,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5803921669721603,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.018091246485710144,
+          "coarse_laplacian_normalized": 0.001853993278928101,
+          "edge_curvature": 0.31620195508003235,
+          "edge_anisotropy": 2.6119343452777555,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 5.4362077713012695,
+            "estimated_noise_fraction": 0.7226917726390492,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9607690572738647,
+          "coarse_laplacian_normalized": 0.01145307905972004,
+          "edge_curvature": 0.6172319054603577,
+          "edge_anisotropy": 1.0061735874198081,
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9623683094978333,
+          "coarse_laplacian_normalized": 0.011660546064376831,
+          "edge_curvature": 0.6198657155036926,
+          "edge_anisotropy": 1.009090640897978,
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.966813862323761,
+          "coarse_laplacian_normalized": 0.011403043754398823,
+          "edge_curvature": 0.6281203031539917,
+          "edge_anisotropy": 1.0124333954500901,
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9513053894042969,
+          "coarse_laplacian_normalized": 0.011253823526203632,
+          "edge_curvature": 0.6230259537696838,
+          "edge_anisotropy": 1.0169799629779828,
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9718702435493469,
+          "coarse_laplacian_normalized": 0.01131924707442522,
+          "edge_curvature": 0.6265206336975098,
+          "edge_anisotropy": 1.0121108790894295,
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.960769772529602,
+          "coarse_laplacian_normalized": 0.011306699365377426,
+          "edge_curvature": 0.6268534660339355,
+          "edge_anisotropy": 1.0157457409941502,
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9558119773864746,
+          "coarse_laplacian_normalized": 0.01147114485502243,
+          "edge_curvature": 0.6213581562042236,
+          "edge_anisotropy": 1.0127464731279965,
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9592468738555908,
+          "coarse_laplacian_normalized": 0.011489259079098701,
+          "edge_curvature": 0.6146643757820129,
+          "edge_anisotropy": 1.0005569538151335,
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9490295052528381,
+          "coarse_laplacian_normalized": 0.011200476437807083,
+          "edge_curvature": 0.6265394687652588,
+          "edge_anisotropy": 1.007725645319649,
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9641020894050598,
+          "coarse_laplacian_normalized": 0.011527751572430134,
+          "edge_curvature": 0.6269782185554504,
+          "edge_anisotropy": 1.0054768511446541,
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9748374223709106,
+          "coarse_laplacian_normalized": 0.011668499559164047,
+          "edge_curvature": 0.6240180730819702,
+          "edge_anisotropy": 1.0128068228542257,
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9736394286155701,
+          "coarse_laplacian_normalized": 0.011579320766031742,
+          "edge_curvature": 0.6223849058151245,
+          "edge_anisotropy": 1.0196228199159647,
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9564909338951111,
+          "coarse_laplacian_normalized": 0.011528752744197845,
+          "edge_curvature": 0.6195319294929504,
+          "edge_anisotropy": 1.0068056387197362,
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "insufficient",
+          "reason": "low_texture_or_contrast",
+          "contrast": 0.06666669249534607,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9609020948410034,
+          "coarse_laplacian_normalized": 0.011304362677037716,
+          "edge_curvature": 0.627761721611023,
+          "edge_anisotropy": 1.009286440035117,
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        }
+      ]
+    },
+    {
+      "sigma_8bit": 16,
+      "seed": 123,
+      "baseline": "keep",
+      "candidate": "review",
+      "raw_clear": 16,
+      "supported_clear": 0,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5882353037595749,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.05351460725069046,
+          "coarse_laplacian_normalized": 0.0020084695424884558,
+          "edge_curvature": 0.4246072471141815,
+          "edge_anisotropy": 2.8339341505428197,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625316619873047,
+            "estimated_noise_fraction": 0.9086190520715052,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6078431457281113,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.050545789301395416,
+          "coarse_laplacian_normalized": 0.002076546661555767,
+          "edge_curvature": 0.4186641573905945,
+          "edge_anisotropy": 1.9639574060979161,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.62531566619873,
+            "estimated_noise_fraction": 0.9009241830533687,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8984915614128113,
+          "coarse_laplacian_normalized": 0.010468942113220692,
+          "edge_curvature": 0.6301403641700745,
+          "edge_anisotropy": 1.0225010122633917,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625322341918945,
+            "estimated_noise_fraction": 0.9940013022327134,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9109541773796082,
+          "coarse_laplacian_normalized": 0.01068908628076315,
+          "edge_curvature": 0.6320390701293945,
+          "edge_anisotropy": 1.003438108160111,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625314712524414,
+            "estimated_noise_fraction": 0.9804011241216668,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9163451194763184,
+          "coarse_laplacian_normalized": 0.010746043175458908,
+          "edge_curvature": 0.6233479976654053,
+          "edge_anisotropy": 1.032860851153474,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.62531852722168,
+            "estimated_noise_fraction": 0.9746340345198214,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8875335454940796,
+          "coarse_laplacian_normalized": 0.01059657335281372,
+          "edge_curvature": 0.6247023344039917,
+          "edge_anisotropy": 1.0092104742689254,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 1.0062729290870776,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9086275696754456,
+          "coarse_laplacian_normalized": 0.010558051988482475,
+          "edge_curvature": 0.6269219517707825,
+          "edge_anisotropy": 1.0076177407254026,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625319480895996,
+            "estimated_noise_fraction": 0.982912395501229,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9079384803771973,
+          "coarse_laplacian_normalized": 0.01108473539352417,
+          "edge_curvature": 0.6214836239814758,
+          "edge_anisotropy": 1.0018227142996332,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625320434570312,
+            "estimated_noise_fraction": 0.9836585636039272,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9135327935218811,
+          "coarse_laplacian_normalized": 0.010674265213310719,
+          "edge_curvature": 0.6241379976272583,
+          "edge_anisotropy": 1.0017940366925266,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625314712524414,
+            "estimated_noise_fraction": 0.9776337596849547,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9147014617919922,
+          "coarse_laplacian_normalized": 0.01094464585185051,
+          "edge_curvature": 0.6192784905433655,
+          "edge_anisotropy": 1.0295580876631112,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872414588928223,
+            "estimated_noise_fraction": 1.022325900532214,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8940070271492004,
+          "coarse_laplacian_normalized": 0.010676747187972069,
+          "edge_curvature": 0.6210156679153442,
+          "edge_anisotropy": 1.0170282059804072,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.9989865329529645,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8929547071456909,
+          "coarse_laplacian_normalized": 0.010434304364025593,
+          "edge_curvature": 0.6260195970535278,
+          "edge_anisotropy": 1.0204226955651852,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.62531566619873,
+            "estimated_noise_fraction": 1.0001634491646436,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.901965320110321,
+          "coarse_laplacian_normalized": 0.01064274087548256,
+          "edge_curvature": 0.6310843229293823,
+          "edge_anisotropy": 1.015302512984424,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.62531566619873,
+            "estimated_noise_fraction": 0.9901718391316883,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9081693887710571,
+          "coarse_laplacian_normalized": 0.010847656987607479,
+          "edge_curvature": 0.6282815933227539,
+          "edge_anisotropy": 1.0218668635401578,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625320434570312,
+            "estimated_noise_fraction": 0.9834084615614705,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9105713963508606,
+          "coarse_laplacian_normalized": 0.010771568864583969,
+          "edge_curvature": 0.6258277893066406,
+          "edge_anisotropy": 1.0031275667135342,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872411727905273,
+            "estimated_noise_fraction": 1.0269623087723816,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.910311758518219,
+          "coarse_laplacian_normalized": 0.010648886673152447,
+          "edge_curvature": 0.6252180337905884,
+          "edge_anisotropy": 1.0037559048247473,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872411727905273,
+            "estimated_noise_fraction": 1.0272552175100302,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        }
+      ]
+    },
+    {
+      "sigma_8bit": 16,
+      "seed": 456,
+      "baseline": "keep",
+      "candidate": "review",
+      "raw_clear": 16,
+      "supported_clear": 0,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5882353037595749,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.05373771861195564,
+          "coarse_laplacian_normalized": 0.001996206119656563,
+          "edge_curvature": 0.42267510294914246,
+          "edge_anisotropy": 2.916100894011319,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625321388244629,
+            "estimated_noise_fraction": 0.9048474072003331,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6078431457281113,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.050830140709877014,
+          "coarse_laplacian_normalized": 0.0021053228992968798,
+          "edge_curvature": 0.41950613260269165,
+          "edge_anisotropy": 1.9345973164688832,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.8958846000855225,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9095423221588135,
+          "coarse_laplacian_normalized": 0.010778841562569141,
+          "edge_curvature": 0.6254584789276123,
+          "edge_anisotropy": 1.0207371422639804,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.9819235001264996,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9219525456428528,
+          "coarse_laplacian_normalized": 0.010949591174721718,
+          "edge_curvature": 0.6241772174835205,
+          "edge_anisotropy": 1.005029460551084,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.62531852722168,
+            "estimated_noise_fraction": 0.9687061932076088,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9056362509727478,
+          "coarse_laplacian_normalized": 0.010532166808843613,
+          "edge_curvature": 0.6317954063415527,
+          "edge_anisotropy": 1.0024476560953293,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.62531852722168,
+            "estimated_noise_fraction": 0.9861587804689446,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9147220253944397,
+          "coarse_laplacian_normalized": 0.010592857375741005,
+          "edge_curvature": 0.6308581233024597,
+          "edge_anisotropy": 1.0027614179917992,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.9763632619453435,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9074338674545288,
+          "coarse_laplacian_normalized": 0.010584905743598938,
+          "edge_curvature": 0.6232253313064575,
+          "edge_anisotropy": 1.0195028570264069,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872415542602539,
+            "estimated_noise_fraction": 1.0305138404371985,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8926644325256348,
+          "coarse_laplacian_normalized": 0.010812224820256233,
+          "edge_curvature": 0.6158360242843628,
+          "edge_anisotropy": 1.0127238420442608,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872417449951172,
+            "estimated_noise_fraction": 1.0475644079881785,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8979164958000183,
+          "coarse_laplacian_normalized": 0.010566528886556625,
+          "edge_curvature": 0.6243583559989929,
+          "edge_anisotropy": 1.0124084747368325,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625314712524414,
+            "estimated_noise_fraction": 0.9946364764471429,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9063987731933594,
+          "coarse_laplacian_normalized": 0.010953085497021675,
+          "edge_curvature": 0.6191049814224243,
+          "edge_anisotropy": 1.0044314181674883,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.87241268157959,
+            "estimated_noise_fraction": 1.0316901293375387,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9086085557937622,
+          "coarse_laplacian_normalized": 0.010653109289705753,
+          "edge_curvature": 0.6259823441505432,
+          "edge_anisotropy": 1.0094427532504728,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625312805175781,
+            "estimated_noise_fraction": 0.9829317291706988,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8963503837585449,
+          "coarse_laplacian_normalized": 0.010574417188763618,
+          "edge_curvature": 0.6247658133506775,
+          "edge_anisotropy": 1.018676366598561,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.9963748514754317,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.901503324508667,
+          "coarse_laplacian_normalized": 0.01069612242281437,
+          "edge_curvature": 0.6234972476959229,
+          "edge_anisotropy": 1.0123167219300588,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872413635253906,
+            "estimated_noise_fraction": 1.0372927155932412,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9142593145370483,
+          "coarse_laplacian_normalized": 0.010717512108385563,
+          "edge_curvature": 0.6227397322654724,
+          "edge_anisotropy": 1.0079975041155693,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872411727905273,
+            "estimated_noise_fraction": 1.0228197718413046,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8934166431427002,
+          "coarse_laplacian_normalized": 0.010588908568024635,
+          "edge_curvature": 0.6274095773696899,
+          "edge_anisotropy": 1.0090496550676735,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625312805175781,
+            "estimated_noise_fraction": 0.9996457819993896,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9164614081382751,
+          "coarse_laplacian_normalized": 0.010735438205301762,
+          "edge_curvature": 0.6265148520469666,
+          "edge_anisotropy": 1.0247343436564476,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.974510189470647,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        }
+      ]
+    },
+    {
+      "sigma_8bit": 16,
+      "seed": 789,
+      "baseline": "keep",
+      "candidate": "review",
+      "raw_clear": 16,
+      "supported_clear": 0,
+      "regions": [
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.5882353037595749,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.05337930843234062,
+          "coarse_laplacian_normalized": 0.00204276735894382,
+          "edge_curvature": 0.42407411336898804,
+          "edge_anisotropy": 2.874092329591937,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872415542602539,
+            "estimated_noise_fraction": 0.9537829691481239,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.6078431457281113,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.05149256810545921,
+          "coarse_laplacian_normalized": 0.0021134086418896914,
+          "edge_curvature": 0.4224555790424347,
+          "edge_anisotropy": 1.9758968342119632,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625320434570312,
+            "estimated_noise_fraction": 0.884359947097959,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9031233191490173,
+          "coarse_laplacian_normalized": 0.010767757892608643,
+          "edge_curvature": 0.6179715394973755,
+          "edge_anisotropy": 1.0052609528233363,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.9889025801359059,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9050753712654114,
+          "coarse_laplacian_normalized": 0.010938328690826893,
+          "edge_curvature": 0.6186617016792297,
+          "edge_anisotropy": 1.0093607958234851,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.9867697308332419,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            0
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9083576202392578,
+          "coarse_laplacian_normalized": 0.010707752779126167,
+          "edge_curvature": 0.6262063384056091,
+          "edge_anisotropy": 1.0121881489555968,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.62531852722168,
+            "estimated_noise_fraction": 0.9832043249359352,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8954809904098511,
+          "coarse_laplacian_normalized": 0.010587085969746113,
+          "edge_curvature": 0.6243623495101929,
+          "edge_anisotropy": 1.0177803671889953,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872411727905273,
+            "estimated_noise_fraction": 1.0442684026944857,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9143306016921997,
+          "coarse_laplacian_normalized": 0.010648049414157867,
+          "edge_curvature": 0.6271342039108276,
+          "edge_anisotropy": 1.0091127499064625,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.9767812417461009,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.902744472026825,
+          "coarse_laplacian_normalized": 0.010632230900228024,
+          "edge_curvature": 0.6256403923034668,
+          "edge_anisotropy": 1.0166255640265367,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625320434570312,
+            "estimated_noise_fraction": 0.9893181172778511,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            1
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9005231857299805,
+          "coarse_laplacian_normalized": 0.010828223079442978,
+          "edge_curvature": 0.6194782257080078,
+          "edge_anisotropy": 1.0134444067032218,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872410774230957,
+            "estimated_noise_fraction": 1.0384211692360663,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9020630121231079,
+          "coarse_laplacian_normalized": 0.010817140340805054,
+          "edge_curvature": 0.6155766844749451,
+          "edge_anisotropy": 1.0003297888107126,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.62531852722168,
+            "estimated_noise_fraction": 0.9900651382498623,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.8931053876876831,
+          "coarse_laplacian_normalized": 0.010534721426665783,
+          "edge_curvature": 0.6286607384681702,
+          "edge_anisotropy": 1.0073706983969895,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625317573547363,
+            "estimated_noise_fraction": 0.9999950653076586,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9075629115104675,
+          "coarse_laplacian_normalized": 0.010852150619029999,
+          "edge_curvature": 0.6277834177017212,
+          "edge_anisotropy": 1.0074855782616492,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.872410774230957,
+            "estimated_noise_fraction": 1.0303664105153643,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            2
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.916426956653595,
+          "coarse_laplacian_normalized": 0.01098179817199707,
+          "edge_curvature": 0.6227334141731262,
+          "edge_anisotropy": 1.0141123956217266,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.62531566619873,
+            "estimated_noise_fraction": 0.9745464746125166,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            0,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9155161380767822,
+          "coarse_laplacian_normalized": 0.010871581733226776,
+          "edge_curvature": 0.6234439611434937,
+          "edge_anisotropy": 1.0194822010310203,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.87241268157959,
+            "estimated_noise_fraction": 1.0214158207103246,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            1,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.300018310546875,
+          "laplacian_normalized": 0.9001070261001587,
+          "coarse_laplacian_normalized": 0.010828061029314995,
+          "edge_curvature": 0.6194144487380981,
+          "edge_anisotropy": 1.0042166052718182,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625314712524414,
+            "estimated_noise_fraction": 0.992215896142685,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            2,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        },
+        {
+          "state": "clear",
+          "reason": "strong_consistent_detail",
+          "contrast": 0.13725492358207703,
+          "texture_fraction": 0.3000030517578125,
+          "laplacian_normalized": 0.9026187062263489,
+          "coarse_laplacian_normalized": 0.010602669790387154,
+          "edge_curvature": 0.6291916370391846,
+          "edge_anisotropy": 1.0091417789712347,
+          "detail_support": {
+            "state": "uncertain",
+            "estimated_noise_sigma": 10.625316619873047,
+            "estimated_noise_fraction": 0.9894552528174982,
+            "reason": "fine_detail_may_be_noise_dominated"
+          },
+          "tile": [
+            3,
+            3
+          ],
+          "native_size": [
+            256,
+            256
+          ]
+        }
+      ]
+    }
+  ]
+}

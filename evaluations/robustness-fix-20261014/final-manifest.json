@@ -1,0 +1,126 @@
+{
+  "base_head": "70f73a99b1902f37a135701898a462feac68df80",
+  "scope": "candidate robustness implementation and evidence; no source photos included",
+  "reviewed_headless_tests": 983,
+  "tested_source_hashes_verified": true,
+  "file_count": 29,
+  "total_bytes": 8309356,
+  "files": {
+    "docs/research-grouping.md": {
+      "bytes": 11446,
+      "sha256": "59254c17196eae9ac86f4f889439f2b4bd53c5ab797acced07e086618ed5e200"
+    },
+    "evaluations/noise-fix-20261014/REPORT.md": {
+      "bytes": 9498,
+      "sha256": "1f8e783c96840a60345fec39911fda1d2276bee4cc0e461a733d2611d5310fc4"
+    },
+    "evaluations/noise-fix-20261014/evaluate.py": {
+      "bytes": 10470,
+      "sha256": "b396152c1e00a8636c3d8e06c61fd4b2443d346e53c258c854bc0bbd5837bb85"
+    },
+    "evaluations/noise-fix-20261014/evaluate_runtime.py": {
+      "bytes": 2235,
+      "sha256": "89cc2cfa1e05e8aa0f752c3e1b978dcbaa414304b116291f9f1ef2300e3816ee"
+    },
+    "evaluations/noise-fix-20261014/evaluate_water.py": {
+      "bytes": 1817,
+      "sha256": "fa4724f3099a37cf5d034b9e9272bc6d50258dff0d4f2e4be8797ac64e8774fc"
+    },
+    "evaluations/noise-fix-20261014/focused-tests.log": {
+      "bytes": 179,
+      "sha256": "e661bc7ab202813ca412fbdf00b470d419188ecd11e85fb5544f31a2ac5712a5"
+    },
+    "evaluations/noise-fix-20261014/results.json": {
+      "bytes": 7803634,
+      "sha256": "f1b1953779eda0fc47d40ce31b280c35179f5e8392631d0874c7a8fcd6a41158"
+    },
+    "evaluations/noise-fix-20261014/run.log": {
+      "bytes": 19067,
+      "sha256": "b636ac445bd90de630e724534ab48ee4aa072b3fed53fbf060fd1f6fd0eab9f0"
+    },
+    "evaluations/noise-fix-20261014/runtime-isolated.json": {
+      "bytes": 7253,
+      "sha256": "dc10c29379e8f817868b4217aa2466aa1316037a16ef36d83fd12b442d76e03f"
+    },
+    "evaluations/noise-fix-20261014/runtime.log": {
+      "bytes": 7254,
+      "sha256": "7748e5b2e7bc8780662da6e916deb202b41829a8d17772d2cd756342cb7f01f0"
+    },
+    "evaluations/noise-fix-20261014/water-results.json": {
+      "bytes": 91321,
+      "sha256": "e664762d480493ea561f4c6a9dde4bccdfb736daa5239476fd08512f175be0e3"
+    },
+    "evaluations/noise-fix-20261014/water.log": {
+      "bytes": 1290,
+      "sha256": "a2eed8a0f2328a4da99861c56394b8b111de3df6199f0c283d9387e8159b5e14"
+    },
+    "evaluations/robustness-fix-20261014/REPORT.md": {
+      "bytes": 8204,
+      "sha256": "58206971da910e12389d49b3987041e7680cd2ebad46d8ecc1b7a7d5b67e424a"
+    },
+    "evaluations/robustness-fix-20261014/crop-collisions.log": {
+      "bytes": 2241,
+      "sha256": "1fd2dbceedb2a6c27067b20f2ec9b40faf1b26bfdf8d16e043c1304b5be41bd3"
+    },
+    "evaluations/robustness-fix-20261014/evaluate_crop_collisions.py": {
+      "bytes": 5261,
+      "sha256": "5a39dc8767fca43074c88b88e978f9f4dee9c2a12c93ceabb139a4bdbecb6e6e"
+    },
+    "evaluations/robustness-fix-20261014/evaluate_grouping.py": {
+      "bytes": 5384,
+      "sha256": "73fb3f95adb96b64c173913681c64a1c9ee67cb29611b579597853f78e2a2a91"
+    },
+    "evaluations/robustness-fix-20261014/freeze_manifest.py": {
+      "bytes": 1688,
+      "sha256": "5c0f3bd3861283372a58f6040db8265d6077b49c666a53862c3d99a903fb0c41"
+    },
+    "evaluations/robustness-fix-20261014/grouping-comparison.log": {
+      "bytes": 1144,
+      "sha256": "1d876970ccd46aa71c1582ce9831bfcc74f3ec0ef7f276f112864c34e78ecde5"
+    },
+    "evaluations/robustness-fix-20261014/headless-baseline-nodeids.json": {
+      "bytes": 85446,
+      "sha256": "3e448551d4e89bcc61afccdbe281eace222d959c394ef4c058d6f2137b917fdb"
+    },
+    "evaluations/robustness-fix-20261014/headless-manifest.json": {
+      "bytes": 844,
+      "sha256": "133e271df4d766d96645e1d03073a3cb5d5b264b04401884e231573d0217f3c7"
+    },
+    "evaluations/robustness-fix-20261014/headless.log": {
+      "bytes": 1151,
+      "sha256": "9e751d63c4e53de34eb83440336d30e44338a9439b8f67ea687c2c84c9464e22"
+    },
+    "evaluations/robustness-fix-20261014/headless.xml": {
+      "bytes": 131930,
+      "sha256": "0b59b99c7a3d558cc02918717287339598b92235f492c42854db8d178ee8ee21"
+    },
+    "evaluations/robustness-fix-20261014/results/crop-collisions.json": {
+      "bytes": 3779,
+      "sha256": "f7c5c47c16c6675a1fff44e1d054d3c0b734cc3fc91dec2a1fdc1aaf18ce0635"
+    },
+    "evaluations/robustness-fix-20261014/results/grouping-comparison.json": {
+      "bytes": 30023,
+      "sha256": "e3de2d77f43d6a70219d0de9b445780e394320215a14aa3d1d6853c1d51b5222"
+    },
+    "evaluations/robustness-fix-20261014/run_headless.py": {
+      "bytes": 852,
+      "sha256": "15639dce2f0ae578e9d47691f33a647e29b9a88fca0592076134fed84b036f98"
+    },
+    "src/ai_cull_assistant/analysis_modes.py": {
+      "bytes": 20409,
+      "sha256": "1a0bcf801a2a2c0873878d0392b4614040aff374be2188942d899b733227cedb"
+    },
+    "src/ai_cull_assistant/grouping.py": {
+      "bytes": 26417,
+      "sha256": "2db19002cae21767cb28554c36dfde50d359a9dbfe15fbe32f35d928c5782782"
+    },
+    "tests/test_grouping_crop_alignment.py": {
+      "bytes": 12016,
+      "sha256": "e6ffba79250ce4f9b5206e5eb6b7222d83f2739bcc0fd3a654a87dd5a3449862"
+    },
+    "tests/test_landscape_noise_guard.py": {
+      "bytes": 7103,
+      "sha256": "5512d5c2170ac8922c311bbd8158c5460814daf7bb9b534ea4c81f54126699b4"
+    }
+  }
+}
