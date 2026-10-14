@@ -1,0 +1,213 @@
+{
+  "date_utc": "2026-10-13",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "python": "3.12.14",
+  "packages": {
+    "Pillow": "12.3.0",
+    "rawpy": "0.27.1",
+    "pi-heif": "1.4.0",
+    "ExifRead": "3.5.1"
+  },
+  "fixture_results": [
+    {
+      "name": "L_12__128x128.heif",
+      "bytes": 1176,
+      "sha256": "83f07a856195b7efa0e3c81e52f250a762ad5e56c0b8fddbb8db74f3d616cc9a",
+      "preview_source": "standard_image",
+      "preview_size": [
+        128,
+        128
+      ],
+      "color_space": "sRGB",
+      "warnings": [
+        "high_bit_depth_display_conversion"
+      ],
+      "status": "decoded",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif/L_12__128x128.heif",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "pi_heif-1.4.0.tar.gz"
+    },
+    {
+      "name": "L_exif_xmp_iptc.heic",
+      "bytes": 56925,
+      "sha256": "0083645511ffdee8acf04973237272678d3eb2554d77bde2adeeca102c220d51",
+      "preview_source": "standard_image",
+      "preview_size": [
+        64,
+        64
+      ],
+      "color_space": "sRGB",
+      "warnings": [],
+      "status": "decoded",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_other/L_exif_xmp_iptc.heic",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "pi_heif-1.4.0.tar.gz"
+    },
+    {
+      "name": "RAW_CANON_40D_SRAW_V103.CR2",
+      "bytes": 6800865,
+      "sha256": "152382ce4dbf644899d12b41b4c577f07638aa3ec5745ac344c36bad93826125",
+      "preview_source": "raw_embedded_jpeg",
+      "preview_size": [
+        1936,
+        1288
+      ],
+      "color_space": "sRGB",
+      "warnings": [],
+      "full_source": "raw_full_decode",
+      "full_size": [
+        1944,
+        1296
+      ],
+      "status": "decoded",
+      "source_url": "https://github.com/letmaik/rawpy/blob/main/test/RAW_CANON_40D_SRAW_V103.CR2",
+      "license_note": "CC BY-NC-SA 4.0 per rawpy/test/README.txt; sample attributed there to rawsamples.ch; downloaded only for temporary local testing, not redistributed."
+    },
+    {
+      "name": "RGBA_12__128x128.heif",
+      "bytes": 22821,
+      "sha256": "7baf5a4e786fa381ac3e7675fd8245c886dadd4ef5c006bccfc6ac7f901a39f5",
+      "preview_source": "standard_image",
+      "preview_size": [
+        128,
+        128
+      ],
+      "color_space": "sRGB",
+      "warnings": [],
+      "status": "decoded",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif/RGBA_12__128x128.heif",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "pi_heif-1.4.0.tar.gz"
+    },
+    {
+      "name": "RGBA_8__128x128.heif",
+      "bytes": 16015,
+      "sha256": "df634be2fa51f3d9a244dc9c987d7179411814e7b171bc40273a4486181c559f",
+      "preview_source": "standard_image",
+      "preview_size": [
+        128,
+        128
+      ],
+      "color_space": "sRGB",
+      "warnings": [],
+      "status": "decoded",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif/RGBA_8__128x128.heif",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "pi_heif-1.4.0.tar.gz"
+    },
+    {
+      "name": "RGB_10__128x128.heif",
+      "bytes": 11637,
+      "sha256": "7fbf1573c1e5c1693953b31bb287327c53eaefa74a6f1324e7391a08b3ed1e73",
+      "preview_source": "standard_image",
+      "preview_size": [
+        128,
+        128
+      ],
+      "color_space": "sRGB",
+      "warnings": [],
+      "status": "decoded",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif/RGB_10__128x128.heif",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "pi_heif-1.4.0.tar.gz"
+    },
+    {
+      "name": "RGB_12__128x128.heif",
+      "bytes": 18468,
+      "sha256": "92c048d4bead7eebd3e0da5cb13a2e286cccbde3acb23580ee9c5f6b4cfde812",
+      "preview_source": "standard_image",
+      "preview_size": [
+        128,
+        128
+      ],
+      "color_space": "sRGB",
+      "warnings": [],
+      "status": "decoded",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif/RGB_12__128x128.heif",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "pi_heif-1.4.0.tar.gz"
+    },
+    {
+      "name": "RGB_8__128x128.heif",
+      "bytes": 6647,
+      "sha256": "b1f3c0578b52525e95d1db617286879aee76779eb2e507fc57d3ce2a3ab527f9",
+      "preview_source": "standard_image",
+      "preview_size": [
+        128,
+        128
+      ],
+      "color_space": "sRGB",
+      "warnings": [],
+      "status": "decoded",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif/RGB_8__128x128.heif",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "pi_heif-1.4.0.tar.gz"
+    },
+    {
+      "name": "arrow.heic",
+      "bytes": 792052,
+      "sha256": "73f604d7353df4848505a1f45a5517f736857fe047372f95c2f3d671df92c22c",
+      "preview_source": "standard_image",
+      "preview_size": [
+        3024,
+        4032
+      ],
+      "color_space": "sRGB",
+      "warnings": [],
+      "status": "decoded",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_other/arrow.heic",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "Direct upstream GitHub test fixture"
+    },
+    {
+      "name": "corrupted.heic",
+      "bytes": 4785,
+      "sha256": "a3a2cc3c5367fb61e02f52330cab9568c469cc8e08f909ad24b7993add1f630e",
+      "status": "decode_error",
+      "error_type": "DecodeError",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_corrupted/corrupted.heic",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "pi_heif-1.4.0.tar.gz"
+    },
+    {
+      "name": "empty.heic",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "status": "decode_error",
+      "error_type": "DecodeError",
+      "source_url": "https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_corrupted/empty.heic",
+      "license_note": "pi-heif 1.4.0 source/test archive; bindings BSD-3-Clause, individual fixture photo redistribution permission not separately established; temporary local testing only, not redistributed.",
+      "archive": "pi_heif-1.4.0.tar.gz"
+    },
+    {
+      "name": "iss030e122639.NEF",
+      "bytes": 10656312,
+      "sha256": "5922721d13f11795557d97fdeb0a60b900086c402bc82a848ff280d15b99ffd4",
+      "preview_source": "raw_embedded_jpeg",
+      "preview_size": [
+        4256,
+        2832
+      ],
+      "color_space": "sRGB",
+      "warnings": [],
+      "full_source": "raw_full_decode",
+      "full_size": [
+        4284,
+        2844
+      ],
+      "status": "decoded",
+      "source_url": "https://github.com/letmaik/rawpy/blob/main/test/iss030e122639.NEF",
+      "license_note": "Upstream test fixture; individual photo redistribution permission not established in this work; temporary local testing only, not redistributed."
+    }
+  ],
+  "environment_change": {
+    "requested_install": "pi-heif==1.4.0",
+    "installer_result": "Successfully installed pi-heif-1.4.0; Pillow 12.3.0 already satisfied; no other installs/upgrades reported",
+    "limitations": "No complete pip freeze was captured before installation; fixed benchmark source directories were not edited."
+  },
+  "source_archive": {
+    "filename": "pi_heif-1.4.0.tar.gz",
+    "sha256": "e1199d9d41d9ecc877cf3ae7322ff099f6404574f2e62da47590cd4ecb9ec554",
+    "release_page": "https://pypi.org/project/pi-heif/1.4.0/"
+  }
+}

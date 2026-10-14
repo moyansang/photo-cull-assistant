@@ -1,0 +1,133 @@
+# AI选片助手
+
+在 Windows 上完成照片初筛、AI 辅助选片，并将结果交给 Lightroom Classic 复核。
+
+> 当前源码包含 2026-10-13 流程整合开发改动，尚未发布或完成 Windows GUI 验收；下方发布附件仍为既有版本。详见 [开发改动与验证边界](docs/redesign-development.md)。
+
+[![Windows 构建](https://github.com/moyansang/photo-cull-assistant/actions/workflows/build-windows.yml/badge.svg)](https://github.com/moyansang/photo-cull-assistant/actions/workflows/build-windows.yml)
+
+**[下载 Windows x64 便携版](https://github.com/moyansang/photo-cull-assistant/releases/latest)** · [使用指南](docs/user-guide.md) · [常见问题](docs/faq.md) · [反馈问题](https://github.com/moyansang/photo-cull-assistant/issues/new/choose)
+
+当前发布：**v1.6.0 · 构建 10**。本地扫描无需 API Key，便携包无需安装 Python。原照片保留在原目录；“弃置”是审核结果和 Lightroom 标记，不是删除原片。
+
+## 它能做什么
+
+- **本地初筛**：扫描前手动选择人像或风景。优先读取配对 JPG，必要时完整解码 RAW；按哈希与灰度结构相似度整理当前工作区全部照片，不再设拍摄时间门槛。
+- **人工修正**：拆分或合并组，调整人脸/人体主体，只重新扫描修改过的照片。全屏查看支持缩放、100%与切图保持视野。
+- **人物辅助补框**：使用外观匹配，或可选的离线 SFace 人脸特征模式；积累已确认参考，保留确认、拒绝、跳过和恢复进度。
+- **两种 AI 选片方式**：通过自选 API 提交，或生成联系表和提示词后手动上传大模型网页，回填评分与理由。
+- **保存工作进度**：保留分组、审核和 AI 结果，支持停止续做、增量扫描及同一批照片换盘符后的重新定位。
+- **连接 Lightroom Classic**：将星级、弃置、AI 理由与清晰度待确认状态导入 Catalog，在原图上做最终判断。
+
+## 下载与运行
+
+发布包面向 **Windows x64**，需要可写的解压目录。本地分析使用 CPU；RAW 格式支持取决于包内 LibRaw，尚未承诺覆盖所有相机。Lightroom Classic 只在使用 LR 插件时需要。
+
+在 [最新 Release](https://github.com/moyansang/photo-cull-assistant/releases/latest) 的 **Assets** 中选择：
+
+| 文件 | 用途 |
+|---|---|
+| `AI-Photo-Cull-v1.6.0-Windows-x64-portable.zip` | **普通用户下载这个**：完整程序、依赖、模型及 LR 插件 |
+| `SHA256SUMS-v1.6.0.txt` | 核对便携包的 SHA256 |
+| `update.json` | 软件更新器读取的元数据，无需手动打开 |
+| `AI-Photo-Cull-v1.6.0-build10-source.zip` | 与构建 10 对应的开发源码，含非商业许可证 |
+| `Source code (zip / tar.gz)` | GitHub 按原 v1.6.0 标签自动生成的构建 2 历史源码；当前源码请用上面的构建 10 附件 |
+
+完整解压后运行 `AI选片助手.exe`，保留旁边的 `_internal`、`lightroom` 等目录，不要只复制 EXE。
+
+已有用户可在软件中点击**检查更新**；更新器支持同一版本内的构建号升级。手动换版本时保留设置和工作区，详见[更新说明](docs/user-guide.md#安装与升级)。
+
+## 五步开始选片
+
+构建 10 的顶部导航依次为 **主页 → 选片组 → 人脸框 → 复核 → 选片**。主页入口按扫描图片、编辑选片组、检测/调整人脸框、AI 复核、生成联系表、AI 选片与导出排列。
+
+1. **选择照片和工作区**。工作区建议放在照片目录外，用来保存分析、缓存与审核进度。
+2. **扫描并检查人脸**。调整分组，修正漏框或误框；修改后点击“重新扫描修改过的图片”。人物候选需要你确认和采用。
+3. **按需复核清晰度**。主页“AI 复核”和顶部“复核”仅进入复核页，不启动任务或发送 API 请求；在页内主动点击“开始 AI 复核”才执行。也可留到 Lightroom 人工检查。“待确认”不会直接作为清晰照片进入正式 AI 选片。
+4. **生成联系表并选片**。选择 API 提交，或在网页模式复制提示词、上传生成的图片，再粘贴模型回答。检查返回的评分、理由与弃置结果。
+5. **导出并复核原图**。点击“导出到 LR”，在 Lightroom Classic 插件中导入结果，确认后再进行后续修图。
+
+没有 API Key 也可以本地扫描、手动调整、导出已有筛查状态；网页选片由你自行提交材料。[完整工作流](docs/user-guide.md)
+
+本地构建 13（未发布）主页取消内部滚动布局，操作区完整展开、日志独立滚动。“打开联系表目录”右侧的“打开选片结果”可打开当前工作区的结果文件所在目录，不会启动选片或重新导出。
+
+短窗口会压缩主页上下留白，保留全部操作入口，并为中文日志留出包含内边距和边框的完整一行空间；放大窗口后日志区域随之扩展。
+
+补框审核中可用 **Y** 确认、**X** 排除当前候选、**P** 暂时跳过；确认后仍需“采用选中候选”，不会自动改动原片。
+
+## 数据与隐私
+
+| 操作 | 数据去向 |
+|---|---|
+| 本地扫描、补框、本地人脸特征匹配 | 在本机处理，不向 AI 服务发送照片；人脸特征只在当轮任务内存中使用 |
+| API 复核或选片 | 向你配置的服务发送所需图片细节、预览或联系表，以及提示词；可能产生费用 |
+| 网页选片 | 由你向所选大模型网页上传生成材料 |
+| 检查或下载更新 | 连接 GitHub 获取发布信息和程序包，不提交照片 |
+
+API 接口使用支持图片输入的 **OpenAI-compatible Chat Completions** 协议；预设只是配置模板，模型能力和价格以服务提供方为准。API Key 使用当前 Windows 用户的凭据管理器，不写入工作区 JSON；换电脑需要重新配置。
+
+工作区会保存处理记录、生成材料，以及相关 AI 请求图片、提示词和回答证据。不要公开整个工作区；分享日志或提交 Issue 前先移除照片、路径和其他私人信息。详见[API 与网页提交](docs/user-guide.md#api-与网页提交)。
+
+## Lightroom Classic 集成
+
+1. 在 Lightroom Classic 的**文件 → 增效工具管理器 → 添加**中，选择包内 `lightroom/PhotoCullAssistant.lrplugin` 文件夹。
+2. 将原照片导入当前 Catalog，再通过**文件 → 增效工具附加功能 → 导入 AI选片助手结果**选择导出的 `lightroom_results.json`。
+3. 核对匹配数量后应用，在元数据面板选择“AI选片助手”查看理由；待确认照片可在专用智能收藏夹中继续检查。
+
+插件仅支持 **Lightroom Classic**，不支持云端 Lightroom。照片按完整路径匹配，RAW/JPG 分别处理；插件不直接编辑 `.lrcat` 或写入 XMP，也不覆盖调色，但 Lightroom 自身的自动写 XMP 设置仍会生效。
+
+[插件安装与使用](lightroom/安装与使用.txt) · [路径、换电脑与工作区](docs/user-guide.md#更换电脑或移动硬盘盘符)
+
+## 已知限制
+
+- 软件提供辅助判断，不保证找全人脸、正确识别所有人物或准确区分全部清晰／模糊照片。最终请检查原图。
+- 人脸特征模式和身体清晰度检查仍是实验功能。侧脸、小脸、浓妆、遮挡、同服装不同人等真实场景，不能由小规模公开人像评测推断可靠性。多参考候选始终需要人工审核。[人脸模式与验证边界](docs/face-identity-mode.md)
+- 当前没有 GPU 后端；扫描速度取决于照片、CPU、内存与磁盘，不承诺固定提速比例。[性能说明](docs/scan-performance.md)
+- 已有自动测试、EXE 自检和部分桌面检查，不等同于所有显示器 DPI、另一台实体电脑或真实 Lightroom Catalog 的完整验收。
+
+## 从源码运行
+
+推荐 **Windows x64、Python 3.12 和 Git**。开发使用独立虚拟环境，不覆盖便携版安装目录。
+
+```powershell
+git clone https://github.com/moyansang/photo-cull-assistant.git
+cd photo-cull-assistant
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[raw,dev]"
+.\.venv\Scripts\python.exe launcher.py
+```
+
+两份人体检测／姿态基础 ONNX 已随普通 Git 跟踪，克隆后无需另行下载模型或安装 Git LFS。固定来源、版本、SHA256 与许可见 [模型说明](body_models/README.md)；可运行 `python body_models/download.py --verify-only` 离线校验。微调前还需准备训练资源，见[基础模型与微调边界](docs/body-model-baselines.md)。
+
+运行回归测试：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -q --capture=sys
+```
+
+生成 Windows 便携包：
+
+```powershell
+.\make_portable_zip.ps1
+```
+
+打包脚本会先构建 EXE，再生成 ZIP 和 `update.json`；首次构建需要联网安装依赖；模型直接使用仓库中的固定文件并离线校验。已有完整打包环境时可使用 `-UseExistingEnvironment`。开发数据与便携版数据分离；源码同步用 Git，程序升级用 Release，两者不会自动互相同步。
+
+[开发与打包说明](docs/development.md) · [构建工作流](.github/workflows/build-windows.yml)
+
+## 文档与反馈
+
+- [使用指南](docs/user-guide.md) / [常见问题](docs/faq.md)：详细操作、工作区与恢复。
+- [更新日志](CHANGELOG.md) / [发布记录](https://github.com/moyansang/photo-cull-assistant/releases)：查看版本变化。
+- [清晰度验证](docs/clarity-v2-validation.md) / [人物匹配说明](docs/face-identity-mode.md)：样本规模、方法和限制。
+- [贡献说明](CONTRIBUTING.md)：提交问题时请注明版本及构建号、复现步骤、照片格式、预期与实际表现；不要上传密钥或私人照片。
+
+## 许可证与致谢
+
+本项目自有代码由 **moyansang** 按 [PolyForm Noncommercial License 1.0.0](LICENSE) 授权，**不授予商业使用许可**。允许在许可证规定的范围内使用、修改和分发；出售程序、提供收费选片服务或用于商业摄影工作流等商业用途不在本许可授权范围内。分发时须保留许可条款或其官方链接，以及下列署名通知。
+
+Required Notice: Copyright (c) 2026 moyansang
+
+许可证另明确允许列举的慈善、教育、公共研究、公共安全/卫生、环保和政府机构使用，不受其资金来源或相关资助义务影响；具体边界以 [LICENSE](LICENSE) 英文全文为准。这是提供源码的非商业许可，不应标注为允许自由商用的开源软件。
+
+依赖和模型各自遵循原有许可：YuNet 使用 MIT，SFace 与相关 MediaPipe 模型使用 Apache-2.0，LR 插件中的 `json.lua` 使用 MIT。详见[第三方来源](docs/third-party.md)与[SFace 模型许可](src/ai_cull_assistant/data/SFACE-LICENSE.txt)。本项目不是 Microsoft、Adobe 或模型提供方的官方产品。

@@ -1,0 +1,469 @@
+import time
+
+def wait_preview(dialog):
+    deadline = time.monotonic() + 10
+    while (dialog._future is not None or dialog._wanted is not None or dialog._pending) and time.monotonic() < deadline:
+        dialog.update()
+        time.sleep(.01)
+    assert dialog._future is None and dialog._wanted is None
+
+from dataclasses import asdict
+from datetime import datetime
+from types import SimpleNamespace
+import tkinter as tk
+from PIL import Image
+from ai_cull_assistant.models import PhotoAsset
+from ai_cull_assistant.crop_settings import CropSettings
+from ai_cull_assistant.crop_dialog import CropDialog
+from ai_cull_assistant.subject import SubjectFeatures, detail_features, selection_score
+from ai_cull_assistant.yunet import FaceDetection
+
+
+def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
+    assets=[]
+    for name in ('a','b'):
+        path=tmp_path/f'{name}.jpg'
+        Image.new('RGB',(400,600),'gray').save(path)
+        assets.append(PhotoAsset(name,path,path,None,path,datetime.now(),'.jpg',preview_path=path))
+    root=tk.Tk(); root.withdraw()
+    saved=[]
+    try:
+        initial=CropSettings()
+        d=CropDialog(root,assets,initial,saved.append)
+        wait_preview(d)
+        d.scale.set(1.4); d.shift.set(.1); d.offset_x.set(.2); d.ratio.set('1:1')
+        d.render()
+        wait_preview(d)
+        x,y,w,h,_,_=d._image_rect
+        d.pointer_down(SimpleNamespace(x=x+w*.3,y=y+h*.2))
+        d.pointer_up(SimpleNamespace(x=x+w*.6,y=y+h*.4))
+        assert detail_features(assets[0],d.global_settings()).face is not None
+        d.navigate(1)
+        assert d.scale.get()==1 and d.shift.get()==0 and d.ratio.get()=='124:150'
+        d.clear_face_selection(); d.confidence.set(.95)
+        d.navigate(-1)
+        assert d.scale.get()==1.4 and d.shift.get()==.1
+        assert d.offset_x.get()==.2
+        assert detail_features(assets[0],d.global_settings()).face is not None
+        d.save()
+        settings=CropSettings.from_dict(asdict(saved[0]))
+        assert settings.for_asset(assets[0]).aspect_ratio=='1:1'
+        assert settings.for_asset(assets[0]).offset_x_factor==.2
+        assert settings.for_asset(assets[1]).scale_factor==1
+        assert settings.for_asset(assets[0]).detection_confidence==.95
+        assert detail_features(assets[1],settings).face is None
+        assert initial.photos=={}
+        d=CropDialog(root,assets,settings,saved.append)
+        wait_preview(d)
+        d.auto_face(); d.scale.set(2); d.destroy()
+        assert settings.for_asset(assets[0]).scale_factor==1.4
+        assert settings.photos[settings.key(assets[0])]['manual_face']
+    finally:
+        root.destroy()
+
+
+def test_crop_page_can_embed_without_creating_or_grabbing_a_window(tmp_path, monkeypatch):
+    import ai_cull_assistant.crop_dialog as module
+    monkeypatch.setattr(module, 'detect', lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(module, 'detail_features', lambda *_args, **_kwargs: None)
+    path = tmp_path / 'embedded.jpg'
+    Image.new('RGB', (160, 240), 'gray').save(path)
+    asset = PhotoAsset(
+        path.stem, path, path, None, path, datetime.now(), '.jpg', preview_path=path)
+    root = tk.Tk()
+    root.geometry('1100x430')
+    root._open_api_config = lambda: None
+    root._page_chrome = tk.Frame(root)
+    host = tk.Frame(root)
+    host.pack(fill='both', expand=True)
+    saved = []
+    try:
+        page = CropDialog(host, [asset], CropSettings(), saved.append, embedded=True)
+        page.pack(fill='both', expand=True)
+        root.update()
+        assert page._embedded
+        assert page.master is host
+        assert page.winfo_toplevel() is root
+        assert root.grab_current() is None
+        assert not hasattr(page, 'confidence_spinbox')
+        assert page.person_picker.master is page.ratio_picker.master
+        navigation = {'上一张', '下一张', '重置当前裁切', '上一张未标记', '下一张未标记', '补齐人脸'}
+        buttons = []
+        def collect(widget):
+            for child in widget.winfo_children():
+                if isinstance(child, tk.ttk.Button) and child.cget('text') in navigation:
+                    buttons.append(child)
+                collect(child)
+        collect(page)
+        assert {button.cget('text') for button in buttons} == navigation
+        assert all(button.winfo_viewable() for button in buttons)
+        assert all(button.winfo_rooty() + button.winfo_height()
+                   <= page.winfo_rooty() + page.winfo_height() for button in buttons)
+        page.save()
+        assert len(saved) == 1
+        assert not page.winfo_exists()
+        assert root.winfo_exists()
+    finally:
+        root.destroy()
+
+
+def test_crop_frame_drag_and_wheel_are_separate_from_manual_face(tmp_path, monkeypatch):
+    import ai_cull_assistant.crop_dialog as module
+    preview_dir=tmp_path/'v05';preview_dir.mkdir()
+    path=preview_dir/'face.jpg'
+    Image.new('RGB',(400,600),'gray').save(path)
+    asset=PhotoAsset('face',path,path,None,path,datetime.now(),'.jpg',preview_path=path)
+    asset.subject_checked=True
+    asset.subject_confidence=.8
+    asset.subject_features=SubjectFeatures('','','',(.35,.2,.2,.2),(.3,.12,.3,.36))
+    detections=[]
+    opened=[]
+    real_open=module.Image.open
+    monkeypatch.setattr(module, 'ensure_preview', lambda *_: (_ for _ in ()).throw(AssertionError('existing preview must be reused')))
+    monkeypatch.setattr(module, 'detect', lambda *_: detections.append(True) or [])
+    def tracked_open(*args, **kwargs):
+        # ttkbootstrap may open its own packaged images while constructing the
+        # window.  This assertion is about decoding the selected preview only.
+        if args and str(args[0]) == str(path):
+            opened.append(True)
+        return real_open(*args, **kwargs)
+    monkeypatch.setattr(module.Image, 'open', tracked_open)
+    root=tk.Tk();root.withdraw()
+    try:
+        dialog=CropDialog(root,[asset],CropSettings(),lambda settings:None)
+        wait_preview(dialog)
+        dialog.render()
+        wait_preview(dialog)
+        left,top,right,bottom=dialog._crop_rect
+        start_x=(left+right)/2;start_y=(top+bottom)/2
+        dialog.pointer_down(SimpleNamespace(x=start_x,y=start_y))
+        assert dialog._crop_selected
+        assert dialog.canvas.itemcget('crop-outline','outline')=='#ffb000'
+        dialog.pointer_move(SimpleNamespace(x=start_x+12,y=start_y+8))
+        assert len(dialog.canvas.find_withtag('crop-outline'))==1
+        assert not dialog.canvas.find_withtag('drag')
+        dialog.pointer_up(SimpleNamespace(x=start_x+12,y=start_y+8))
+        assert dialog.offset_x.get()>0
+        assert dialog.shift.get()>0
+        assert dialog.canvas.itemcget('crop-outline','outline')=='#ffb000'
+        assert dialog.current_entry()['offset_x_factor']==round(dialog.offset_x.get(),3)
+        assert dialog.current_entry()['shift_factor']==round(dialog.shift.get(),3)
+        assert 'manual_face' not in dialog.current_entry()
+        assert 'preview_version' not in dialog.current_entry()
+        old_scale=dialog.scale.get()
+        x,y,w,h,_,_=dialog._image_rect
+        dialog.mouse_wheel(SimpleNamespace(x=x+w/2,y=y+h/2,delta=120,num=0))
+        assert dialog.scale.get()==old_scale-.02
+        dialog.render()
+        wait_preview(dialog)
+        assert len(detections)==1
+        assert len(opened)==1
+        start_x=x+w*.05;start_y=y+h*.65
+        dialog.pointer_down(SimpleNamespace(x=start_x,y=start_y))
+        assert not dialog._crop_selected
+        assert dialog._drag[0]=='manual'
+        dialog.pointer_move(SimpleNamespace(x=start_x+30,y=start_y+30))
+        dialog.pointer_up(SimpleNamespace(x=start_x+30,y=start_y+30))
+        wait_preview(dialog)
+        assert dialog.current_entry()['preview_version']=='v05'
+        assert dialog.canvas.itemcget('crop-outline','outline')=='#00aa66'
+        left,top,right,bottom=dialog._crop_rect
+        center=SimpleNamespace(x=(left+right)/2,y=(top+bottom)/2)
+        dialog.pointer_down(center)
+        dialog.pointer_up(center)
+        assert dialog.canvas.itemcget('crop-outline','outline')=='#ffb000'
+        dialog.auto_face()
+        assert 'preview_version' not in dialog.current_entry()
+        dialog.destroy()
+        asset.subject_features=SubjectFeatures('', '', None, None, (.3,.12,.3,.36))
+        head_dialog=CropDialog(root,[asset],CropSettings(),lambda settings:None)
+        wait_preview(head_dialog)
+        assert head_dialog._crop_rect is not None
+        labels=[head_dialog.detail_canvas.itemcget(item,'text') for item in head_dialog.detail_canvas.find_all()
+                if head_dialog.detail_canvas.type(item)=='text']
+        assert '头部定位，清晰度待确认' in labels
+        head_dialog.destroy()
+    finally:
+        root.destroy()
+
+
+def test_multi_person_selector_saves_independent_crops_only_after_edit(tmp_path, monkeypatch):
+    import ai_cull_assistant.crop_dialog as module
+    path = tmp_path / 'people.jpg'
+    Image.new('RGB', (600, 800), 'gray').save(path)
+    asset = PhotoAsset('people', path, path, None, path, datetime.now(), '.jpg', preview_path=path)
+    boxes = [(.1, .15, .2, .25), (.62, .2, .18, .22)]
+    subjects = [SubjectFeatures('', '', None, box, box) for box in boxes]
+    key = CropSettings().key(asset)
+    settings = CropSettings(photos={key: {'selected_faces': [list(box) for box in boxes]}})
+    monkeypatch.setattr(module, 'detail_features_list', lambda *_: subjects)
+    monkeypatch.setattr(module, 'detect', lambda *_: [])
+    root = tk.Tk(); root.withdraw()
+    try:
+        dialog = CropDialog(root, [asset], settings, lambda _settings: None)
+        wait_preview(dialog)
+        entry = dialog.current_entry()
+        assert 'face_crops' not in entry
+        assert tuple(dialog.person_picker.cget('values')) == ('人物 1', '人物 2')
+        assert dialog.person.get() == '人物 1'
+
+        dialog.scale.set(1.4)
+        dialog.offset_x.set(.2)
+        dialog.store_current()
+        first_key = module.face_box_key(boxes[0])
+        assert entry['face_crops'][first_key]['scale_factor'] == 1.4
+
+        dialog.person_picker.current(1)
+        dialog.select_person()
+        assert dialog.person.get() == '人物 2'
+        assert dialog.scale.get() == 1
+        left, top, right, bottom = dialog._crop_rect
+        center = SimpleNamespace(x=(left + right) / 2, y=(top + bottom) / 2)
+        dialog.pointer_down(center)
+        dialog.pointer_up(SimpleNamespace(x=center.x + 10, y=center.y + 6))
+        second_offset = dialog.offset_x.get()
+        assert second_offset > 0 and second_offset != .2
+        dialog.ratio.set('1:1')
+        dialog.shift.set(-.3)
+        dialog.store_current()
+        second_key = module.face_box_key(boxes[1])
+        assert entry['face_crops'][second_key]['aspect_ratio'] == '1:1'
+        assert entry['face_crops'][second_key]['shift_factor'] == -.3
+
+        dialog.person_picker.current(0)
+        dialog.select_person()
+        assert dialog.scale.get() == 1.4
+        assert dialog.offset_x.get() == .2
+        dialog.person_picker.current(1)
+        dialog.select_person()
+        assert dialog.offset_x.get() == round(second_offset, 3)
+        dialog.destroy()
+    finally:
+        root.destroy()
+
+
+def test_confident_subject_beats_large_backdrop():
+    real=FaceDetection((400,400,140,180),(),.93)
+    backdrop=FaceDetection((50,0,300,300),(),.84)
+    assert selection_score(real,1067,1600)>selection_score(backdrop,1067,1600)+.025
+
+
+def test_all_main_options_survive_restart(tmp_path):
+    # Isolate Tcl interpreter lifetime from other image/GUI tests.
+    import subprocess, sys
+    result = subprocess.run([sys.executable, '-c', "import runpy,sys; from pathlib import Path; runpy.run_path(sys.argv[1])['_check_restart'](Path(sys.argv[2]))", __file__, str(tmp_path)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def _check_restart(tmp_path):
+    from ai_cull_assistant.app import App
+    photos=tmp_path/'photos';photos.mkdir()
+    app=App(settings_dir=tmp_path); app.withdraw()
+    app.input_var.set(str(photos));app._sync_selected_workspace()
+    app.preset_var.set('宽松'); app.per_page_var.set(24); app.columns_var.set(3)
+    app.screening_var.set(False); app.no_updates_var.set(True)
+    app._close()
+    app=App(settings_dir=tmp_path); app.withdraw()
+    try:
+        assert app.preset_var.get()=='宽松'
+        assert app.per_page_var.get()==24 and app.columns_var.get()==3
+        assert not app.screening_var.get() and app.input_var.get()==str(photos)
+        assert app.no_updates_var.get()
+    finally:
+        app._close()
+
+
+def test_next_unmarked_wraps_skips_hidden_and_preserves_edits(monkeypatch, tmp_path):
+    import ai_cull_assistant.crop_dialog as module
+    assets=[SimpleNamespace(
+        primary_path=tmp_path/str(i), stem=str(i),
+        subject_features=SimpleNamespace(face=(.2,.2,.2,.2), head=(.2,.15,.2,.3)),
+    ) for i in range(4)]
+    settings=CropSettings()
+    settings.photos[settings.key(assets[2])]={'hidden':True}
+    assets[3].subject_features=None
+    monkeypatch.setattr(module, 'detail_features', lambda *_: (_ for _ in ()).throw(AssertionError('must use cached scan results')))
+    calls=[]
+    dialog=SimpleNamespace(_ensure_review_index=lambda callback:True,assets=assets,index=1,store_current=lambda:calls.append('stored'),global_settings=lambda:settings,load_current=lambda:calls.append('loaded'),render=lambda:calls.append('rendered'),caption=SimpleNamespace(configure=lambda **kw:calls.append(kw['text'])))
+    CropDialog.next_unmarked(dialog)
+    assert dialog.index==3 and calls[:3]==['stored','loaded','rendered']
+    assets[0].subject_features=None
+    CropDialog.next_unmarked(dialog)
+    assert dialog.index==0  # wraps past the last photo
+    assets[0].subject_features=SimpleNamespace(face=(.2,.2,.2,.2),head=None)
+    assets[3].subject_features=SimpleNamespace(face=None,head=(.2,.1,.3,.4))
+    CropDialog.next_unmarked(dialog)
+    assert '没有未标记' in calls[-1]
+    settings.photos[settings.key(assets[0])]={'selected_faces': []}
+    dialog.index=3
+    CropDialog.next_unmarked(dialog)
+    assert dialog.index==0  # explicit empty selection remains missing
+    dialog.assets=[]
+    CropDialog.next_unmarked(dialog)
+    assert '请先扫描' in calls[-1]
+
+
+def test_existing_manual_box_records_legacy_preview_version_on_store(tmp_path):
+    preview_dir=tmp_path/'v04';preview_dir.mkdir()
+    asset=SimpleNamespace(primary_path=tmp_path/'source.raw',preview_path=preview_dir/'source.jpg')
+    settings=CropSettings()
+    key=settings.key(asset)
+    edits={key:{'manual_face':[.2,.2,.3,.3]}}
+    dialog=SimpleNamespace(
+        assets=[asset],index=0,_loading=False,edits=edits,
+        global_settings=lambda:CropSettings(photos=edits),
+        settings=lambda:CropSettings(scale_factor=1.2,shift_factor=.1,offset_x_factor=.2),
+        _preview_version=CropDialog._preview_version,
+    )
+    CropDialog.store_current(dialog)
+    assert edits[key]['preview_version']=='v04'
+
+
+def test_crop_title_and_footer_visible_on_small_screen(tmp_path, monkeypatch):
+    from ai_cull_assistant import window_layout
+    monkeypatch.setattr(window_layout,'work_area_for',lambda w:window_layout.WorkArea(0,0,800,600))
+    root=tk.Tk()
+    p=tmp_path/'sample.jpg';Image.new('RGB',(400,600),'gray').save(p)
+    a=PhotoAsset('sample',p,p,None,p,datetime.now(),'.jpg',preview_path=p)
+    try:
+        d=CropDialog(root,[a],CropSettings(),lambda s:None)
+        wait_preview(d)
+        root.update()
+        assert d.title()=='检测/调整人脸框'
+        expected = {
+            '关闭', '重新扫描修改过的图片', '恢复本张自动选脸', '去除所有框选',
+            '上一张', '下一张', '上一张未标记', '下一张未标记', '重置当前裁切', '补齐人脸',
+        }
+        buttons=[]
+        def walk(w):
+            for c in w.winfo_children():
+                if isinstance(c,tk.ttk.Button) and c.cget('text') in expected:buttons.append(c)
+                walk(c)
+        walk(d)
+        assert {button.cget('text') for button in buttons} == expected
+        for b in buttons:
+            assert b.winfo_viewable()
+            assert b.winfo_rooty()+b.winfo_height()<=d.winfo_rooty()+d.winfo_height()
+    finally:
+        root.destroy()
+
+
+def test_confidence_spinbox_tolerates_transient_invalid_text(tmp_path, monkeypatch):
+    from ai_cull_assistant import crop_dialog as module
+    monkeypatch.setattr(module, 'detect', lambda *_args, **_kwargs: [])
+    root = tk.Tk()
+    root.withdraw()
+    path = tmp_path / 'sample.jpg'
+    Image.new('RGB', (160, 240), 'gray').save(path)
+    asset = PhotoAsset('sample', path, path, None, path, datetime.now(), '.jpg', preview_path=path)
+    dialog = CropDialog(root, [asset], CropSettings(detection_confidence=.82), lambda _settings: None)
+    try:
+        wait_preview(dialog)
+        for typed in ('', '.', 'not-a-number'):
+            dialog.confidence.set(typed)
+            dialog.render()
+            assert dialog.global_settings().detection_confidence == .82
+        dialog.confidence.set('9')
+        dialog._commit_confidence()
+        assert dialog.confidence.get() == '0.95'
+        assert dialog.global_settings().detection_confidence == .95
+    finally:
+        dialog.destroy()
+        root.destroy()
+
+
+def test_slow_preview_does_not_block_navigation_or_show_stale_photo(tmp_path, monkeypatch):
+    import threading
+    import ai_cull_assistant.crop_dialog as module
+    started, release = threading.Event(), threading.Event()
+    paths = [tmp_path/'first.jpg', tmp_path/'second.jpg']
+    for path in paths:
+        Image.new('RGB', (120, 180), 'gray').save(path)
+    assets = [PhotoAsset(p.stem, p, p, None, p, datetime.now(), '.jpg', preview_path=p) for p in paths]
+    original = CropDialog._prepare_preview
+    def delayed(self, asset, settings):
+        if asset.stem == 'first':
+            started.set()
+            assert release.wait(5)
+        return original(self, asset, settings)
+    monkeypatch.setattr(CropDialog, '_prepare_preview', delayed)
+    monkeypatch.setattr(module, 'detail_features', lambda *_: None)
+    monkeypatch.setattr(module, 'detect', lambda *_: [])
+    root = tk.Tk(); root.withdraw()
+    try:
+        dialog = CropDialog(root, assets, CropSettings(), lambda _: None)
+        assert started.wait(2)
+        tick = []
+        root.after(0, lambda: tick.append(True))
+        dialog.navigate(1)
+        root.update()
+        assert tick and dialog.index == 1 and dialog._image_rect is None
+        release.set()
+        wait_preview(dialog)
+        assert dialog.index == 1 and 'second' in dialog.caption.cget('text')
+        assert dialog._image_rect is not None
+        dialog.destroy()
+    finally:
+        release.set()
+        root.destroy()
+
+
+def test_close_during_background_preview_is_safe(tmp_path, monkeypatch):
+    import threading
+    release = threading.Event()
+    p = tmp_path/'slow.jpg'
+    Image.new('RGB', (120, 180)).save(p)
+    asset = PhotoAsset(p.stem, p, p, None, p, datetime.now(), '.jpg', preview_path=p)
+    def slow(*_):
+        release.wait(3)
+        raise OSError('late error')
+    monkeypatch.setattr(CropDialog, '_prepare_preview', staticmethod(slow))
+    root = tk.Tk(); root.withdraw()
+    try:
+        dialog = CropDialog(root, [asset], CropSettings(), lambda _: None)
+        future = dialog._future[1]
+        dialog.destroy()
+        assert dialog._closed and dialog._poll_token is None
+        release.set()
+        try:
+            future.result(timeout=3)
+        except OSError:
+            pass
+        root.update()
+    finally:
+        release.set()
+        root.destroy()
+
+
+def test_revisit_many_photos_and_manual_edit_reuse_detection(tmp_path, monkeypatch):
+    import ai_cull_assistant.crop_dialog as module
+    calls = []
+    monkeypatch.setattr(module, 'detect', lambda *args: calls.append(True) or [])
+    monkeypatch.setattr(module, 'detail_features', lambda *_: None)
+    assets = []
+    for i in range(7):
+        path = tmp_path / f'{i}.jpg'
+        Image.new('RGB', (120,180)).save(path)
+        assets.append(PhotoAsset(path.stem,path,path,None,path,datetime.now(),'.jpg',preview_path=path))
+    root = tk.Tk(); root.withdraw()
+    try:
+        dialog = CropDialog(root, assets, CropSettings(), lambda _:None)
+        wait_preview(dialog)
+        for _ in range(6):
+            dialog.navigate(1); wait_preview(dialog)
+        assert len(calls) == 7
+        dialog.navigate(-6); wait_preview(dialog)
+        assert len(calls) == 7 and dialog._image_rect is not None
+        entry = dialog.current_entry()
+        entry['manual_face'] = [.2,.2,.3,.3]
+        dialog.render()
+        assert not any('正在加载' in dialog.canvas.itemcget(item, 'text')
+                       for item in dialog.canvas.find_all() if dialog.canvas.type(item) == 'text')
+        assert '正在更新人脸框' not in dialog.caption.cget('text')
+        wait_preview(dialog)
+        assert '正在更新人脸框' not in dialog.caption.cget('text')
+        assert len(calls) == 7
+        assert sum(i.width*i.height*3 for i in dialog._image_cache.values()) <= dialog._image_budget
+        dialog.destroy()
+    finally:
+        root.destroy()

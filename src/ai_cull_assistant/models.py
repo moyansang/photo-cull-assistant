@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+
+RAW_EXTENSIONS = {".rw2", ".arw", ".cr2", ".cr3", ".nef", ".orf", ".raf", ".dng"}
+JPEG_EXTENSIONS = {".jpg", ".jpeg"}
+IMAGE_EXTENSIONS = RAW_EXTENSIONS | JPEG_EXTENSIONS | {".png", ".webp", ".tif", ".tiff", ".bmp", ".heic", ".heif", ".avif"}
+
+
+@dataclass(slots=True)
+class PhotoAsset:
+    stem: str
+    display_path: Path
+    primary_path: Path
+    raw_path: Optional[Path]
+    jpg_path: Optional[Path]
+    captured_at: datetime
+    ext: str
+    group_id: int = 0
+    grouping_anchor_id: str | None = None
+    preview_path: Optional[Path] = None
+    dhash: Optional[str] = None
+    notes: list[str] = field(default_factory=list)
+    auto_rejected: bool = False
+    screening_reason: Optional[str] = None
+    focus_score: Optional[float] = None
+    face_found: bool = False
+    subject_features: object = None
+    subject_checked: bool = False
+    subject_confidence: float = .8
+    ai_focus_result: dict | None = None
+    ai_focus_dirty: bool = False
+    ai_focus_stale: bool = False
+    person_review_pending: bool = False
+    ai_focus_attempt: str | None = None  # failed / skipped; no saved request contents
+    # Absent on old sessions: opening them must not silently reclassify photos.
+    clarity_version: str | None = None
+    clarity_evidence: dict | None = None
+
+    analysis_mode: str = "portrait"
+    local_recommendation: str = "review"
+
+    # Preserve existing AI IDs/cache signatures when a source root is relocated.
+    source_identity_paths: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def rating_target_paths(self) -> list[Path]:
+        paths: list[Path] = []
+        if self.raw_path:
+            paths.append(self.raw_path)
+        if self.jpg_path and self.jpg_path not in paths:
+            paths.append(self.jpg_path)
+        if not paths:
+            paths.append(self.primary_path)
+        return paths
+
+
+def source_identity_path(asset, path):
+    actual = str(Path(path).resolve())
+    return getattr(asset, 'source_identity_paths', {}).get(actual.casefold(), actual)

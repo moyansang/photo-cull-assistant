@@ -1,0 +1,57 @@
+name: Build Windows Portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build portable app
+        shell: pwsh
+        run: |
+          .\make_portable_zip.ps1
+      - name: Run complete regression suite
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe -m pip install pytest lupa
+          if ($LASTEXITCODE -ne 0) { throw 'Test dependency installation failed' }
+          $env:PYTHONPATH = Join-Path $env:GITHUB_WORKSPACE 'src'
+          .\.venv\Scripts\python.exe -m pytest tests -q --junitxml=regression-tests.xml
+          if ($LASTEXITCODE -ne 0) { throw 'Regression suite failed' }
+      - name: Verify portable executable
+        shell: pwsh
+        run: |
+          # Hosted runners may use an 8.3 user-profile TEMP alias. Use the
+          # runner's canonical temporary directory for path-persistence checks.
+          $env:TEMP = $env:RUNNER_TEMP
+          $env:TMP = $env:RUNNER_TEMP
+          $reportPath = Join-Path $env:GITHUB_WORKSPACE 'smoke-test.json'
+          $app = Start-Process -FilePath '.\dist\AI选片助手\AI选片助手.exe' -ArgumentList '--self-test', $reportPath -WindowStyle Hidden -Wait -PassThru
+          if (Test-Path -LiteralPath $reportPath) { Get-Content -LiteralPath $reportPath -Raw }
+          if ($app.ExitCode -ne 0) { throw 'Portable smoke test failed' }
+          $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+          if (-not $report.ok) { throw 'Portable smoke test failed' }
+      - name: Save build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          if-no-files-found: ignore
+          path: |
+            smoke-test.json
+            regression-tests.xml
+            build/AI选片助手/warn-*.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI-Photo-Cull-Windows-portable
+          path: |
+            dist/AI-Photo-Cull-v*-Windows-x64-portable.zip
+            dist/update.json

@@ -1,0 +1,396 @@
+import time
+import threading
+import tkinter as tk
+import json
+from types import SimpleNamespace
+from pathlib import Path
+from ai_cull_assistant.app import App
+from ai_cull_assistant.crop_settings import CropSettings
+from ai_cull_assistant.settings import save_values
+from ai_cull_assistant.shared_api import NO_API_LABEL
+
+
+def make_app(tmp_path):
+    save_values(tmp_path,dict(input=str(tmp_path/'photos'), workspace=str(tmp_path/'workspace')))
+    app=App(settings_dir=tmp_path);app.withdraw()
+    return app
+
+
+def test_clear_display_log_preserves_disk_and_drops_queued_messages(tmp_path):
+    from ai_cull_assistant.workspace_layout import workspace_path
+    app = make_app(tmp_path)
+    try:
+        app._log('old queued message')
+        logfile = workspace_path(Path(app.workspace_var.get()), 'session.log')
+        before = logfile.read_bytes()
+        app.clear_log_button.invoke()
+        app.update()
+        assert not app.log_text.get('1.0', 'end').strip()
+        assert logfile.read_bytes() == before
+        app._log('new message')
+        app.update()
+        assert app.log_text.get('1.0', 'end').strip() == 'new message'
+        assert 'old queued message' in logfile.read_text('utf-8')
+    finally:
+        app._close()
+
+
+def test_clear_workspace_button_explains_busy_update_and_open_window(tmp_path, monkeypatch):
+    app = make_app(tmp_path)
+    messages = []
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.showinfo', lambda *a, **kw: messages.append(a[1]))
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('must not delete')))
+    try:
+        app._set_processing_busy(True)
+        app.clear_workspace_button.invoke()
+        assert '后台图片准备' in messages[-1]
+        app._set_processing_busy(False)
+        app.updates.busy = True
+        app._set_update_busy(True)
+        app.clear_workspace_button.invoke()
+        assert '更新' in messages[-1]
+        app._set_update_busy(False)
+        app.updates.busy = False
+        child = tk.Toplevel(app)
+        app.clear_workspace_button.invoke()
+        assert '子窗口' in messages[-1]
+        child.destroy()
+    finally:
+        app.updates.busy = False
+        app._set_processing_busy(False)
+        app._close()
+
+
+def test_workspace_activation_clears_old_log_without_reloading_history(tmp_path, monkeypatch):
+    from ai_cull_assistant.workspace_layout import workspace_path
+    app = make_app(tmp_path)
+    source = tmp_path / 'new-photos'; source.mkdir()
+    workspace = tmp_path / 'new-workspace'; workspace.mkdir()
+    logfile = workspace_path(workspace, 'session.log')
+    logfile.parent.mkdir(parents=True, exist_ok=True)
+    logfile.write_text('previous session history\n', encoding='utf-8')
+    try:
+        app._log('old workspace queued message')
+        app.input_var.set(str(source))
+        app._activate_workspace(str(source), workspace)
+        app.update()
+        text = app.log_text.get('1.0', 'end')
+        assert 'old workspace queued message' not in text
+        assert 'previous session history' not in text
+        assert 'previous session history' in logfile.read_text('utf-8')
+        # Relocation reactivates the same workspace; old display must clear too.
+        app._log('before relocation')
+        app._activate_workspace(str(source), workspace)
+        app.update()
+        assert 'before relocation' not in app.log_text.get('1.0', 'end')
+    finally:
+        app._close()
+
+
+def test_clear_workspace_removes_all_project_state(tmp_path, monkeypatch):
+    app=make_app(tmp_path)
+    workspace=Path(app.workspace_var.get()); workspace.mkdir(parents=True, exist_ok=True)
+    (workspace/'scan-session.json').write_text('{}')
+    (workspace/'nested').mkdir();(workspace/'nested'/'preview.jpg').write_bytes(b'x')
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno',lambda *a,**kw:True)
+    try:
+        app._clear_workspace()
+        wait_clear(app)
+        assert list(workspace.iterdir()) == []
+        assert app.scan_result is None
+        assert app.next_step_var.get() == '推荐下一步：扫描图片'
+    finally:app._close()
+
+
+def wait_clear(app):
+    deadline = time.monotonic() + 5
+    while getattr(app, "_clearing_workspace", False) and time.monotonic() < deadline:
+        app.update()
+        time.sleep(.01)
+    assert not app._clearing_workspace
+
+
+def test_clear_paused_job_runs_in_background(tmp_path, monkeypatch):
+    from ai_cull_assistant.workspace_clear import clear_workspace
+    app = make_app(tmp_path)
+    workspace = Path(app.workspace_var.get())
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "paused-checkpoint.json").write_text("{}")
+    entered, release = threading.Event(), threading.Event()
+    def slow_clear(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        clear_workspace(*args, **kwargs)
+    monkeypatch.setattr('ai_cull_assistant.workspace_clear.clear_workspace', slow_clear)
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno', lambda *a, **k: True)
+    try:
+        app._processing_job = object()  # A saved, paused job is allowed to clear.
+        app._clear_workspace()
+        assert entered.wait(1)
+        heartbeats = []
+        app.after(0, lambda: heartbeats.append(True))
+        app.update()
+        assert heartbeats and app._processing_busy
+        assert str(app.continue_button.cget('state')) == 'disabled'
+        release.set()
+        wait_clear(app)
+        assert app._processing_job is None
+        assert not app._processing_busy
+        assert list(workspace.iterdir()) == []
+    finally:
+        release.set()
+        if getattr(app, '_clearing_workspace', False): wait_clear(app)
+        app._close()
+
+
+def test_busy_controls_and_stop(tmp_path):
+    app=make_app(tmp_path)
+    try:
+        app._set_processing_busy(True)
+        assert str(app.stop_button.cget('state'))=='normal'
+        assert str(app.clear_log_button.cget('state'))=='normal'
+        assert str(app.clear_workspace_button.cget('state'))=='normal'
+        assert str(app.continue_button.cget('state'))=='disabled'
+        app._stop_processing()
+        assert app._stop_event.is_set()
+        app._set_processing_busy(False)
+        assert str(app.stop_button.cget('state'))=='disabled'
+        app._set_progress(45)
+        assert app.progress_label.get()=='进度：'
+        assert app.progress_text.get()=='45%'
+    finally:app._close()
+
+
+def test_update_progress_temporarily_replaces_scan_progress_and_disables_scan(tmp_path):
+    app=make_app(tmp_path)
+    try:
+        app._set_progress(45)
+        app._set_update_busy(True)
+        app._show_update_progress(23)
+        assert app.progress_label.get()=='进度：'
+        assert app.progress_text.get()=='23%'
+        assert str(app.scan_button.cget('state'))=='disabled'
+        app._set_progress(60)
+        assert app.progress_text.get()=='23%'
+        app._restore_scan_progress()
+        app._set_update_busy(False)
+        assert app.progress_label.get()=='进度：'
+        assert app.progress_text.get()=='60%'
+        assert str(app.scan_button.cget('state'))=='normal'
+    finally:app._close()
+
+
+def test_saving_face_settings_rescans_only_changed_photos(tmp_path,monkeypatch):
+    app=make_app(tmp_path)
+    started=[]
+    monkeypatch.setattr(app,'_start_processing',lambda **kwargs:started.append(kwargs))
+    try:
+        first=SimpleNamespace(primary_path=tmp_path/'first.jpg', ai_focus_dirty=False, ai_focus_result=None)
+        second=SimpleNamespace(primary_path=tmp_path/'second.jpg', ai_focus_dirty=False, ai_focus_result=None)
+        app.scan_result=SimpleNamespace(assets=[first,second])
+        saved=[]
+        monkeypatch.setattr(app, '_save_session', lambda: saved.append(True))
+        settings=CropSettings(photos={str(first.primary_path.resolve()).casefold(): {'manual_face':[.1,.1,.2,.2]}})
+        app._save_crop_settings(settings)
+        assert first.ai_focus_dirty and not second.ai_focus_dirty
+        assert saved == [True]
+        assert started==[{'mode':'rescan'}]
+        assert not hasattr(app,'regenerate_button')
+    finally:
+        app.scan_result=None
+        app._close()
+
+
+def test_sheet_button_uses_current_staged_workflow(tmp_path, monkeypatch):
+    app = make_app(tmp_path)
+    started = []
+    monkeypatch.setattr(app, '_start_processing', lambda **kw: started.append(kw))
+    try:
+        app.sheets_button.invoke()
+        assert started == [dict(mode='sheets')]
+    finally:
+        app._close()
+
+
+def test_continue_from_saved_job_updates_main_window(tmp_path):
+    import time
+    from threading import Event
+    from PIL import Image
+    from ai_cull_assistant.processing_job import start_job
+    from ai_cull_assistant.crop_settings import CropSettings
+    source=tmp_path/'photos';source.mkdir()
+    Image.new('RGB',(80,120),'white').save(source/'a.jpg')
+    options=dict(grouping_preset='standard',photos_per_page=8,columns=2,technical_screening=False)
+    job=start_job(source,tmp_path/'workspace',options,CropSettings())
+    stop=Event();stop.set()
+    assert job.run(options,CropSettings(),stop,lambda _:None) is None
+    app=make_app(tmp_path)
+    try:
+        assert str(app.continue_button.cget('state'))=='normal'
+        app.screening_var.set(False)
+        app._continue_processing()
+        deadline=time.monotonic()+15
+        while app._processing_busy and time.monotonic()<deadline:
+            app.update();time.sleep(.01)
+        assert not app._processing_busy
+        assert app.scan_result and len(app.scan_result.assets)==1
+        assert app.progress_var.get()==100
+        from ai_cull_assistant.workspace_summary import focus_counts
+        assert focus_counts(app.scan_result.assets)['pending'] == 1
+        assert app.next_step_var.get()=='推荐下一步：AI 复核'
+        log=app.log_text.get('1.0','end')
+        assert '初筛技术模糊/抖动弃置 0 张' in log
+        assert '剩余可进入 AI 选片 1 张' in log
+        assert '清晰度仍不确定 1 张' in log
+    finally:app._close()
+
+
+def test_homepage_api_selection_persists_only_profile_id(tmp_path):
+    profile = {
+        "id": "11111111111111111111111111111111",
+        "name": "视觉模型",
+        "base_url": "https://example.test/v1",
+        "model": "vision-model",
+        "timeout": 30,
+    }
+    (tmp_path / "ai-api-profiles.json").write_text(
+        json.dumps({"version": 1, "profiles": [profile]}, ensure_ascii=False), encoding="utf-8"
+    )
+    save_values(tmp_path, {"selected_api_profile_id": "11111111111111111111111111111111"})
+    app = make_app(tmp_path)
+    try:
+        assert app.api_profile_var.get() == "视觉模型"
+        assert app._selected_api_profile() == profile
+        app.api_profile_var.set(NO_API_LABEL)
+        app._api_selection_changed()
+        assert app._selected_api_profile() is None
+        saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
+        assert saved["selected_api_profile_id"] == "manual-web"
+        assert "base_url" not in saved and "secret" not in saved
+        # A successful dialog test selects its profile even if the UI was manual.
+        save_values(tmp_path, {"selected_api_profile_id": profile['id']})
+        app._api_profiles_saved()
+        assert app._selected_api_profile() == profile
+        assert app.api_profile_var.get() == "视觉模型"
+    finally:
+        app._close()
+
+
+def test_homepage_staged_button_layout(tmp_path):
+    app=make_app(tmp_path)
+    try:
+        expected = [
+            '主页面','配置 API','检查更新','LR 插件','帮助',
+            '扫描图片','编辑选片组','检测/调整人脸框',
+            'AI 复核','生成联系表','AI 选片与导出',
+            '停止处理','继续处理','打开联系表目录','清空工作区',
+        ]
+        found=[]
+        def walk(widget):
+            for child in widget.winfo_children():
+                if isinstance(child,tk.ttk.Button):
+                    found.append(child.cget('text'))
+                walk(child)
+        walk(app)
+        assert [name for name in found if name in expected] == expected
+        checks=[]
+        def collect_checks(widget):
+            for child in widget.winfo_children():
+                if isinstance(child,tk.ttk.Checkbutton):checks.append(child.cget('text'))
+                collect_checks(child)
+        collect_checks(app)
+        assert '不再自动检查更新' not in checks
+        app._open_update_page()
+        collect_checks(app._update_page)
+        assert '不再自动检查更新' in checks
+        app._update_page.destroy()
+    finally:app._close()
+
+
+def test_staged_scan_then_contact_sheet_flow(tmp_path):
+    import time
+    from PIL import Image
+    source=tmp_path/'photos';source.mkdir()
+    Image.new('RGB',(80,120),'white').save(source/'a.jpg')
+    app=make_app(tmp_path)
+    try:
+        app.screening_var.set(False)
+        app._run_scan_thread()
+        deadline=time.monotonic()+15
+        while app._processing_busy and time.monotonic()<deadline:
+            app.update();time.sleep(.01)
+        assert app.scan_result and not app.scan_result.main_pages
+        assert not app._sheets_ready()
+        from ai_cull_assistant.workspace_summary import focus_counts
+        assert focus_counts(app.scan_result.assets)['pending'] == 1
+        assert app.next_step_var.get()=='推荐下一步：AI 复核'
+
+        app._generate_contact_sheets()
+        deadline=time.monotonic()+15
+        while app._processing_busy and time.monotonic()<deadline:
+            app.update();time.sleep(.01)
+        assert app.scan_result.main_pages
+        assert app._sheets_ready()
+        from ai_cull_assistant.workspace_summary import focus_counts
+        assert focus_counts(app.scan_result.assets)['pending'] == 1
+        assert app.next_step_var.get()=='推荐下一步：AI 复核'
+    finally:app._close()
+def test_homepage_reopens_one_api_editor_and_restores_owner_grab(tmp_path):
+    app = make_app(tmp_path)
+    try:
+        assert app.api_profile_var.get() == NO_API_LABEL
+        saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
+        assert saved["selected_api_profile_id"] == "manual-web"
+        app.deiconify()
+        app.update()
+        app.grab_set()
+        app._open_api_config()
+        editor = app._api_config_window
+        assert editor is not None and editor.winfo_exists()
+        assert app.grab_current() is None
+
+        editor.withdraw()
+        app._open_api_config()
+        app.update()
+        assert app._api_config_window is editor
+        assert editor.state() != "withdrawn"
+
+        editor.destroy()
+        app.update()
+        assert app.grab_current() is app
+        app.grab_release()
+    finally:
+        app._close()
+
+
+def test_clear_failure_restores_controls(tmp_path, monkeypatch):
+    app = make_app(tmp_path)
+    Path(app.workspace_var.get()).mkdir(parents=True, exist_ok=True)
+    errors = []
+    def fail(*args, **kwargs):
+        raise PermissionError("file in use")
+    monkeypatch.setattr('ai_cull_assistant.workspace_clear.clear_workspace', fail)
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.askyesno', lambda *a, **k: True)
+    monkeypatch.setattr('ai_cull_assistant.app.messagebox.showerror', lambda *a, **k: errors.append(a))
+    try:
+        app._clear_workspace()
+        wait_clear(app)
+        assert errors and 'file in use' in errors[0][1]
+        assert not app._processing_busy
+        assert str(app.clear_log_button.cget('state')) == 'normal'
+    finally:
+        app._close()
+
+
+def test_close_cancels_child_timer_without_deleting_its_command_twice(tmp_path):
+    import ttkbootstrap as bootstrap
+    app = make_app(tmp_path)
+    called = []
+    button = tk.ttk.Button(app, text='pending child timer')
+    button.after(60000, lambda: called.append(True))
+    command = button._tclCommands[-1]
+    assert app.tk.call('info', 'commands', command)
+    app._close()
+    assert not called
+    assert bootstrap.Style.instance is None
+    assert button._tclCommands is None

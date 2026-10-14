@@ -1,0 +1,773 @@
+from dataclasses import asdict
+from datetime import datetime
+import hashlib
+import json
+from pathlib import Path
+import threading
+import pytest
+from PIL import Image
+from ai_cull_assistant.ai_project import ReviewProject,fingerprint,photo_id,parse_answer
+from ai_cull_assistant.models import PhotoAsset
+from ai_cull_assistant.crop_settings import CropSettings
+
+
+def setup_project(tmp_path):
+    p=tmp_path/'photos';p.mkdir()
+    assets=[]
+    for name in ['A','B']:
+        path=p/(name+'.jpg');Image.new('RGB',(100,150),'white').save(path)
+        assets.append(PhotoAsset(name,path,path,None,path,datetime.now(),'.jpg',group_id=1,preview_path=path))
+    project=ReviewProject(tmp_path/'workspace')
+    task=project.create_task(assets,CropSettings(),{'intensity':'均衡保留'})
+    return project,assets,task,task['batches'][0]
+
+
+def answer(task,batch,rating=4):
+    return json.dumps(dict(task_id=task['id'],batch_id=batch['id'],photos=[dict(photo_id=pid,rating=rating,suggest_reject=False,reason='表情自然',review_items=[]) for pid in batch['photo_ids']]))
+
+
+def test_neutral_horizontal_crop_keeps_legacy_fingerprint(tmp_path):
+    project, assets, _task, _batch = setup_project(tmp_path)
+    asset = assets[0]
+    crops = CropSettings()
+    crop_values = asdict(crops.for_asset(asset))
+    crop_values.pop('offset_x_factor', None)
+    stat = asset.jpg_path.stat()
+    legacy_values = {
+        'paths': [(str(asset.jpg_path.resolve()), stat.st_size, stat.st_mtime_ns)],
+        'group': asset.group_id,
+        'crop': crop_values,
+        'manual': {},
+        'confidence': crops.detection_confidence,
+    }
+    legacy = hashlib.sha256(json.dumps(legacy_values, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    assert fingerprint(asset, crops) == legacy
+    moved = CropSettings(photos={crops.key(asset): {'offset_x_factor': .2}})
+    assert fingerprint(asset, moved) != legacy
+
+
+def test_snapshot_prompt_and_strict_answers(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    assert str(tmp_path) not in batch['prompt']
+    assert all(photo_id(a) in batch['prompt'] for a in assets)
+    assert project.ingest(task,batch,answer(task,batch))==[]
+    bad=json.loads(answer(task,batch));bad['photos'][0]['rating']=True
+    bad['photos'].append(dict(bad['photos'][1],rating=5))
+    assert project.ingest(task,batch,json.dumps(bad))
+    assert batch['status']=='partial'
+    bad['task_id']='wrong'
+    assert project.ingest(task,batch,json.dumps(bad))
+    assert batch['status']=='invalid' and len(batch['raw_responses'])==3
+
+
+def test_legacy_manual_preview_marker_does_not_invalidate_ai(tmp_path):
+    _project, assets, _task, _batch = setup_project(tmp_path)
+    asset = assets[0]
+    key = CropSettings().key(asset)
+    crops = CropSettings(photos={key: {'manual_face': [.2, .2, .3, .4]}})
+    before = fingerprint(asset, crops)
+    crops.photos[key]['preview_version'] = 'v04'
+    assert fingerprint(asset, crops) == before
+    crops.photos[key]['preview_version'] = 'v05'
+    assert fingerprint(asset, crops) != before
+
+
+def test_human_decisions_preserved_and_manual_only_mode_is_explicit(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    project.ingest(task,batch,answer(task,batch))
+    with pytest.raises(ValueError):project.export_final(ai_ratings=False)
+    assert len(json.loads(project.export_final().read_text())['photos'])==2
+    project.confirm(photo_id(assets[0]),5,None)
+    project.ingest(task,batch,answer(task,batch,1))
+    output=json.loads(project.export_final(ai_ratings=False).read_text('utf-8'))
+    assert len(output['photos'])==1 and output['photos'][0]['rating']==5
+    assert 'pick_status' not in output['photos'][0]
+    assert not list((tmp_path/'photos').glob('*.xmp'))
+
+
+def test_changed_group_invalidates_results_but_keeps_human_values(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    project.confirm(photo_id(assets[0]),4,-1)
+    assets[0].group_id=2;project.refresh(assets,CropSettings())
+    assert project.data['photos'][photo_id(assets[0])]['stale']
+    assert json.loads(project.export_final().read_text())['photos'][0]['rating']==4
+    assert project.ingest(task,batch,answer(task,batch))
+    project.confirm(photo_id(assets[0]),4,0)
+    assert json.loads(project.export_final().read_text('utf-8'))['photos'][0]['pick_status']==0
+
+
+def test_restart_recovers_interrupted_task(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    batch['status']='running';project.save()
+    loaded=ReviewProject(project.workspace)
+    assert loaded.current_task()['batches'][0]['status']=='failed'
+    loaded.refresh(assets,CropSettings())
+    current=loaded.current_task();current_batch=current['batches'][0]
+    assert loaded.ingest(current,current_batch,answer(current,current_batch))==[]
+    assert loaded.data['photos'][photo_id(assets[0])]['ai']['rating']==4
+
+
+
+def test_snapshot_tampering_is_rejected(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    Path(batch['image_paths'][0]).write_bytes(b'changed')
+    with pytest.raises(ValueError,match='快照'):project.batch_images(task,batch)
+
+
+
+def test_group_membership_changes_invalidate_other_group_photos(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    pid=photo_id(assets[0]);project.confirm(pid,5,None)
+    assets[1].group_id=2
+    project.refresh(assets,CropSettings())
+    assert project.data['photos'][pid]['stale']
+    with pytest.raises(ValueError):project.batch_images(task,batch)
+
+
+
+
+def test_explicit_split_retry_leaves_old_task_and_human_results(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    project.confirm(photo_id(assets[0]),5,None)
+    small=project.create_task(assets,CropSettings(),{'_split_limit':1},photo_ids=batch['photo_ids'])
+    assert len(small['batches'])==2 and len(task['batches'])==1
+    assert project.data['photos'][photo_id(assets[0])]['final']['rating']==5
+    assert '同组可能未完整提供' in small['batches'][0]['prompt']
+
+
+def test_selection_accepts_local_recommendations_in_all_scopes(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    assets[1].auto_rejected=True;assets[1].screening_reason='severe_subject_blur'
+    ids=list(map(photo_id,assets))
+    for kind,scope in [('initial',None),('initial',ids),('refine',ids)]:
+        task=project.create_task(assets,CropSettings(),{},kind=kind,photo_ids=scope)
+        assert [pid for batch in task['batches'] for pid in batch['photo_ids']]==ids
+        assert 'severe_subject_blur' in task['batches'][0]['prompt']
+    task=project.create_task(assets,CropSettings(),{},photo_ids=[ids[1]])
+    assert task['batches'][0]['photo_ids']==[ids[1]]
+
+
+def test_existing_batch_cannot_be_used_after_photo_becomes_technical_reject(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[1].auto_rejected=True
+    assets[1].screening_reason='camera_shake'
+
+    with pytest.raises(ValueError,match='已改变'):
+        project.batch_images(task,batch)
+    with pytest.raises(ValueError,match='已改变'):
+        project.prompt(task,batch)
+    with pytest.raises(ValueError,match='已改变'):
+        project.create_web_submission(task,[batch['id']])
+
+
+def test_worker_can_validate_batch_without_refreshing_shared_project(tmp_path, monkeypatch):
+    project, assets, task, batch = setup_project(tmp_path)
+    project.validate_batch_sources(assets, CropSettings(), batch)
+    monkeypatch.setattr(project, 'refresh', lambda *_args: pytest.fail('共享项目不应在批次工作线程刷新'))
+
+    assert project.batch_images(task, batch, refresh_state=False)
+    assert project.prompt(task, batch, refresh_state=False) == batch['prompt']
+    assert project.ingest(task, batch, answer(task, batch), refresh_state=False) == []
+
+
+def test_project_save_serializes_ui_and_worker_writes(tmp_path,monkeypatch):
+    project,_,_,_=setup_project(tmp_path)
+    from ai_cull_assistant import ai_project
+    first_entered=threading.Event();release_first=threading.Event();second_entered=threading.Event()
+    calls=[]
+
+    def blocked_write(_path,_value):
+        calls.append(1)
+        if len(calls)==1:
+            first_entered.set()
+            assert release_first.wait(2)
+        else:
+            second_entered.set()
+
+    monkeypatch.setattr(ai_project,'atomic_json',blocked_write)
+    first=threading.Thread(target=project.save)
+    second=threading.Thread(target=project.save)
+    first.start();assert first_entered.wait(2)
+    second.start()
+    assert not second_entered.wait(.1)
+    release_first.set();first.join(2);second.join(2)
+    assert second_entered.is_set() and not first.is_alive() and not second.is_alive()
+
+
+def test_replacing_current_task_retains_history_and_human_results(tmp_path):
+    project,assets,old_task,old_batch=setup_project(tmp_path)
+    project.ingest(old_task,old_batch,answer(old_task,old_batch))
+    project.confirm(photo_id(assets[0]),5,1)
+    before=json.loads(json.dumps(project.data['photos']))
+    old_root=project.workspace/'ai_tasks'/old_task['id']
+    new=project.create_task(assets,CropSettings(),{},replace_current=True)
+    assert project.data['tasks']==[old_task,new] and old_task['superseded']
+    assert project.current_task() is new and old_root.exists()
+    assert project.data['photos']==before
+
+
+def test_replacement_preparation_failure_keeps_old_task_and_results(tmp_path,monkeypatch):
+    project,assets,old_task,old_batch=setup_project(tmp_path)
+    project.ingest(old_task,old_batch,answer(old_task,old_batch))
+    project.confirm(photo_id(assets[0]),5,1)
+    before=json.loads(json.dumps(project.data))
+
+    def fail_after_creating_folder(_assets,folder,**_kwargs):
+        Path(folder).mkdir(parents=True)
+        raise OSError('cannot render')
+
+    monkeypatch.setattr('ai_cull_assistant.ai_project.generate_contact_sheets',fail_after_creating_folder)
+    with pytest.raises(OSError,match='cannot render'):
+        project.create_task(assets,CropSettings(),{},replace_current=True)
+
+    assert project.data==before
+    assert {path.name for path in (project.workspace/'ai_tasks').iterdir()}=={old_task['id']}
+
+
+def test_replacement_save_failure_rolls_back_old_task_and_results(tmp_path,monkeypatch):
+    project,assets,old_task,old_batch=setup_project(tmp_path)
+    project.ingest(old_task,old_batch,answer(old_task,old_batch))
+    project.confirm(photo_id(assets[0]),5,1)
+    before=json.loads(json.dumps(project.data))
+    real_save=project.save
+    save_calls=0
+
+    def fail_commit():
+        nonlocal save_calls
+        save_calls+=1
+        if save_calls==2:raise OSError('disk full')
+        real_save()
+
+    monkeypatch.setattr(project,'save',fail_commit)
+    with pytest.raises(OSError,match='disk full'):
+        project.create_task(assets,CropSettings(),{},replace_current=True)
+
+    assert project.data==before
+    assert {path.name for path in (project.workspace/'ai_tasks').iterdir()}=={old_task['id']}
+
+
+def test_replacement_never_deletes_folder_named_by_unsafe_persisted_task_id(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    keep=project.workspace/'keep'
+    keep.mkdir()
+    (keep/'evidence.txt').write_text('keep',encoding='utf-8')
+    project.data['tasks'].append({'id':'../keep','kind':'initial','batches':[]})
+
+    project.create_task(assets,CropSettings(),{},replace_current=True)
+
+    assert (keep/'evidence.txt').read_text('utf-8')=='keep'
+
+
+def test_all_local_rejects_can_request_selection_without_losing_human_result(tmp_path):
+    project,assets,old,old_batch=setup_project(tmp_path)
+    project.ingest(old,old_batch,answer(old,old_batch));project.confirm(photo_id(assets[0]),5,1)
+    for asset in assets:
+        asset.auto_rejected=True;asset.screening_reason='severe_subject_blur'
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    assert task['batches'] and old in project.data['tasks']
+    assert project.data['photos'][photo_id(assets[0])]['final']['confirmed']
+    rows=json.loads(project.export_final().read_text())['photos']
+    assert rows[0]['rating']==5 and rows[0]['pick_status']==1
+    assert rows[1]['pick_status']==-1 and 'rating' not in rows[1]
+
+
+def setup_merged_web_submission(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    task=project.create_task(assets,CropSettings(),{'intensity':'均衡保留','_split_limit':1})
+    submission=project.create_web_submission(task,[batch['id'] for batch in task['batches']])
+    return project,assets,task,submission
+
+
+def web_answer(task,submission,rating=4):
+    return json.dumps(dict(task_id=task['id'],batch_id=submission['id'],photos=[
+        dict(photo_id=pid,rating=rating,suggest_reject=False,reason='合并比较后保留',review_items=[])
+        for pid in submission['photo_ids']
+    ]))
+
+
+def test_web_submission_combines_batches_and_persists_immutable_snapshots(tmp_path):
+    project,assets,task,submission=setup_merged_web_submission(tmp_path)
+    assert submission['id']=='W001'
+    assert submission['batch_ids']==['B001','B002']
+    assert submission['photo_ids']==[photo_id(asset) for asset in assets]
+    assert all(pid in submission['prompt'] for pid in submission['photo_ids'])
+    assert f'"batch_id":"{submission["id"]}"' in submission['prompt']
+    images=project.web_images(task,submission)
+    assert len(images)==2 and len({image.name for image in images})==2
+    assert all(image.parent.name=='images' and image.parent.parent.name=='W001' for image in images)
+    assert (images[0].parent.parent/'prompt.txt').read_text('utf-8')==submission['prompt']
+
+    loaded=ReviewProject(project.workspace)
+    restored=loaded.current_task()['web_submissions'][0]
+    assert restored['id']=='W001'
+    assert [path.name for path in loaded.web_images(loaded.current_task(),restored)]==[path.name for path in images]
+
+
+def test_web_submission_applies_all_batches_and_preserves_human_decisions(tmp_path):
+    project,assets,task,submission=setup_merged_web_submission(tmp_path)
+    decided=photo_id(assets[0])
+    project.confirm(decided,5,1)
+    assert project.ingest_web(task,submission,web_answer(task,submission,3))==[]
+    assert submission['status']=='complete'
+    assert all(batch['status']=='complete' for batch in task['batches'])
+    for pid in submission['photo_ids']:
+        result=project.data['photos'][pid]['ai']
+        assert result['web_submission_id']=='W001'
+        assert result['batch_id']==submission['photo_batches'][pid]
+    assert project.data['photos'][decided]['final']==dict(
+        rating=5,pick_status=1,confirmed=True,fingerprint=project.data['photos'][decided]['fingerprint'])
+
+
+@pytest.mark.parametrize('damage', ['missing','duplicate'])
+def test_web_submission_rejects_incomplete_answer_without_partial_results(tmp_path,damage):
+    project,assets,task,submission=setup_merged_web_submission(tmp_path)
+    payload=json.loads(web_answer(task,submission))
+    if damage=='missing':
+        payload['photos'].pop()
+    else:
+        payload['photos'].append(dict(payload['photos'][0]))
+    issues=project.ingest_web(task,submission,json.dumps(payload))
+    assert issues and submission['status']=='invalid'
+    assert all('ai' not in project.data['photos'][pid] for pid in submission['photo_ids'])
+    assert all(batch['status']=='pending' for batch in task['batches'])
+
+
+def test_web_submission_rejects_duplicates_and_stale_photos(tmp_path):
+    project,assets,task,submission=setup_merged_web_submission(tmp_path)
+    with pytest.raises(ValueError,match='重复选择'):
+        project.create_web_submission(task,['B001','B001'])
+    assets[0].group_id=2
+    project.refresh(assets,CropSettings())
+    issues=project.ingest_web(task,submission,web_answer(task,submission))
+    assert issues and '改变' in issues[0]
+    assert all('ai' not in project.data['photos'][pid] for pid in submission['photo_ids'])
+    assert all(batch['status']=='pending' for batch in task['batches'])
+
+
+def test_web_submission_preserves_refine_intent_and_recovers_failed_save(tmp_path,monkeypatch):
+    project,assets,task,_=setup_project(tmp_path)
+    task=project.create_task(assets,CropSettings(),{'_split_limit':1},kind='refine')
+    real_save=project.save
+    monkeypatch.setattr(project,'save',lambda: (_ for _ in ()).throw(OSError('disk full')))
+    with pytest.raises(OSError,match='disk full'):
+        project.create_web_submission(task,['B001','B002'])
+    assert not (project.workspace/'ai_tasks'/task['id']/'web'/'W001').exists()
+    monkeypatch.setattr(project,'save',real_save)
+    submission=project.create_web_submission(task,['B001','B002'])
+    assert submission['id']=='W001'
+    assert '跨组精选，减少重复并统一优先级' in submission['prompt']
+
+
+def test_export_ai_ratings_for_lightroom_review(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    project.ingest(task,batch,answer(task,batch))
+    first,second=batch['photo_ids']
+    project.data['photos'][first]['ai']['suggest_reject']=True
+    payload=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
+    assert len(payload['photos'])==2
+    assert all(row['rating']==4 for row in payload['photos'])
+    assert payload['photos'][0]['pick_status']==-1
+    assert payload['photos'][1]['pick_status']==1
+    assert not project.data['photos'][first]['final']['confirmed']
+    project.confirm(first,5,1)
+    project.data['photos'][second]['stale']=True
+    payload=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
+    assert len(payload['photos'])==2
+    assert 'rating' not in payload['photos'][1]
+    assert payload['photos'][0]['rating']==5 and payload['photos'][0]['pick_status']==1
+
+
+def test_lr_export_includes_technical_reject_without_ai(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[1].auto_rejected=True
+    assets[1].screening_reason='severe_subject_blur'
+    task=project.create_task(assets,project._crops,{},replace_current=True)
+    batch=task['batches'][0]
+    project.ingest(task,batch,answer(task,batch))
+    rejected_id=photo_id(assets[1])
+    rejected=project.data['photos'][rejected_id]
+    rejected.pop('ai',None)
+    rejected['final']=dict(rating=5,pick_status=1,confirmed=True,fingerprint='older')
+    rejected['stale']=True
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    assert len(rows)==2
+    assert rows[0]['rating']==4
+    assert rows[1]['pick_status']==1 and rows[1]['rating']==5
+    project.confirm(rejected_id,None,1)
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    assert rows[1]['pick_status']==1
+
+
+def test_home_sheet_render_cache_never_changes_review_identity(tmp_path):
+    import os
+    project,assets,task,batch=setup_project(tmp_path)
+    page=tmp_path/'main.jpg';page.write_bytes(b'first')
+    signature=project.home_sheet_signature(assets,CropSettings(),[page])
+    assert project.can_reuse_task(signature)  # migrate current valid task
+    project.ingest(task,batch,answer(task,batch))
+    os.utime(page,None)
+    assert project.home_sheet_signature(assets,CropSettings(),[page])==signature
+    restored=ReviewProject(project.workspace)
+    assert restored.can_reuse_task(signature)
+    assert restored.current_task()['id']==task['id']
+    assert all(p.get('ai') for p in restored.data['photos'].values())
+    page.write_bytes(b'changed')
+    assert restored.home_sheet_signature(assets,CropSettings(),[page])==signature
+    assert restored.can_reuse_task(signature)
+    page.unlink()
+    assert restored.home_sheet_signature(assets,CropSettings(),[page])==signature
+    assert restored.can_reuse_task(signature)
+
+
+def test_missing_batch_cache_is_rebuilt_only_when_requested(tmp_path,monkeypatch):
+    project,assets,task,batch=setup_project(tmp_path)
+    project.ingest(task,batch,answer(task,batch))
+    original_task=task['id']
+    original_answers={pid:dict(project.data['photos'][pid]['ai']) for pid in batch['photo_ids']}
+    for path in map(Path,batch['image_paths']):
+        path.unlink()
+    calls=[]
+    from ai_cull_assistant import ai_project
+    real=ai_project.generate_contact_sheets
+    monkeypatch.setattr(ai_project,'generate_contact_sheets',lambda *a,**kw:(calls.append(1),real(*a,**kw))[1])
+
+    project.refresh(assets,CropSettings())
+    signature=project.home_sheet_signature(assets,CropSettings(),[])
+    assert project.can_reuse_task(signature)
+    assert not calls and project.current_task()['id']==original_task
+    rebuilt=project.batch_images(task,batch)
+
+    assert calls==[1] and all(path.is_file() for path in rebuilt)
+    assert project.current_task()['id']==original_task
+    assert {pid:project.data['photos'][pid]['ai'] for pid in batch['photo_ids']}==original_answers
+
+
+def test_changed_photo_starts_scoped_followup_and_retains_other_answer(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    # Establish independent groups before accepting the baseline answers.
+    assets[1].group_id=2
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    for current in task['batches']:
+        assert project.ingest(task,current,answer(task,current))==[]
+    first,second=map(photo_id,assets)
+    old_first=dict(project.data['photos'][first]['ai'])
+    old_second=dict(project.data['photos'][second]['ai'])
+    Image.new('RGB',(100,150),'blue').save(assets[0].primary_path)
+    project.refresh(assets,CropSettings())
+
+    assert project.photos_needing_review()==[first]
+    followup=project.create_task(assets,CropSettings(),{},photo_ids=project.photos_needing_review())
+
+    assert [pid for item in followup['batches'] for pid in item['photo_ids']]==[first]
+    assert project.data['photos'][first]['ai']==old_first
+    assert project.data['photos'][second]['ai']==old_second
+    assert project.data['photos'][first]['stale'] is True
+    assert project.data['photos'][second]['stale'] is False
+
+
+def test_followup_includes_unchanged_pending_photos_so_current_task_is_complete(tmp_path):
+    project,assets,_task,_batch=setup_project(tmp_path)
+    task=project.create_task(assets,CropSettings(),{'_split_limit':1},replace_current=True)
+    first_batch,second_batch=task['batches']
+    assert project.ingest(task,first_batch,answer(task,first_batch))==[]
+    first,second=map(photo_id,assets)
+    saved=dict(project.data['photos'][first]['ai'])
+    Image.new('RGB',(100,150),'blue').save(assets[0].primary_path)
+    project.refresh(assets,CropSettings())
+    signature=project.home_sheet_signature(assets,CropSettings(),[])
+
+    assert not project.can_reuse_task(signature)
+    assert project.photos_needing_review()==[first,second]
+    followup=project.create_task(assets,CropSettings(),{'_split_limit':1},
+                                 photo_ids=project.photos_needing_review())
+
+    assert [pid for batch in followup['batches'] for pid in batch['photo_ids']]==[first,second]
+    assert project.data['photos'][first]['ai']==saved
+    assert 'ai' not in project.data['photos'][second]
+    assert second_batch['status']=='pending'
+
+
+def test_pending_batch_with_newly_rejected_member_does_not_strand_valid_photo(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[0].auto_rejected=True
+    assets[0].screening_reason='severe_subject_blur'
+    project.refresh(assets,CropSettings())
+    valid_id=photo_id(assets[1])
+    signature=project.home_sheet_signature(assets,CropSettings(),[])
+
+    assert project.photos_needing_review()==list(map(photo_id,assets))
+    assert not project.can_reuse_task(signature)
+    followup=project.create_task(assets,CropSettings(),{},photo_ids=project.photos_needing_review())
+
+    assert [pid for item in followup['batches'] for pid in item['photo_ids']]==list(map(photo_id,assets))
+
+
+def test_focus_review_keyword_only_export_and_clearing(tmp_path):
+    project, assets, task, batch = setup_project(tmp_path)
+    assets[0].screening_reason='face_focus_uncertain'
+    project.refresh(assets, project._crops)
+    data=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
+    assert len(data['photos'])==2
+    assert data['photos'][0]['focus_review'] is True
+    assert 'rating' not in data['photos'][0] and 'pick_status' not in data['photos'][0]
+    assets[0].screening_reason='subject_not_obviously_blurred'
+    project.refresh(assets, project._crops)
+    data=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
+    assert data['photos'][0]['focus_review'] is False
+
+
+def _web_focus_setup(tmp_path,monkeypatch):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[0].screening_reason='face_focus_uncertain'
+    project.refresh(assets,project._crops)
+
+    def prepare(_asset,_crops,out_dir):
+        out_dir=Path(out_dir);out_dir.mkdir(parents=True)
+        overview=out_dir/'overview.png';detail=out_dir/'face_native_01.png'
+        Image.new('RGB',(80,60),'red').save(overview)
+        Image.new('RGB',(40,30),'blue').save(detail)
+        return [overview,detail]
+
+    monkeypatch.setattr('ai_cull_assistant.ai_focus.prepare_focus_images',prepare)
+    task=project.create_task(assets,project._crops,{})
+    submission=project.create_web_submission(task,[task['batches'][0]['id']])
+    return project,assets,task,submission
+
+
+def _web_focus_answer(task,submission,clarity_marker,reason='原尺寸细节可判断'):
+    rows=[]
+    for pid in submission['photo_ids']:
+        row=dict(photo_id=pid,rating=5,suggest_reject=False,reason='选片表现良好',review_items=[])
+        if pid==submission['photo_ids'][0] and clarity_marker is not None:
+            row['clarity']=dict(status=clarity_marker,reason=reason)
+        rows.append(row)
+    return json.dumps(dict(task_id=task['id'],batch_id=submission['id'],photos=rows),ensure_ascii=False)
+
+
+def test_web_selection_does_not_force_a_technical_review(tmp_path,monkeypatch):
+    project,assets,task,submission=_web_focus_setup(tmp_path,monkeypatch)
+    assert submission['focus_photo_ids']==[] and submission['focus_image_map']=={}
+    assert all('focus_' not in path.name for path in project.web_images(task,submission))
+    assert '完整画面' in submission['prompt'] and 'face_focus_uncertain' in submission['prompt']
+
+
+@pytest.mark.parametrize(('status','focus_review'),[('clear',False),('blur',False),('uncertain',True)])
+def test_web_selection_concern_never_replaces_manual_or_technical_result(tmp_path,monkeypatch,status,focus_review):
+    project,assets,task,submission=_web_focus_setup(tmp_path,monkeypatch)
+    pid=photo_id(assets[0]);project.confirm(pid,5,1)
+    assert project.ingest_web(task,submission,_web_focus_answer(task,submission,status))==[]
+    photo=project.data['photos'][pid]
+    assert 'ai_focus_result' not in photo
+    if status in {'blur','uncertain'}:assert photo['selection_focus_concern']['status']==status
+    project.refresh(assets,project._crops)
+    row=next(row for row in json.loads(project.export_final().read_text())['photos'] if row['filename']=='A.jpg')
+    assert row['rating']==5 and row['pick_status']==1
+
+
+def test_web_missing_clarity_retains_pending_without_rejecting_answer(tmp_path,monkeypatch):
+    project,assets,task,submission=_web_focus_setup(tmp_path,monkeypatch)
+    pid=photo_id(assets[0])
+    assert project.ingest_web(task,submission,_web_focus_answer(task,submission,None))==[]
+    photo=project.data['photos'][pid]
+    assert photo['focus_review'] is True and 'ai_focus_result' not in photo
+    assert photo['ai']['suggest_reject'] is False
+
+
+def test_web_invalid_clarity_is_atomic_and_changed_fingerprint_keeps_selection_history(tmp_path,monkeypatch):
+    project,assets,task,submission=_web_focus_setup(tmp_path,monkeypatch)
+    pid=photo_id(assets[0])
+    issues=project.ingest_web(task,submission,_web_focus_answer(task,submission,'soft'))
+    assert issues and '清晰度结果无效' in issues[0]
+    assert all('ai' not in project.data['photos'][item] for item in submission['photo_ids'])
+    assert project.ingest_web(task,submission,_web_focus_answer(task,submission,'clear'))==[]
+    assets[0].group_id=2
+    project.refresh(assets,project._crops)
+    assert 'ai_focus_result' not in project.data['photos'][pid]
+    assert project.data['photos'][pid]['ai'] and project.data['photos'][pid]['stale']
+
+
+def test_web_reuses_existing_api_focus_result_without_new_supplements(tmp_path,monkeypatch):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[0].screening_reason='face_focus_uncertain'
+    assets[0].ai_focus_result=dict(status='uncertain',reason='接口复查仍无法确定',source='api',raw_response='{}')
+    project.refresh(assets,project._crops)
+    monkeypatch.setattr('ai_cull_assistant.ai_focus.prepare_focus_images',lambda *_: pytest.fail('不应重复生成清晰度补图'))
+    task=project.create_task(assets,project._crops,{})
+    submission=project.create_web_submission(task,[task['batches'][0]['id']])
+    pid=photo_id(assets[0])
+    assert submission['focus_photo_ids']==[]
+    assert submission['known_focus_results'][pid]['status']=='uncertain'
+    assert f'{pid} | uncertain | 接口复查仍无法确定' in submission['prompt']
+
+
+def test_export_ai_metadata_tracks_current_photo_reply_and_focus(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    assets[0].ai_focus_result=dict(status='uncertain',reason='眼部细节不足',source='api')
+    project.refresh(assets,project._crops)
+    task=project.create_task(assets,project._crops,{})
+    batch=task['batches'][0]
+    response=json.loads(answer(task,batch,rating=None))
+    response['photos'][0]['review_items']=['检查双眼','检查拖影']
+    assert project.ingest(task,batch,json.dumps(response))==[]
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    by_name={r['filename']:r for r in rows}
+    assert by_name['A.jpg']['ai_metadata']==dict(selection_reason='表情自然',
+        review_items='检查双眼\n检查拖影',clarity_status='清晰度待确认',clarity_reason='眼部细节不足')
+    assert by_name['B.jpg']['ai_metadata']['selection_reason']=='表情自然'
+    assert 'rating' not in by_name['B.jpg']
+    # Stale selection text must not be attached to a current local discard.
+    assets[0].auto_rejected=True;assets[0].screening_reason='obvious_subject_blur'
+    assets[0].group_id=2
+    project.refresh(assets,project._crops)
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    first=next(r for r in rows if r['filename']=='A.jpg')
+    assert first['ai_metadata']['selection_reason']==''
+
+
+def _mark_v2(asset,state,reason=None):
+    asset.clarity_version='clarity-v2'
+    asset.clarity_evidence={'state':state,'reasons':[reason or state]}
+    asset.auto_rejected=state=='severe_blur'
+    asset.screening_reason={
+        'clear':'subject_not_obviously_blurred',
+        'uncertain':'face_focus_uncertain',
+        'severe_blur':'obvious_subject_blur',
+    }[state]
+
+
+def test_v2_pending_is_admitted_to_selection_with_pending_export(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    _mark_v2(assets[0],'clear')
+    _mark_v2(assets[1],'uncertain','borderline_focus_evidence')
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    clear_id,pending_id=map(photo_id,assets)
+
+    assert [pid for batch in task['batches'] for pid in batch['photo_ids']]==[clear_id,pending_id]
+    assert pending_id in task['batches'][0]['prompt']
+    submission=project.create_web_submission(task,[task['batches'][0]['id']])
+    assert submission['photo_ids']==[clear_id,pending_id]
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    pending=next(row for row in rows if row['filename']=='B.jpg')
+    assert pending['focus_review'] is True
+    assert 'rating' not in pending and 'pick_status' not in pending
+    assert pending['ai_metadata']['clarity_status']=='清晰度待确认'
+    assert '证据不足' in pending['ai_metadata']['clarity_reason']
+
+
+def test_v2_pending_only_workspace_needs_no_selection_task_to_export(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    for asset in assets:_mark_v2(asset,'uncertain')
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    assert sum(len(batch['photo_ids']) for batch in task['batches'])==2
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    assert len(rows)==2
+    assert all(row['focus_review'] is True for row in rows)
+    assert all('rating' not in row and 'pick_status' not in row for row in rows)
+
+
+def test_legacy_pending_photo_keeps_old_selection_admission(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    assets[0].screening_reason='face_focus_uncertain'
+    assert assets[0].clarity_version is None
+    task=project.create_task(assets,CropSettings(),{})
+    assert photo_id(assets[0]) in task['batches'][0]['photo_ids']
+
+
+def test_v2_clarity_change_invalidates_old_batch_and_fingerprint(tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    for asset in assets:_mark_v2(asset,'clear')
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    batch=task['batches'][0]
+    old=batch['fingerprints'][photo_id(assets[0])]
+    _mark_v2(assets[0],'uncertain')
+
+    assert fingerprint(assets[0],CropSettings())!=old
+    with pytest.raises(ValueError,match='已改变'):
+        project.batch_images(task,batch)
+
+
+@pytest.mark.parametrize('channel',['api','web'])
+def test_selection_clarity_concern_becomes_pending_without_erasing_valid_star(tmp_path,channel):
+    project,assets,_,_=setup_project(tmp_path)
+    for asset in assets:_mark_v2(asset,'clear')
+    task=project.create_task(assets,CropSettings(),{},replace_current=True)
+    batch=task['batches'][0]
+    target=photo_id(assets[0])
+    if channel=='api':
+        payload=json.loads(answer(task,batch,5))
+        payload['photos'][0]['clarity']={'status':'blur','reason':'眼部疑似存在方向性拖影'}
+        assert project.ingest(task,batch,json.dumps(payload,ensure_ascii=False))==[]
+    else:
+        submission=project.create_web_submission(task,[batch['id']])
+        payload=json.loads(web_answer(task,submission,5))
+        payload['photos'][0]['clarity']={'status':'uncertain','reason':'联系表中眼部细节不足'}
+        assert project.ingest_web(task,submission,json.dumps(payload,ensure_ascii=False))==[]
+    photo=project.data['photos'][target]
+    assert photo['focus_review'] is True
+    assert photo['selection_focus_concern']['reason']
+    rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
+    row=next(row for row in rows if row['filename']=='A.jpg')
+    assert row['focus_review'] is True
+    assert row['ai_metadata']['clarity_status']=='清晰度待确认'
+    assert row['rating']==5 and row['pick_status']==1
+    next_task=project.create_task(assets,CropSettings(),{})
+    assert target in [pid for batch in next_task['batches'] for pid in batch['photo_ids']]
+
+
+def test_legacy_text_focus_request_becomes_pending_but_clear_text_does_not(tmp_path):
+    project,assets,task,batch=setup_project(tmp_path)
+    payload=json.loads(answer(task,batch,5))
+    payload['photos'][0]['review_items']=['眼部疑似虚焦，请检查原图']
+    payload['photos'][1]['reason']='眼睛清晰，对焦准确'
+    assert project.ingest(task,batch,json.dumps(payload,ensure_ascii=False))==[]
+    assert project.data['photos'][photo_id(assets[0])]['focus_review'] is True
+    assert project.data['photos'][photo_id(assets[1])].get('selection_focus_concern') is None
+
+
+def test_cancel_preparation_preserves_existing_answers(tmp_path, monkeypatch):
+    project, assets, task, batch = setup_project(tmp_path)
+    project.ingest(task, batch, answer(task, batch))
+    saved = json.loads(project.path.read_text('utf-8'))
+    stop = threading.Event()
+    stop.set()
+    with pytest.raises(InterruptedError):
+        project.create_task(assets, CropSettings(), {}, replace_current=True, stop_event=stop)
+    restored = ReviewProject(project.workspace)
+    assert restored.data['tasks'] == saved['tasks']
+    assert restored.data['photos'] == saved['photos']
+    assert restored.current_task()['batches'][0]['status'] == 'complete'
+    assert len(list((project.workspace / 'ai_tasks').iterdir())) == 1
+
+
+def test_reopen_after_preview_cleanup_keeps_completed_task(tmp_path):
+    project, assets, task, batch = setup_project(tmp_path)
+    project.ingest(task, batch, answer(task, batch))
+    for asset in assets:
+        asset.preview_path = tmp_path / 'removed-preview.jpg'
+    restored = ReviewProject(project.workspace)
+    restored.refresh(assets, CropSettings())
+    assert restored.can_reuse_task(restored.home_sheet_signature(assets, CropSettings()))
+    assert restored.current_task()['id'] == task['id']
+    assert restored.current_task()['batches'][0]['status'] == 'complete'
+    assert not restored.photos_needing_review()
+
+
+def test_cancel_after_render_rolls_back_new_task(tmp_path, monkeypatch):
+    from ai_cull_assistant import ai_project
+    project, assets, task, batch = setup_project(tmp_path)
+    project.ingest(task, batch, answer(task, batch))
+    stop = threading.Event()
+    render = ai_project.generate_contact_sheets
+    def cancel_after_render(*args, **kwargs):
+        paths = render(*args, **kwargs)
+        stop.set()
+        return paths
+    monkeypatch.setattr(ai_project, 'generate_contact_sheets', cancel_after_render)
+    with pytest.raises(InterruptedError):
+        project.create_task(assets, CropSettings(), {}, stop_event=stop)
+    restored = ReviewProject(project.workspace)
+    assert restored.current_task()['id'] == task['id']
+    assert restored.current_task()['batches'][0]['status'] == 'complete'
+    assert len(restored.data['tasks']) == 1
+    assert len(list((project.workspace / 'ai_tasks').iterdir())) == 1

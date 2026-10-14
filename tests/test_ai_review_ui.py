@@ -1,0 +1,738 @@
+import json
+import time
+import tkinter as tk
+from tkinter import font, ttk
+from pathlib import Path
+import pytest
+from PIL import Image
+from ai_cull_assistant.ai_review_ui import (
+    PasteResponseDialog,
+    RawResponsesDialog,
+    ReviewDialog,
+    _api_request_stubs,
+)
+from ai_cull_assistant import ai_api
+from ai_cull_assistant.crop_settings import CropSettings
+from test_ai_project import setup_project, answer
+
+
+@pytest.fixture(scope='module')
+def tk_root():
+    root=tk.Tk();root.withdraw()
+    yield root
+    root.destroy()
+
+
+@pytest.fixture
+def ui(tmp_path,monkeypatch,tk_root):
+    project,assets,task,batch=setup_project(tmp_path)
+    root=tk_root
+    profile=dict(id='test',name='test',base_url='https://example.invalid/v1',model='vision',timeout=5)
+    monkeypatch.setattr(ai_api,'load_profiles',lambda _: [profile])
+    monkeypatch.setattr(root, '_selected_api_profile', lambda: profile, raising=False)
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.askyesno',lambda *a,**kw:True)
+    errors=[]
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showerror',lambda *a,**kw:errors.append(a))
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showinfo',lambda *a,**kw:None)
+    dialog=ReviewDialog(root,project,assets,CropSettings(),tmp_path)
+    drive(root,dialog)
+    task=project.current_task();batch=task["batches"][0]
+    yield root,dialog,project,task,batch,errors
+    dialog._destroy_now()
+
+
+def drive(root,dialog):
+    end=time.monotonic()+15
+    while (dialog._api_active or dialog._preparing_task) and time.monotonic()<end:
+        root.update();time.sleep(.02)
+    assert not dialog._api_active and not dialog._preparing_task
+
+
+def test_hundreds_of_api_batches_are_snapshotted_without_image_io(monkeypatch):
+    profile = {'id': 'test', 'model': 'vision'}
+    batches = [
+        {'id': f'B{i:03d}', 'status': 'pending', 'photo_ids': [str(i)], 'image_paths': [f'{i}.jpg']}
+        for i in range(450)
+    ]
+    batches[17]['status'] = 'complete'
+
+    requests = _api_request_stubs({'id': 'task', 'batches': batches}, profile)
+
+    assert len(requests) == 449
+    assert requests[0]['image_count'] == 1
+    assert all('prompt' not in item and 'image_paths' not in item for item in requests)
+
+
+def test_api_queue_ingests_records_provider_and_skips_completed(ui,monkeypatch):
+    root,dialog,project,task,batch,errors=ui
+    calls=[]
+    def fake(profile,prompt,paths):
+        calls.append((profile,prompt,paths))
+        assert all(Path(p).exists() for p in paths)
+        return dict(text=answer(task,batch),usage={'total_tokens':10})
+    monkeypatch.setattr(ai_api,'call_model',fake)
+    dialog._start_api();drive(root,dialog)
+    assert not errors and batch['status']=='complete' and len(calls)==1
+    assert batch['raw_responses'][-1]['api_profile']['model']=='vision'
+    assert batch['raw_responses'][-1]['usage']['total_tokens']==10
+    dialog._start_api()
+    assert len(calls)==1
+
+
+
+def test_api_failure_stops_without_retry_and_keeps_confirmed(ui,monkeypatch):
+    root,dialog,project,task,batch,errors=ui
+    pid=batch['photo_ids'][0];project.confirm(pid,5,None)
+    calls=[]
+    def fake(*args):
+        calls.append(1);raise ai_api.ApiError('API 请求失败（HTTP 429）。')
+    monkeypatch.setattr(ai_api,'call_model',fake)
+    dialog._start_api();drive(root,dialog)
+    assert errors and batch['status']=='failed' and len(calls)==1
+    assert project.data['photos'][pid]['final']['rating']==5
+
+
+def test_web_tabs_prepare_and_restore(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    assert [dialog.notebook.tab(t, 'text') for t in dialog.notebook.tabs()] == ['API 选片', '网页选片', '选片结果']
+    assert dialog.export_button.cget('text') == '导出到 LR'
+    assert dialog.refine_button.cget('text') == '精选照片再选一轮'
+    assert dialog.split_button.cget('text') == '拆分所选批次重试'
+    ancestors = []
+    node = dialog.split_button
+    while node is not None:
+        ancestors.append(node)
+        node = getattr(node, 'master', None)
+    assert dialog.task_tab in ancestors
+    opened = []
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
+    dialog.notebook.select(1)
+    dialog._web_select_pending()
+    dialog._prepare_web()
+    drive(root, dialog)
+    assert not errors
+    submission = task['web_submissions'][0]
+    assert submission['prompt'] == dialog.clipboard_get()
+    assert opened and all(p.parent == opened[0] for p in project.web_images(task, submission))
+    assert task['current_web_submission_id'] == submission['id']
+    dialog._save_ui_settings()
+    dialog._refresh_web()
+    assert dialog._current_web()[1]['id'] == submission['id']
+    assert project.data['ui_settings']['submission_tab'] == 1
+
+
+def test_review_layout_has_fixed_footer_and_scrollable_web_and_result_tabs(ui):
+    _root, dialog, _project, _task, _batch, _errors = ui
+    assert dialog._page_id == 'review'
+    assert dialog.export_button.master.pack_info()['side'] == 'bottom'
+    assert dialog.notebook.pack_info()['expand'] == 1
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    canvases = [widget for widget in descendants(dialog) if isinstance(widget, tk.Canvas)]
+    assert set(canvases) == {
+        dialog.prefs_scroll.canvas,
+        dialog.api_scroll.canvas,
+        dialog.web_scroll.canvas,
+        dialog.review_canvas,
+    }
+
+
+def test_review_can_embed_and_forward_status_progress_and_close(tk_root, monkeypatch, tmp_path):
+    project, assets, _task, _batch = setup_project(tmp_path)
+    profile = {'id': 'test', 'name': '主页配置', 'base_url': 'https://example.invalid/v1', 'model': 'vision'}
+    monkeypatch.setattr(tk_root, '_selected_api_profile', lambda: profile, raising=False)
+    host = ttk.Frame(tk_root)
+    host.pack(fill='both', expand=True)
+    progress = []
+    logs = []
+    closed = []
+    dialog = ReviewDialog(
+        host, project, assets, CropSettings(), tmp_path,
+        embedded=True,
+        on_close=lambda: closed.append(True),
+        on_progress=lambda percent, label: progress.append((percent, label)),
+        on_log=logs.append,
+    )
+    dialog.pack(fill='both', expand=True)
+    try:
+        drive(tk_root, dialog)
+        assert dialog._embedded is True and dialog._host_window is None
+        assert dialog.master is host
+        assert dialog._page_id == 'review'
+        assert dialog.profile_var.get() == '主页配置 · vision'
+        assert progress[0] == (0, '正在准备 AI 选片')
+        assert progress[-1][0] == 100
+        dialog.status_var.set('测试状态同步')
+        assert logs[-1] == '测试状态同步'
+        dialog._close()
+        assert closed == [True]
+        assert dialog.winfo_exists()
+        dialog.dispose()
+        assert not dialog.winfo_exists()
+    finally:
+        if dialog.winfo_exists():
+            dialog.dispose()
+        host.destroy()
+
+
+def test_raw_and_paste_dialogs_keep_text_scroll_local(tk_root):
+    paste = PasteResponseDialog(tk_root, lambda _value: True)
+    try:
+        assert paste._page_id == 'paste'
+        assert paste.text.master.pack_info()['expand'] == 1
+        assert not any(isinstance(child, tk.Canvas) for child in paste.winfo_children())
+    finally:
+        paste.destroy()
+
+    raw = RawResponsesDialog(tk_root, [{'text': 'answer'}])
+    try:
+        assert raw._page_id == 'raw'
+        assert raw.text.master.pack_info()['expand'] == 1
+        assert raw.listbox.cget('yscrollcommand')
+        assert raw.text.cget('yscrollcommand')
+    finally:
+        raw.destroy()
+
+
+def test_web_import_dispatch_and_api_guard(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    submission = project.create_web_submission(task, [batch['id']])
+    dialog._refresh_web(submission['id'])
+    callbacks = []
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.PasteResponseDialog', lambda parent, callback, **kw: callbacks.append(callback))
+    dialog._api_active = True
+    dialog._paste_web_response()
+    assert not callbacks
+    dialog._api_active = False
+    dialog._paste_web_response()
+    assert callbacks[0](answer(task, submission))
+    assert batch['status'] == 'complete'
+    assert all(project.data['photos'][pid]['ai']['batch_id'] == batch['id'] for pid in batch['photo_ids'])
+    assert not errors
+
+
+def test_review_only_loads_selected_preview(ui,monkeypatch):
+    root,dialog,project,task,batch,errors=ui
+    calls=[]
+    monkeypatch.setattr(dialog,'_make_thumb',lambda photo,size:calls.append(size))
+    dialog.notebook.select(0);root.update();dialog._refresh_review()
+    assert not calls
+    dialog.notebook.select(1);root.update()
+    assert not calls
+
+
+def test_result_tab_uses_photo_preview_and_ai_result_columns(ui):
+    root, dialog, project, task, batch, errors = ui
+    project.ingest(task, batch, answer(task, batch))
+    dialog.notebook.select(2)
+    root.update()
+
+    assert str(dialog.review_workspace.cget('orient')) == 'horizontal'
+    assert list(dialog.review_workspace.panes()) == [
+        str(dialog.review_list_panel),
+        str(dialog.review_preview_panel),
+        str(dialog.review_detail_panel),
+    ]
+    assert dialog.review_tree.cget('displaycolumns') == ('name', 'group', 'ai', 'flag')
+    assert dialog.review_count_var.get() == f'{len(project.data["photos"])} 张照片'
+
+    photo_id = batch['photo_ids'][0]
+    dialog.review_tree.selection_set(photo_id)
+    dialog._show_selected_photo()
+    row = project.data['photos'][photo_id]
+    assert dialog.review_rating_var.get() == f'{row["ai"]["rating"]} 星 · AI'
+    assert dialog.review_flag_var.get() == '推荐保留 · AI'
+    assert row['ai']['reason'] in dialog.details.get('1.0', 'end-1c')
+
+
+@pytest.mark.parametrize('size', ['1100x650', '900x620'])
+def test_result_tab_keeps_all_three_columns_visible_at_compact_sizes(ui, size):
+    root, dialog, *_rest = ui
+    root.deiconify()
+    dialog.deiconify()
+    dialog.geometry(f'{size}+80+80')
+    dialog.notebook.select(2)
+    root.update()
+
+    widths = [
+        dialog.review_list_panel.winfo_width(),
+        dialog.review_preview_panel.winfo_width(),
+        dialog.review_detail_panel.winfo_width(),
+    ]
+    assert widths[0] >= 200
+    assert widths[1] >= 250
+    assert widths[2] >= 200
+    assert int(dialog.review_caption_label.cget('wraplength')) <= widths[2]
+    root.withdraw()
+
+
+def test_export_warns_about_unscored_and_can_return_without_writing(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    project.ingest(task, batch, answer(task, batch))
+    project.data['photos'][batch['photo_ids'][0]].pop('ai')
+    project._assets[0].auto_rejected = True
+    project._assets[0].screening_reason = 'severe_subject_blur'
+    project.refresh(project._assets, project._crops)
+    prompts = []
+    monkeypatch.setattr(
+        'ai_cull_assistant.ai_review_ui.messagebox.askyesno',
+        lambda title, body, **kw: prompts.append((title, body)) or False,
+    )
+    monkeypatch.setattr(project, 'export_final', lambda **kw: pytest.fail('取消后不应写出结果'))
+    dialog._export_ai_ratings()
+    assert prompts and prompts[0][0] == '导出当前结果'
+    # Changing one member's technical evidence invalidates this comparison
+    # group's suggestions. Neither absent nor expired stars may overwrite LR.
+    assert '共 2 张照片，2 张没有有效星级' in prompts[0][1]
+    assert '人工 > 有效 AI > 本地推荐' in prompts[0][1]
+    assert '保留 Lightroom 既有星级' in prompts[0][1]
+    assert '人工结果不会被技术复核覆盖' in prompts[0][1]
+    assert dialog.status_var.get() == '已取消导出。'
+
+
+def test_export_current_results_after_unscored_confirmation(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    project.ingest(task, batch, answer(task, batch))
+    project.data['photos'][batch['photo_ids'][0]].pop('ai')
+    # A human reject changes the final decision, not the comparative technical
+    # input. The other photo's valid AI stars must survive this export.
+    project.confirm(batch['photo_ids'][0], None, -1)
+    opened = []
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
+    dialog._export_ai_ratings()
+    payload = json.loads((project.workspace / 'exports' / 'lightroom_results.json').read_text('utf-8'))
+    assert len(payload['photos']) == 2
+    first = next(row for row in payload['photos'] if row['filename'].casefold().startswith('a.'))
+    second = next(row for row in payload['photos'] if row['filename'].casefold().startswith('b.'))
+    assert first['pick_status'] == -1 and 'rating' not in first
+    assert second['rating'] == 4
+    assert opened == [project.workspace / "exports"]
+
+
+def test_technical_change_preserves_ai_history_but_never_exports_stale_group_stars(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    assert project.ingest(task, batch, answer(task, batch)) == []
+    second_id = batch['photo_ids'][1]
+    old_ai = dict(project.data['photos'][second_id]['ai'])
+    project.data['photos'][batch['photo_ids'][0]].pop('ai')
+    project._assets[0].auto_rejected = True
+    project._assets[0].screening_reason = 'severe_subject_blur'
+    project.refresh(project._assets, project._crops)
+    assert project.data['photos'][second_id]['stale']
+    assert project.data['photos'][second_id]['ai'] == old_ai
+    opened = []
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile', lambda path: opened.append(Path(path)))
+    dialog._export_ai_ratings()
+    payload = json.loads((project.workspace / 'exports' / 'lightroom_results.json').read_text('utf-8'))
+    assert len(payload['photos']) == 2
+    assert all('rating' not in row for row in payload['photos'])
+    assert next(row for row in payload['photos'] if row['filename'].casefold().startswith('a.'))['pick_status'] == -1
+    assert next(row for row in payload['photos'] if row['filename'].casefold().startswith('b.'))['recommendation'] == 'review'
+    assert opened == [project.workspace / 'exports'] and not errors
+
+
+def test_enter_creates_fresh_task_without_api_or_history_controls(ui):
+    root, dialog, project, task, batch, errors = ui
+    assert len(project.data['tasks']) == 1
+    assert all(b['status'] == 'pending' for b in task['batches'])
+    assert not hasattr(dialog, 'task_combo')
+    def labels(parent):
+        result=[]
+        for w in parent.winfo_children():
+            if 'text' in w.keys():result.append(str(w.cget('text')))
+            result.extend(labels(w))
+        return result
+    text=labels(dialog)
+    assert '任务历史' not in text and '新建全量初选' not in text and '导入 LR 回执' not in text
+    assert '重新提交' in text
+
+
+def test_resubmit_uses_changed_preferences_and_displays_photo_results(ui, monkeypatch):
+    root, dialog, project, old_task, old_batch, errors = ui
+    project.ingest(old_task, old_batch, answer(old_task, old_batch))
+    dialog.preference_vars['extra'].set('优先眼神清楚')
+    calls=[]
+    def fake(profile,prompt,paths):
+        task=project.current_task();batch=task['batches'][0]
+        calls.append(prompt)
+        return {'text':answer(task,batch)}
+    monkeypatch.setattr(ai_api,'call_model',fake)
+    dialog._resubmit_api();drive(root,dialog)
+    task=project.current_task()
+    assert not errors and len(calls)==1 and task['id']!=old_task['id']
+    assert '优先眼神清楚' in calls[0]
+    assert len([item for item in project.data['tasks'] if item['id'] == project.data['current_task_id']]) == 1
+    assert len(project.data['tasks']) == 2 and old_task in project.data['tasks']
+    dialog.notebook.select(2);root.update()
+    for pid in task['batches'][0]['photo_ids']:
+        row=project.data['photos'][pid]
+        values=dialog.review_tree.item(pid,'values')
+        assert values[0]==row['stem'] and values[2]==str(row['ai']['rating'])
+        assert values[4]==row['ai']['reason']
+
+
+def test_tab_round_trip_keeps_api_layout(ui):
+    root, dialog, project, task, batch, errors = ui
+    root.deiconify(); dialog.deiconify(); root.update()
+    dialog.notebook.select(0); root.update()
+    def layout():
+        return [(w.winfo_x(),w.winfo_y(),w.winfo_width(),w.winfo_height()) for w in
+                (dialog.common_tasks,dialog.notebook,dialog.batch_tree,dialog.run_button)]
+    before=layout()
+    dialog.notebook.select(2);root.update()
+    assert dialog.common_tasks.winfo_manager()==''
+    dialog.notebook.select(0);root.update()
+    assert dialog.common_tasks.winfo_manager()=='pack'
+    assert layout()==before
+    root.withdraw()
+
+
+@pytest.mark.parametrize('size', ['1100x620', '960x600'])
+def test_compact_review_tabs_keep_all_visible_buttons_in_bounds(ui, size):
+    root, dialog, *_rest = ui
+    root.deiconify()
+    dialog.deiconify()
+    dialog.geometry(f'{size}+80+80')
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    def containing_canvas(widget):
+        node = widget
+        while node is not None and node is not dialog:
+            if node is dialog.web_scroll.content:
+                return dialog.web_scroll.canvas
+            if node is dialog.api_scroll.content:
+                return dialog.api_scroll.canvas
+            if node is dialog.prefs_scroll.content:
+                return dialog.prefs_scroll.canvas
+            if node is dialog.review_workspace.master:
+                return dialog.review_canvas
+            node = getattr(node, 'master', None)
+        return None
+
+    def scroll_to_button(button, canvas):
+        left, top, right, bottom = canvas.bbox('all')
+        current_top = canvas.canvasy(0)
+        content_y = button.winfo_rooty() - canvas.winfo_rooty() + current_top
+        target = content_y - max(0, (canvas.winfo_height() - button.winfo_height()) / 2)
+        canvas.yview_moveto(max(0, min(1, (target - top) / max(1, bottom - top))))
+        root.update()
+        assert canvas.winfo_rootx() <= button.winfo_rootx()
+        assert button.winfo_rootx() + button.winfo_width() <= canvas.winfo_rootx() + canvas.winfo_width()
+        assert canvas.winfo_rooty() <= button.winfo_rooty()
+        assert button.winfo_rooty() + button.winfo_height() <= canvas.winfo_rooty() + canvas.winfo_height()
+
+    for index in range(3):
+        dialog.notebook.select(index)
+        root.update()
+        page_canvas = (dialog.api_scroll.canvas, dialog.web_scroll.canvas, dialog.review_canvas)[index]
+        active_canvases = [page_canvas]
+        if dialog.prefs.winfo_ismapped():
+            active_canvases.append(dialog.prefs_scroll.canvas)
+        page_buttons = [
+            widget for widget in descendants(dialog)
+            if isinstance(widget, ttk.Button)
+            and widget.winfo_ismapped()
+            and containing_canvas(widget) in active_canvases
+        ]
+        assert page_buttons
+        for widget in page_buttons:
+            scroll_to_button(widget, containing_canvas(widget))
+
+        left = dialog.winfo_rootx()
+        top = dialog.winfo_rooty()
+        right = left + dialog.winfo_width()
+        bottom = top + dialog.winfo_height()
+        visible_buttons = [
+            widget for widget in descendants(dialog)
+            if isinstance(widget, ttk.Button)
+            and widget.winfo_viewable()
+            and containing_canvas(widget) is None
+        ]
+        assert visible_buttons
+        for widget in visible_buttons:
+            assert left <= widget.winfo_rootx()
+            assert top <= widget.winfo_rooty()
+            assert widget.winfo_rootx() + widget.winfo_width() <= right
+            assert widget.winfo_rooty() + widget.winfo_height() <= bottom
+    root.withdraw()
+
+
+def test_true_200_percent_review_keeps_tab_actions_reachable(tmp_path, monkeypatch, tk_root):
+    root = tk_root
+    original_scaling = root.tk.call('tk', 'scaling')
+    root.tk.call('tk', 'scaling', 192 / 72)
+    root.geometry('960x540+0+0')
+    root.deiconify()
+    host = ttk.Frame(root)
+    host.pack(fill='both', expand=True)
+    project, assets, _task, _batch = setup_project(tmp_path)
+    profile = {'id': 'test', 'name': 'test', 'base_url': 'https://example.invalid/v1', 'model': 'vision'}
+    monkeypatch.setattr(ai_api, 'load_profiles', lambda _: [profile])
+    monkeypatch.setattr(root, '_selected_api_profile', lambda: profile, raising=False)
+    dialog = ReviewDialog(root, project, assets, CropSettings(), tmp_path, embedded=True)
+    dialog.pack(fill='both', expand=True)
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    def assert_buttons(buttons, viewport):
+        left, top = viewport.winfo_rootx(), viewport.winfo_rooty()
+        right = left + viewport.winfo_width()
+        bottom = top + viewport.winfo_height()
+        for button in buttons:
+            assert button.winfo_viewable(), button.cget('text')
+            assert button.winfo_width() >= button.winfo_reqwidth(), button.cget('text')
+            assert left <= button.winfo_rootx() and button.winfo_rootx() + button.winfo_width() <= right
+            assert top <= button.winfo_rooty() and button.winfo_rooty() + button.winfo_height() <= bottom
+
+    try:
+        drive(root, dialog)
+        dialog.notebook.select(0)
+        root.update()
+        assert dialog.prefs.winfo_manager() == ''
+        dialog.prefs_toggle.invoke()
+        root.update()
+        assert dialog.prefs.winfo_manager() == 'pack'
+        assert dialog.prefs_scroll.winfo_height() <= dialog.winfo_height() // 4 + 2
+        assert tuple(round(value, 3) for value in dialog.prefs_scroll.canvas.xview()) == (0.0, 1.0)
+        assert dialog.notebook.winfo_height() >= 100
+        strategy_combo = next(
+            widget for widget in descendants(dialog.prefs_scroll.canvas)
+            if isinstance(widget, ttk.Combobox)
+            and '允许保留多个不同动作' in widget.cget('values')
+        )
+        control_font = font.nametofont('TkDefaultFont', root=root)
+        assert strategy_combo.winfo_reqwidth() >= (
+            control_font.measure('允许保留多个不同动作')
+            + control_font.measure('00')
+        )
+        dialog.prefs_toggle.invoke()
+        root.update()
+        api = [dialog.run_button, dialog.resubmit_button, dialog.pause_button, dialog.split_button]
+        canvas = dialog.api_scroll.canvas
+        for button in api:
+            total_height = canvas.bbox('all')[3]
+            current_offset = canvas.yview()[0] * total_height
+            content_y = button.winfo_rooty() - canvas.winfo_rooty() + current_offset
+            target = max(0, content_y - (canvas.winfo_height() - button.winfo_height()) / 2)
+            canvas.yview_moveto(min(1, target / total_height))
+            root.update()
+            assert_buttons([button], canvas)
+
+        dialog.notebook.select(1)
+        root.update()
+        assert tuple(round(value, 3) for value in dialog.web_scroll.canvas.xview()) == (0.0, 1.0)
+        dialog.web_scroll.canvas.yview_moveto(1)
+        root.update()
+        wanted = {'复制完整提示词', '打开全部联系表目录', '导入整份回答', '查看原始回答'}
+        web = [w for w in descendants(dialog.web_tab)
+               if isinstance(w, ttk.Button) and w.cget('text') in wanted]
+        assert {w.cget('text') for w in web} == wanted
+        canvas = dialog.web_scroll.canvas
+        for button in web:
+            total_height = canvas.bbox('all')[3]
+            current_offset = canvas.yview()[0] * total_height
+            content_y = button.winfo_rooty() - canvas.winfo_rooty() + current_offset
+            target = max(0, content_y - (canvas.winfo_height() - button.winfo_height()) / 2)
+            canvas.yview_moveto(min(1, target / total_height))
+            root.update()
+            assert_buttons([button], canvas)
+
+        dialog.notebook.select(2)
+        root.update()
+        preview = [dialog.review_previous_button, dialog.review_next_button, dialog.review_open_button]
+        assert [w.cget('text') for w in preview] == ['←', '→', '查看']
+        canvas = dialog.review_canvas
+        for button in preview:
+            total_height = canvas.bbox('all')[3]
+            current_offset = canvas.yview()[0] * total_height
+            content_y = button.winfo_rooty() - canvas.winfo_rooty() + current_offset
+            target = max(0, content_y - 8)
+            canvas.yview_moveto(min(1, target / total_height))
+            root.update()
+            assert_buttons([button], canvas)
+    finally:
+        if dialog.winfo_exists():
+            dialog.dispose()
+        host.destroy()
+        root.tk.call('tk', 'scaling', original_scaling)
+        root.withdraw()
+
+
+def test_reopen_preserves_answers_when_home_sheet_changes_or_disappears(ui, monkeypatch, tmp_path):
+    root,dialog,project,task,batch,errors=ui
+    project.ingest(task,batch,answer(task,batch))
+    page=tmp_path/'main.jpg';page.write_bytes(b'unchanged')
+    signature=project.home_sheet_signature(dialog.assets,dialog.crop_settings,[page])
+    project.data['home_sheet_signature']=signature;project.save()
+    previous_id=task['id']
+    reopened=ReviewDialog(root,project,dialog.assets,dialog.crop_settings,tmp_path,home_pages=[page])
+    try:
+        drive(root,reopened)
+        assert project.current_task()['id']==previous_id
+        assert project.current_task()['batches'][0]['status']=='complete'
+        assert all(p.get('ai') for p in project.data['photos'].values())
+    finally:
+        reopened._destroy_now()
+    page.write_bytes(b'new layout')
+    changed=ReviewDialog(root,project,dialog.assets,dialog.crop_settings,tmp_path,home_pages=[page])
+    try:
+        drive(root,changed)
+        assert project.current_task()['id']==previous_id
+        assert all(b['status']=='complete' for b in project.current_task()['batches'])
+        assert all(p.get('ai') for p in project.data['photos'].values())
+    finally:
+        changed._destroy_now()
+    page.unlink()
+    missing=ReviewDialog(root,project,dialog.assets,dialog.crop_settings,tmp_path,home_pages=[page])
+    try:
+        drive(root,missing)
+        assert project.current_task()['id']==previous_id
+        assert all(p.get('ai') for p in project.data['photos'].values())
+    finally:
+        missing._destroy_now()
+
+
+def test_reopen_moves_stale_answer_and_unchanged_pending_photo_into_one_followup(tk_root,monkeypatch,tmp_path):
+    project,assets,_,_=setup_project(tmp_path)
+    original=project.create_task(assets,CropSettings(),{'_split_limit':1},replace_current=True)
+    first_batch,second_batch=original['batches']
+    project.ingest(original,first_batch,answer(original,first_batch))
+    first_id,second_id=first_batch['photo_ids'][0],second_batch['photo_ids'][0]
+    saved=dict(project.data['photos'][first_id]['ai'])
+    Image.new('RGB',(100,150),'blue').save(assets[0].primary_path)
+    profile=dict(id='test',name='test',base_url='https://example.invalid/v1',model='vision',timeout=5)
+    monkeypatch.setattr(ai_api,'load_profiles',lambda _: [profile])
+    monkeypatch.setattr(tk_root,'_selected_api_profile',lambda:profile,raising=False)
+    errors=[]
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showerror',lambda *a,**kw:errors.append(a))
+    dialog=ReviewDialog(tk_root,project,assets,CropSettings(),tmp_path)
+    try:
+        drive(tk_root,dialog)
+        current=project.current_task()
+        assert not errors and current['id']!=original['id']
+        assert [pid for batch in current['batches'] for pid in batch['photo_ids']]==[first_id,second_id]
+        assert project.data['photos'][first_id]['ai']==saved
+        assert project.data['photos'][first_id]['stale'] is True
+        assert 'ai' not in project.data['photos'][second_id]
+        assert second_batch['status']=='pending'
+    finally:
+        dialog._destroy_now()
+
+
+def test_fresh_all_rejected_project_has_no_task_and_can_export_lr(tk_root,monkeypatch,tmp_path):
+    _seed,assets,_,_=setup_project(tmp_path)
+    for asset in assets:
+        asset.auto_rejected=True
+        asset.screening_reason='severe_subject_blur'
+    from ai_cull_assistant.ai_project import ReviewProject
+    project=ReviewProject(tmp_path/'fresh-workspace')
+    profile=dict(id='test',name='test',base_url='https://example.invalid/v1',model='vision',timeout=5)
+    monkeypatch.setattr(ai_api,'load_profiles',lambda _: [profile])
+    monkeypatch.setattr(tk_root,'_selected_api_profile',lambda:profile,raising=False)
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.askyesno',lambda *a,**kw:True)
+    errors=[];opened=[]
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showerror',lambda *a,**kw:errors.append(a))
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showinfo',lambda *a,**kw:None)
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.os.startfile',lambda path:opened.append(Path(path)))
+    monkeypatch.setattr(ai_api, 'call_model', lambda *a, **kw: pytest.fail('Entering local recommendations must not buy AI'))
+    dialog=ReviewDialog(tk_root,project,assets,CropSettings(),tmp_path)
+    try:
+        drive(tk_root,dialog)
+        # Local rejects are recommendations, not a mandatory AI admission gate.
+        current = project.current_task()
+        assert current is not None and not errors
+        assert len([pid for item in current['batches'] for pid in item['photo_ids']]) == 2
+        assert all(item['status'] == 'pending' for item in current['batches'])
+        dialog._export_ai_ratings()
+        payload=json.loads((project.workspace/'exports'/'lightroom_results.json').read_text('utf-8'))
+        assert len(payload['photos'])==2
+        assert all(row['pick_status']==-1 and 'rating' not in row for row in payload['photos'])
+        assert opened==[project.workspace/'exports'] and not errors
+    finally:
+        dialog._destroy_now()
+
+
+def test_review_uses_homepage_profile_and_refreshes_changes(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    profile = {'id': 'changed', 'name': '主页配置', 'model': 'vision-test'}
+    monkeypatch.setattr(root, '_selected_api_profile', lambda: profile)
+    dialog._refresh_profiles()
+    assert dialog.profile_var.get() == '主页配置 · vision-test'
+    assert list(dialog._profile_labels.values()) == [profile]
+    profile['model'] = 'changed-after-snapshot'
+    assert list(dialog._profile_labels.values())[0]['model'] == 'vision-test'
+
+
+def test_manual_web_mode_does_not_require_api_profile(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    monkeypatch.setattr(root, '_selected_api_profile', lambda: None)
+    dialog._refresh_profiles()
+    assert not dialog._profile_labels
+    assert '网页选片' in dialog.profile_var.get()
+    assert project.current_task()['id'] == task['id']
+    assert not errors
+
+@pytest.mark.parametrize('tab,submit', [(0, True), (1, False)])
+def test_refine_routes_selected_photos_to_current_submission_page(ui, monkeypatch, tab, submit):
+    root, dialog, project, task, batch, errors = ui
+    pid = batch['photo_ids'][0]
+    assert project.ingest(task, batch, answer(task, batch, rating=5)) == []
+    for photo in project.data['photos'].values():
+        photo['ai']['suggest_reject'] = True
+    project.data['photos'][pid]['ai']['suggest_reject'] = False
+    dialog.notebook.select(tab)
+    calls = []
+    monkeypatch.setattr(dialog, '_create_task', lambda *args, **kw: calls.append((args, kw)))
+    dialog.refine_button.invoke()
+    assert calls == [(('refine', [pid]), {'submit_after': submit})]
+
+
+def test_refine_explains_when_no_eligible_photos(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    notices = []
+    monkeypatch.setattr('ai_cull_assistant.ai_review_ui.messagebox.showinfo', lambda *a, **kw: notices.append(a))
+    dialog.refine_button.invoke()
+    assert notices and '4～5 星' in notices[0][1]
+    assert project.current_task()['id'] == task['id']
+
+
+def test_refine_creates_new_task_and_requests_api_submission(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    pid = batch['photo_ids'][0]
+    # Use the normal ingestion path so the selected proposal has the current
+    # fingerprint; an unversioned bare rating dict is deliberately invalid.
+    assert project.ingest(task, batch, answer(task, batch, rating=5)) == []
+    for photo_id, photo in project.data['photos'].items():
+        photo['ai']['suggest_reject'] = photo_id != pid
+    dialog.notebook.select(0)
+    submitted = []
+    monkeypatch.setattr(dialog, '_start_api', lambda: submitted.append(project.current_task()['id']))
+    dialog.refine_button.invoke()
+    drive(root, dialog)
+    current = project.current_task()
+    assert not errors and current['kind'] == 'refine' and current['id'] != task['id']
+    assert submitted == [current['id']]
+    assert [p for b in current['batches'] for p in b['photo_ids']] == [pid]
+
+
+def test_close_during_preparation_cancels_without_refresh(ui, monkeypatch):
+    root, dialog, project, task, batch, errors = ui
+    dialog._set_preparing(True)
+    monkeypatch.setattr(dialog, '_refresh_tasks', lambda *a, **k: pytest.fail('closing must not rebuild trees'))
+    closed = []
+    monkeypatch.setattr(dialog, '_destroy_now', lambda: closed.append(True))
+    dialog._close()
+    assert dialog._prepare_stop.is_set()
+    dialog._handle_api_event(('prepared', task, False))
+    assert closed and not dialog._preparing_task

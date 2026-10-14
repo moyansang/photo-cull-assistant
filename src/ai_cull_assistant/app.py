@@ -1,0 +1,1724 @@
+from __future__ import annotations
+
+import threading
+import queue
+import copy
+import json
+import zipfile
+from pathlib import Path
+from types import MappingProxyType
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+from .group_editor import GroupEditor
+from .evidence_cleanup_ui import EvidenceCleanupMixin
+from .version import BUILD, VERSION
+from .update_ui import UpdateController
+import sys
+from .settings import application_dir, load_paths, read_values, save_values
+from .project_storage import (
+    load_workspace_preferences,
+    prepare_runtime_settings,
+    save_workspace_preferences,
+    workspace_for,
+)
+from .crop_settings import CropSettings
+from .crop_dialog import CropDialog
+from .shared_api import (
+    NO_API_LABEL,
+    NO_API_PROFILE_ID,
+    profile_options,
+    save_selected_profile_id,
+    selected_api_profile,
+    selected_profile_id,
+)
+from .window_layout import fit_window
+from .ui_help import install_page_chrome, install_control_help
+from .ui_style import set_button_style, apply_page
+from .responsive_layout import WrappingToolbar
+from .workspace_layout import workspace_path
+from .workspace_log import append_log, visible_log, HISTORY_BOUNDARY
+from dataclasses import asdict, replace
+from .workflow import (
+    ScanResult,
+    persist_manual_groups,
+)
+
+
+GROUPING_LABELS = {"严格": "strict", "标准": "standard", "宽松": "loose"}
+
+
+class App(EvidenceCleanupMixin, tk.Tk):
+    def __init__(self, settings_dir: Path | None = None) -> None:
+        super().__init__()
+        self.withdraw()
+        self.title(f"AI 选片助手 v{VERSION} · 构建 {BUILD}")
+        self.review_project = None
+        self.scan_result: ScanResult | None = None
+        self.settings_dir = Path(settings_dir) if settings_dir is not None else prepare_runtime_settings()
+        self.saved_paths = load_paths(self.settings_dir)
+        global_values = read_values(self.settings_dir)
+        global_options = global_values.get("options", {})
+        if not isinstance(global_options, dict):
+            global_options = {}
+        input_dir = self.saved_paths["input"].strip()
+        workspace = self.saved_paths["workspace"].strip()
+        workspace_values = {}
+        self._workspace_blocked = False
+        self._workspace_error = ""
+        if input_dir:
+            try:
+                selected = workspace_for(
+                    self.settings_dir,
+                    input_dir,
+                    preferred=workspace or None,
+                )
+                workspace = str(selected)
+                self.saved_paths["workspace"] = workspace
+                workspace_values = load_workspace_preferences(self.settings_dir, selected, input_dir)
+            except (OSError, ValueError, json.JSONDecodeError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
+                self._workspace_blocked = True
+                self._workspace_error = str(exc)
+        self.crop_settings = CropSettings.from_dict(workspace_values.get("face_crop", {}))
+        self.saved_options = workspace_values.get("options", {})
+        if not isinstance(self.saved_options, dict):
+            self.saved_options = {}
+        self.saved_options = dict(self.saved_options)
+        self.saved_options["no_auto_updates"] = global_options.get("no_auto_updates") is True
+        self._active_input = input_dir
+        self._active_workspace = workspace
+        self._workspace_user_custom = False
+        self._workspace_cleared = False
+        self._suppress_settings_trace = False
+        self._processing_busy = False
+        self._processing_job = None
+        self._processing_mode = "scan"
+        self._api_config_window = None
+        self._scan_progress = 0
+        self._update_progress_active = False
+        self._stop_event = threading.Event()
+        self._process_events = queue.Queue()
+        self._log_lock = threading.Lock()
+        self._log_epoch = 0
+        self._close_after_stop = False
+        self._settings_pending = None
+        self._workspace_pages = {}
+        self._visible_page = 'home'
+        self._build_ui()
+        self._api_selection_changed()
+        fit_window(self, (1180, 840), minimum_size=(900, 660))
+        if not self._workspace_blocked:
+            self._restore_session()
+        self.input_var.trace_add("write", self._input_path_changed)
+        self.workspace_var.trace_add("write", self._workspace_path_changed)
+        for variable in (self.preset_var, self.per_page_var, self.columns_var, self.screening_var, self.body_screening_var, self.analysis_mode_var):
+            variable.trace_add("write", self._workspace_setting_changed)
+        self.no_updates_var.trace_add("write", self._schedule_settings_save)
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.updates = UpdateController(self)
+        self._restore_processing_job()
+        self._log_workspace_summary()
+        self.after(100, self._poll_processing)
+        if self._workspace_blocked:
+            self.after(50, self._show_workspace_error)
+        if settings_dir is None and getattr(sys, 'frozen', False) and '--self-test' not in sys.argv and not self.no_updates_var.get():
+            self.after(1500, lambda: self.updates.check() if not self.no_updates_var.get() and not self._processing_busy else None)
+
+    def _save_session(self, fresh=False):
+        if self.scan_result and not self._workspace_blocked:
+            try:
+                from .session_store import save_session
+                save_session(self.scan_result, fresh=fresh)
+            except Exception as exc:
+                self._log(f"分析记录保存失败：{exc}")
+
+    def _restore_session(self, *, restore_log=True):
+        if self._workspace_blocked or not self.input_var.get().strip() or not self.workspace_var.get().strip():
+            return
+        workspace = Path(self.workspace_var.get())
+        logfile = workspace_path(workspace, 'session.log')
+        log_context = (str(logfile.resolve()), self._log_epoch)
+        if restore_log and getattr(self, '_restored_log_context', None) != log_context:
+            try:
+                history = visible_log(logfile.read_text('utf-8')) if logfile.exists() else ''
+                if history.strip():
+                    # Display-only boundary: persisted history stays unchanged.
+                    # Insert synchronously before queued restoration summaries.
+                    self.log_text.configure(state="normal")
+                    self.log_text.insert("end", history)
+                    if not history.endswith('\n'):
+                        self.log_text.insert("end", "\n")
+                    if history.rstrip().splitlines()[-1] != HISTORY_BOUNDARY:
+                        self.log_text.insert("end", HISTORY_BOUNDARY + "\n")
+                    self.log_text.configure(state="disabled")
+                # Even empty history is restored only once in this display epoch;
+                # new session messages must not later become historical content.
+                self._restored_log_context = log_context
+            except OSError:
+                pass
+        try:
+            from .session_store import load_session, source_changes
+            added, removed = source_changes(workspace, self.input_var.get())
+            self.scan_result = load_session(workspace, self.input_var.get())
+            if self.scan_result:
+                self._log(f"已恢复上次分析：{len(self.scan_result.assets)} 张照片，请按推荐下一步继续。")
+                if removed:
+                    self._log(f"照片文件夹减少 {len(removed)} 个文件，已更新工作区，保留其余分析；请重新生成联系表。")
+                # Recompute after removing a RAW whose JPEG still exists.
+                added, _ = source_changes(workspace, self.input_var.get())
+                if added:
+                    self._set_sheets_ready(False)
+                    self._log(f"发现新增 {len(added)} 个照片文件，点击“扫描图片”只扫描新增或配对变化的照片，保留原有分析和分组。")
+        except Exception as exc:
+            self._log(f"上次分析未恢复：{exc}。请检查照片路径或重新扫描；已有 AI 任务仍保留。")
+
+    def _option_int(self, key, default, minimum, maximum):
+        try:
+            return max(minimum, min(maximum, int(self.saved_options.get(key, default))))
+        except (ValueError, TypeError):
+            return default
+
+    def _schedule_settings_save(self, *_):
+        if self._suppress_settings_trace or self._processing_busy:
+            return
+        if self._settings_pending:
+            self.after_cancel(self._settings_pending)
+        self._settings_pending = self.after(500, self._save_preferences)
+
+    def _workspace_setting_changed(self, *_):
+        if not self._suppress_settings_trace:
+            self._workspace_cleared = False
+        self._schedule_settings_save()
+
+    def _input_path_changed(self, *_):
+        if not self._suppress_settings_trace:
+            # The latest explicit photo selection wins over a previously edited
+            # workspace field that has not yet reached its delayed save.
+            self._workspace_user_custom = False
+        self._schedule_settings_save()
+
+    def _workspace_path_changed(self, *_):
+        if not self._suppress_settings_trace:
+            self._workspace_user_custom = True
+        self._schedule_settings_save()
+
+    def _workspace_options(self):
+        options = dict(self.saved_options)
+        options.pop("no_auto_updates", None)
+        options['grouping'] = self.preset_var.get()
+        options['screening'] = self.screening_var.get()
+        options['body_screening'] = self.body_screening_var.get()
+        options['analysis_mode'] = 'landscape' if self.analysis_mode_var.get() == '风景' else 'portrait'
+        for key, variable, low, high in [('per_page', self.per_page_var, 8, 60), ('columns', self.columns_var, 2, 6)]:
+            try:
+                value = variable.get()
+                if low <= value <= high:
+                    options[key] = value
+            except tk.TclError:
+                pass
+        return options
+
+    def _commit_detection_confidence(self, _event=None):
+        import math
+        previous = self.crop_settings.detection_confidence
+        try:
+            value = float(self.detection_confidence_var.get())
+            if not math.isfinite(value):
+                value = previous
+        except (ValueError, tk.TclError):
+            value = previous
+        value = round(max(.7, min(.95, value)), 2)
+        if self._processing_busy or self._review_busy():
+            value = previous
+        self.detection_confidence_var.set(f"{value:.2f}")
+        if value == previous:
+            return
+        self.crop_settings = replace(self.crop_settings, detection_confidence=value)
+        page = self._workspace_pages.get('faces')
+        if page is not None and page.winfo_exists():
+            page.confidence.set(f"{value:.2f}")
+            page._original_confidence = value
+        if self.scan_result:
+            for asset in self.scan_result.assets:
+                asset.ai_focus_dirty = True
+            self._set_sheets_ready(False)
+            self._save_session()
+        self._workspace_setting_changed()
+
+    def _save_active_workspace_preferences(self):
+        self._commit_detection_confidence()
+        if (self._workspace_blocked or self._workspace_cleared
+                or not self._active_input or not self._active_workspace):
+            return
+        save_workspace_preferences(
+            Path(self._active_workspace),
+            asdict(self.crop_settings),
+            self._workspace_options(),
+        )
+
+    def _activate_workspace(self, input_dir: str, workspace: Path) -> None:
+        if not self._confirm_face_draft_reset():
+            raise ValueError('已取消切换，保留当前人脸编辑草稿。')
+        self._discard_workspace_pages()
+        self._save_active_workspace_preferences()
+        values = load_workspace_preferences(self.settings_dir, workspace, input_dir)
+        options = values.get("options", {})
+        if not isinstance(options, dict):
+            options = {}
+        self._active_input = input_dir
+        self._active_workspace = str(workspace)
+        self._workspace_blocked = False
+        self._workspace_error = ""
+        self._workspace_cleared = False
+        self.crop_settings = CropSettings.from_dict(values.get("face_crop", {}))
+        self.saved_options = dict(options)
+        self.saved_options["no_auto_updates"] = self.no_updates_var.get()
+        self._suppress_settings_trace = True
+        try:
+            self.detection_confidence_var.set(f"{self.crop_settings.detection_confidence:.2f}")
+            self.workspace_var.set(str(workspace))
+            grouping = self.saved_options.get("grouping")
+            self.preset_var.set(grouping if grouping in GROUPING_LABELS else "标准")
+            self.per_page_var.set(self._option_int("per_page", 16, 8, 60))
+            self.columns_var.set(self._option_int("columns", 4, 2, 6))
+            screening = self.saved_options.get("screening", True)
+            self.screening_var.set(screening if isinstance(screening, bool) else True)
+            self.body_screening_var.set(self.saved_options.get('body_screening') is True)
+            self.analysis_mode_var.set('风景' if self.saved_options.get('analysis_mode') == 'landscape' else '人像')
+        finally:
+            self._suppress_settings_trace = False
+        self.scan_result = None
+        self.review_project = None
+        self._processing_job = None
+        self._clear_log()
+        self._restore_session(restore_log=False)
+        self._restore_processing_job()
+        self._log_workspace_summary()
+
+    def _sync_selected_workspace(self) -> bool:
+        if self._processing_busy:
+            return False
+        if self._review_busy():
+            if self.input_var.get().strip() != self._active_input or self.workspace_var.get().strip() != self._active_workspace:
+                self._suppress_settings_trace = True
+                try:
+                    self.input_var.set(self._active_input)
+                    self.workspace_var.set(self._active_workspace)
+                finally:
+                    self._suppress_settings_trace = False
+            return False
+        input_dir = self.input_var.get().strip()
+        requested_workspace = self.workspace_var.get().strip()
+        if self._workspace_user_custom and requested_workspace:
+            try:
+                from .project_storage import workspace_input
+                recorded_input = workspace_input(requested_workspace)
+                if recorded_input:
+                    input_dir = recorded_input
+                    self._suppress_settings_trace = True
+                    try:
+                        self.input_var.set(input_dir)
+                    finally:
+                        self._suppress_settings_trace = False
+            except (OSError, ValueError, zipfile.BadZipFile) as exc:
+                self._log(f"工作区未打开：{exc}")
+                return False
+        if not input_dir:
+            if not self._confirm_face_draft_reset():
+                return False
+            self._discard_workspace_pages()
+            if self._active_input:
+                self._save_active_workspace_preferences()
+            self._active_input = ""
+            self._active_workspace = ""
+            self.scan_result = None
+            self.review_project = None
+            self._processing_job = None
+            self._suppress_settings_trace = True
+            try:
+                self.workspace_var.set("")
+            finally:
+                self._suppress_settings_trace = False
+            self._clear_log()
+            self._restore_processing_job()
+            self._workspace_user_custom = False
+            return True
+        changed_input = input_dir != self._active_input
+        changed_workspace = requested_workspace != self._active_workspace
+        if not changed_input and not changed_workspace:
+            self._workspace_user_custom = False
+            return not self._workspace_blocked
+        if changed_input and not Path(input_dir).is_dir():
+            return False
+        preferred = requested_workspace if self._workspace_user_custom and requested_workspace else None
+        try:
+            selected = workspace_for(self.settings_dir, input_dir, preferred=preferred)
+            self._activate_workspace(input_dir, selected)
+        except (OSError, ValueError, json.JSONDecodeError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
+            self._suppress_settings_trace = True
+            try:
+                self.input_var.set(self._active_input)
+                self.workspace_var.set(self._active_workspace)
+            finally:
+                self._suppress_settings_trace = False
+            self._workspace_user_custom = False
+            self._log(f"工作区切换失败：{exc}")
+            return False
+        self._workspace_user_custom = False
+        return True
+
+    def _save_preferences(self):
+        self._settings_pending = None
+        try:
+            if not self._sync_selected_workspace():
+                return
+            self._save_active_workspace_preferences()
+            self.saved_options = self._workspace_options()
+            self.saved_options["no_auto_updates"] = self.no_updates_var.get()
+            save_values(
+                self.settings_dir,
+                dict(
+                    input=self.input_var.get().strip(),
+                    workspace=self.workspace_var.get().strip(),
+                    options={"no_auto_updates": self.no_updates_var.get()},
+                ),
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            self._log(f"设置保存失败：{exc}")
+
+    def _close(self) -> None:
+        if self._review_busy():
+            self._workspace_pages['review']._close()
+            self._close_after_review = True
+            return
+        for child in self.winfo_children():
+            if getattr(child, '_api_active', False) or getattr(child, '_preparing_task', False):
+                child._close()
+                return
+        if self._settings_pending:
+            self.after_cancel(self._settings_pending)
+        if self._processing_busy:
+            self._close_after_stop = True
+            self._stop_processing()
+            return
+        if not self._confirm_face_draft_reset():
+            return
+        self._discard_workspace_pages()
+        self._save_preferences()
+        self._save_session()
+        for timer in self.tk.splitlist(self.tk.call('after', 'info')):
+            # Timers may belong to children (for example hover tooltips).
+            # Root.after_cancel deletes their Tcl command without updating
+            # the child's registry, causing a second deletion at destroy.
+            # Cancel scheduling only; each owning widget frees its command.
+            self.tk.call('after', 'cancel', timer)
+        self.destroy()
+
+    def _show_workspace_error(self):
+        if not self._workspace_blocked or not self.winfo_exists():
+            return
+        messagebox.showerror(
+            "工作区无法恢复",
+            "当前工作区的数据没有被覆盖。如盘符或照片位置变化，请点击“重新定位原照片”；也可选择其他工作区。\n\n"
+            + self._workspace_error,
+            parent=self,
+        )
+
+    def _build_ui(self) -> None:
+        toolbar = install_page_chrome(self, "home")
+        self.update_button = toolbar.buttons["update"]
+        frame = self._workspace_layout = ttk.Frame(self, padding=(16, 8))
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=0)
+        frame.rowconfigure(4, weight=1)
+        self._page_host = ttk.Frame(frame)
+        self._page_host.grid(row=0, column=0, sticky='nsew')
+        self._page_host.columnconfigure(0, weight=1)
+        self._page_host.rowconfigure(0, weight=1)
+        home_page = self._home_page = ttk.Frame(self._page_host)
+        home_page.grid(row=0, column=0, sticky='nsew')
+        home_page.columnconfigure(0, weight=1)
+        home = home_page
+        home.columnconfigure(0, weight=1)
+
+        self.input_var = tk.StringVar(value=self.saved_paths["input"])
+        self.workspace_var = tk.StringVar(value=self.saved_paths["workspace"])
+        self.preset_var = tk.StringVar(value=self.saved_options.get("grouping") if self.saved_options.get("grouping") in GROUPING_LABELS else "标准")
+        self.per_page_var = tk.IntVar(value=self._option_int("per_page", 16, 8, 60))
+        self.columns_var = tk.IntVar(value=self._option_int("columns", 4, 2, 6))
+        self.screening_var = tk.BooleanVar(value=self.saved_options.get("screening", True) if isinstance(self.saved_options.get("screening", True), bool) else True)
+        self.body_screening_var = tk.BooleanVar(value=self.saved_options.get('body_screening') is True)
+        self.analysis_mode_var = tk.StringVar(value='风景' if self.saved_options.get('analysis_mode') == 'landscape' else '人像')
+
+        self.detection_confidence_var = tk.StringVar(value=f"{self.crop_settings.detection_confidence:.2f}")
+        self.no_updates_var = tk.BooleanVar(value=self.saved_options.get('no_auto_updates') is True)
+
+        form = ttk.Frame(home)
+        form.grid(row=0, column=0, sticky="ew")
+        form.columnconfigure(1, weight=1)
+        input_row = self._path_row(form, 0, "照片文件夹", self.input_var, self._choose_input)
+        ttk.Button(input_row, text="重新定位原照片", command=self._relink_source).grid(
+            row=0, column=3, padx=(8, 0))
+        workspace_row = self._path_row(form, 1, "工作区", self.workspace_var, self._choose_workspace)
+        self._home_path_rows = (input_row, workspace_row)
+
+        options = WrappingToolbar(form, gap=8)
+        options.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(6, 2))
+
+        analysis = ttk.Frame(options)
+        ttk.Label(analysis, text="分析模式").pack(side="left", padx=(0, 8))
+        self.analysis_mode_combo = ttk.Combobox(analysis, textvariable=self.analysis_mode_var,
+            values=("人像", "风景"), state="readonly", width=5)
+        self.analysis_mode_combo.pack(side="left")
+        options.add(analysis)
+
+        grouping = ttk.Frame(options)
+        ttk.Label(grouping, text="分组灵敏度").pack(side="left", padx=(0, 12))
+        ttk.Combobox(grouping, textvariable=self.preset_var, values=list(GROUPING_LABELS), state="readonly", width=5).pack(side="left")
+        options.add(grouping)
+
+        page_size = ttk.Frame(options)
+        ttk.Label(page_size, text="每页照片数").pack(side="left", padx=(0, 12))
+        ttk.Spinbox(page_size, from_=8, to=60, textvariable=self.per_page_var, width=3).pack(side="left")
+        options.add(page_size)
+
+        columns = ttk.Frame(options)
+        ttk.Label(columns, text="列数").pack(side="left", padx=(0, 12))
+        ttk.Spinbox(columns, from_=2, to=6, textvariable=self.columns_var, width=3).pack(side="left")
+        options.add(columns)
+
+        confidence = ttk.Frame(options)
+        ttk.Label(confidence, text="全局置信度").pack(side="left", padx=(0, 8))
+        self.detection_confidence_spinbox = ttk.Spinbox(
+            confidence, from_=.7, to=.95, increment=.01, width=4, format="%.2f",
+            textvariable=self.detection_confidence_var, command=self._commit_detection_confidence)
+        self.detection_confidence_spinbox.pack(side="left")
+        options.add(confidence)
+        self.detection_confidence_spinbox.bind('<FocusOut>', self._commit_detection_confidence)
+        self.detection_confidence_spinbox.bind('<Return>', self._commit_detection_confidence)
+
+        checks = WrappingToolbar(form, gap=8)
+        checks.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(0, 2))
+        checks.add(ttk.Checkbutton(checks, text="明显虚焦／严重抖动弃置", variable=self.screening_var))
+        checks.add(ttk.Checkbutton(checks, text="身体清晰度检查（实验）", variable=self.body_screening_var))
+        ttk.Label(form, text="AI 服务").grid(row=4, column=0, sticky="w", padx=(0, 16))
+        self.api_profile_var = tk.StringVar(value=NO_API_LABEL)
+        self.api_profile_combo = ttk.Combobox(form, textvariable=self.api_profile_var, values=(NO_API_LABEL,), state="readonly", width=36)
+        self.api_profile_combo.grid(row=4, column=1, sticky="ew")
+        self.api_profile_combo.bind("<<ComboboxSelected>>", self._api_selection_changed)
+        self._api_profile_ids = {}
+        self._refresh_api_profiles()
+
+        first = self._home_actions = ttk.Frame(home)
+        first.grid(row=1, column=0, sticky="ew", pady=(8, 2))
+        first.columnconfigure(0, weight=1)
+        workflow_bar = WrappingToolbar(first, gap=6)
+        workflow_bar.grid(row=0, column=0, sticky="ew")
+        workflow = [("scan_button", "扫描图片", self._run_scan_thread),
+                    ("group_button", "编辑选片组", self._open_group_editor),
+                    ("crop_button", "检测/调整人脸框", self._open_crop_settings),
+                    ("focus_button", "AI 复核", lambda: self._navigate_workspace('focus')),
+                    ("sheets_button", "生成联系表", self._generate_contact_sheets),
+                    ("review_button", "AI 选片与导出", self._open_ai_review)]
+        for col, (name, label, callback) in enumerate(workflow):
+            button = ttk.Button(workflow_bar, text=label, command=callback)
+            workflow_bar.add(button)
+            setattr(self, name, button)
+        self.focus_button._always_available = True
+        evidence = ttk.Frame(first)
+        evidence.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        evidence.columnconfigure(1, weight=1)
+        self.evidence_cleanup_button = ttk.Button(evidence, text="清理证据图片", command=self._clean_evidence_images)
+        self.evidence_cleanup_button.grid(row=0, column=0, sticky="w")
+        self.evidence_status_var = tk.StringVar(value="")
+        evidence_status = ttk.Label(evidence, textvariable=self.evidence_status_var, wraplength=720,
+                                    style="Muted.TLabel")
+        evidence_status.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        evidence.bind("<Configure>", lambda event: evidence_status.configure(
+            wraplength=max(180, event.width - self.evidence_cleanup_button.winfo_reqwidth() - 24)))
+        self._refresh_evidence_status()
+
+        controls = self._shared_controls = WrappingToolbar(frame, gap=4)
+        self._home_spacing_toolbars = ((options, 8), (checks, 8), (workflow_bar, 6), (controls, 4))
+        controls.grid(row=1, column=0, sticky="ew", pady=(8, 6))
+        self.stop_button = ttk.Button(controls, text="停止处理", command=self._stop_processing, state="disabled")
+        controls.add(self.stop_button)
+        self.continue_button = ttk.Button(controls, text="继续处理", command=self._continue_processing, state="disabled")
+        controls.add(self.continue_button)
+        directories = ttk.Frame(controls)
+        self.contact_button = ttk.Button(directories, text="打开联系表目录", command=self._open_contact_dir)
+        self.contact_button.pack(side="left")
+        self.results_button = ttk.Button(directories, text="打开选片结果", command=self._open_results_dir)
+        self.results_button.pack(side="left", padx=(6, 0))
+        controls.add(directories)
+        self.clear_workspace_button = ttk.Button(controls, text="清空工作区", command=self._clear_workspace)
+        self.clear_log_button = ttk.Button(controls, text="清空日志", command=self._clear_log)
+        controls.add(self.clear_log_button)
+        controls.add(self.clear_workspace_button)
+
+        status = self._shared_status = ttk.Frame(frame)
+        status.grid(row=2, column=0, sticky="ew", pady=(0, 4))
+        self.next_step_var = tk.StringVar(value="推荐下一步：扫描图片")
+        self.next_step_label = ttk.Label(status, textvariable=self.next_step_var)
+        self.next_step_label.pack(side="left")
+        progress = self._shared_progress = ttk.Frame(frame)
+        progress.grid(row=3, column=0, sticky="ew", pady=(0, 6))
+        progress.columnconfigure(1, weight=1)
+        self.progress_var = tk.DoubleVar(value=0)
+        self.progress_label = tk.StringVar(value="进度：")
+        self.progress_text = tk.StringVar(value="0%")
+        ttk.Label(progress, textvariable=self.progress_label).grid(row=0, column=0, sticky="w", padx=(0, 16))
+        ttk.Progressbar(progress, variable=self.progress_var, maximum=100).grid(row=0, column=1, sticky="ew")
+        ttk.Label(progress, textvariable=self.progress_text, width=5, anchor="e").grid(row=0, column=2, padx=(12, 0))
+
+        log_frame = self._shared_log_frame = ttk.Frame(frame)
+        log_frame.grid(row=4, column=0, sticky="nsew")
+        log_heading = self._shared_log_heading = ttk.Frame(log_frame)
+        log_heading.pack(fill="x", pady=(0, 4))
+        ttk.Label(log_heading, text="日志").pack(side="left")
+        self._compact_next_step = ttk.Label(log_heading, textvariable=self.next_step_var, style="Muted.TLabel")
+        log_body = ttk.Frame(log_frame)
+        log_body.pack(fill="both", expand=True)
+        self.log_text = tk.Text(log_body, height=3, wrap="word", state="disabled")
+        scrollbar = ttk.Scrollbar(log_body, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        self.log_text.pack(side="left", fill="both", expand=True)
+        self._compact_tasks_expanded = False
+        self._shared_toggle = ttk.Button(frame, text="展开任务与日志", command=self._toggle_shared_details)
+        self._shared_toggle._always_available = True
+        frame.bind("<Configure>", self._resize_shared_log, add="+")
+        install_control_help(self, "home")
+        apply_page(self)
+        self.next_step_label.configure(style="Muted.TLabel")
+        for button in (self.stop_button, self.continue_button, self.contact_button, self.results_button, self.clear_log_button):
+            button.configure(style="secondary.Link.TButton")
+        set_button_style(self.clear_workspace_button, "danger-link")
+        self._configure_home_controls()
+
+    def _path_row(self, parent: ttk.Frame, row: int, label: str, variable: tk.StringVar, command) -> ttk.Frame:
+        line = ttk.Frame(parent)
+        line.grid(row=row, column=0, columnspan=4, sticky="ew", pady=3)
+        line.columnconfigure(1, weight=1)
+        ttk.Label(line, text=label, width=10).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Entry(line, textvariable=variable).grid(row=0, column=1, sticky="ew")
+        ttk.Button(line, text="选择", command=command).grid(row=0, column=2, padx=(8, 0))
+        return line
+
+    def _configure_home_controls(self):
+        """Compact, naturally sized controls; no fixed-height form viewport."""
+        from tkinter import font
+        self._home_font = font.Font(root=self, **self._cull_fonts['body'].actual())
+        style = ttk.Style(self)
+        def visit(parent):
+            for widget in parent.winfo_children():
+                if isinstance(widget, (ttk.Label, ttk.Button, ttk.Entry, ttk.Checkbutton)):
+                    suffix = str(widget.cget('style')) or widget.winfo_class()
+                    options = {'font': self._home_font}
+                    if isinstance(widget, ttk.Entry):
+                        options['padding'] = (4, 1)
+                    elif isinstance(widget, ttk.Button):
+                        options['padding'] = (5, 1)
+                        options['borderwidth'] = 1
+                    elif isinstance(widget, ttk.Checkbutton):
+                        options['padding'] = (0, 0)
+                    style.configure('Home.' + suffix, **options)
+                    widget.configure(style='Home.' + suffix)
+                if isinstance(widget, (ttk.Entry, ttk.Combobox, ttk.Spinbox)):
+                    widget.configure(font=self._home_font)
+                if isinstance(widget, (ttk.Combobox, ttk.Spinbox)):
+                    # A wheel gesture over the former scrolling form must not
+                    # silently change the API provider or numeric options.
+                    for event in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+                        widget.bind(event, lambda _event: 'break')
+                visit(widget)
+        visit(self._home_page)
+        visit(self._shared_controls)
+        visit(self._shared_status)
+        visit(self._shared_progress)
+        visit(self._shared_log_frame)
+        self.log_text.configure(font=self._home_font, padx=8, pady=4)
+
+    def _resize_home_font(self):
+        if not hasattr(self, '_home_font'):
+            return
+        body = self._cull_fonts['body']
+        size = int(body.cget('size'))
+        pixels = round(size * float(self.tk.call('tk', 'scaling'))) if size > 0 else -size
+        # On short high-DPI desktops, reduce only the homepage form's type
+        # to a readable 18px cap; other editors retain their configured scale.
+        if self._workspace_layout.winfo_height() < 600:
+            pixels = min(pixels, 18)
+        if int(self._home_font.cget('size')) != -pixels:
+            self._home_font.configure(size=-pixels)
+        compact_home = self._visible_page == 'home' and self._workspace_layout.winfo_height() < 600
+        if compact_home:
+            style = ttk.Style(self)
+            bar = self._page_chrome
+            for widget in [bar.brand, *bar.buttons.values(), bar.help_button,
+                           *bar.workflow_buttons.values()]:
+                suffix = str(widget.cget('style')).removeprefix('Home.')
+                options = {'font': self._home_font}
+                if isinstance(widget, ttk.Button):
+                    options['padding'] = (8, 2)
+                style.configure('Home.' + suffix, **options)
+                widget.configure(style='Home.' + suffix)
+        elif getattr(self, '_compact_home_chrome', False):
+            from .ui_style import style_page_chrome
+            style_page_chrome(self)
+            self._page_chrome.brand.configure(style='Brand.TLabel')
+        self._compact_home_chrome = compact_home
+
+    def _choose_input(self) -> None:
+        from .directory_picker import choose_photo_directory
+        try:
+            path = choose_photo_directory(self, self.input_var.get().strip())
+        except OSError as exc:
+            messagebox.showerror("文件夹无法打开", str(exc), parent=self)
+            return
+        if path:
+            self.input_var.set(path)
+            if self._settings_pending:
+                self.after_cancel(self._settings_pending)
+                self._settings_pending = None
+            self._save_preferences()
+
+    def _choose_workspace(self) -> None:
+        from .directory_picker import existing_directory
+        base = self.settings_dir.parent if self.settings_dir.name == 'settings' else self.settings_dir
+        initial = (existing_directory(self.workspace_var.get().strip())
+                   or existing_directory(base / 'workspaces') or str(application_dir()))
+        path = filedialog.askdirectory(title="选择工作区", parent=self, initialdir=initial)
+        if path:
+            from .source_relocation import recorded_source
+            try:
+                source = recorded_source(path)
+            except (OSError, ValueError, zipfile.BadZipFile) as exc:
+                messagebox.showerror("工作区无法打开", str(exc), parent=self)
+                return
+            if source and not Path(source).is_dir():
+                self._relink_source(workspace=path)
+                return
+            self.workspace_var.set(path)
+
+    def _relink_source(self, workspace=None):
+        if self._processing_busy or self.updates.busy or self._review_busy():
+            messagebox.showinfo("暂不能重新定位", "请先停止当前任务并等待保存完成。", parent=self)
+            return
+        if any(isinstance(child, tk.Toplevel) and child.winfo_exists() for child in self.winfo_children()):
+            messagebox.showinfo("暂不能重新定位", "请先关闭人脸、分组或 AI 选片窗口。", parent=self)
+            return
+        workspace = workspace or self.workspace_var.get().strip()
+        from .source_relocation import recorded_source, relocate_source
+        try:
+            old = recorded_source(workspace) if workspace else None
+            if not old:
+                raise ValueError("请先选择有扫描记录的工作区。")
+        except (OSError, ValueError, zipfile.BadZipFile) as exc:
+            messagebox.showerror("无法重新定位", str(exc), parent=self)
+            return
+        new = filedialog.askdirectory(title="选择同一批原照片在当前电脑上的位置")
+        if not new:
+            return
+        if not messagebox.askyesno("重新定位原照片",
+                f"原位置：{old}\n新位置：{new}\n\n将按相对路径、文件大小和修改时间核对原片，并保留分组、人脸调整和 AI 结果。确定继续？", parent=self):
+            return
+        if not self._confirm_face_draft_reset():
+            return
+        self._discard_workspace_pages()
+        if self._settings_pending:
+            self.after_cancel(self._settings_pending)
+            self._settings_pending = None
+        self._save_active_workspace_preferences()
+        completed = queue.Queue()
+        self._relocating_source = True
+        self._set_processing_busy(True)
+        self.stop_button.configure(state="disabled")
+        self.next_step_var.set("正在核对原照片并更新工作区路径…")
+        def work():
+            try:
+                completed.put((relocate_source(workspace, new, self.settings_dir), None))
+            except Exception as exc:
+                completed.put((None, exc))
+        def finish():
+            try:
+                result, error = completed.get_nowait()
+            except queue.Empty:
+                self.after(50, finish)
+                return
+            self._relocating_source = False
+            self._set_processing_busy(False)
+            if error:
+                messagebox.showerror("重新定位未完成", str(error), parent=self)
+                self.next_step_var.set("推荐下一步：重新定位原照片")
+            else:
+                # Do not write the old in-memory crop keys over migrated settings.
+                self._workspace_blocked = True
+                self._suppress_settings_trace = True
+                try:
+                    self.input_var.set(result['input_dir'])
+                    self.workspace_var.set(result['workspace'])
+                finally:
+                    self._suppress_settings_trace = False
+                self._workspace_user_custom = False
+                self._activate_workspace(result['input_dir'], Path(result['workspace']))
+                self._save_preferences()
+                self._log(f"原照片已重新定位：匹配 {result['matched']} 个文件；缺少 {result['missing']} 个文件。")
+            if self._close_after_stop:
+                self._close_after_stop = False
+                self.after(0, self._close)
+        threading.Thread(target=work, name="source-relocation", daemon=True).start()
+        self.after(50, finish)
+
+    def _processing_options(self):
+        return dict(grouping_preset=GROUPING_LABELS[self.preset_var.get()], photos_per_page=self.per_page_var.get(), columns=self.columns_var.get(), technical_screening=self.screening_var.get(), body_screening=self.body_screening_var.get(), analysis_mode='landscape' if self.analysis_mode_var.get() == '风景' else 'portrait')
+
+    def _refresh_api_profiles(self, preferred_id=None) -> None:
+        current_id = self._api_profile_ids.get(self.api_profile_var.get()) if hasattr(self, "_api_profile_ids") else None
+        chosen_id = preferred_id or current_id or selected_profile_id(self.settings_dir)
+        choices = profile_options(self.settings_dir)
+        self._api_profile_ids = {label: profile_id for label, profile_id in choices}
+        labels = [label for label, _profile_id in choices]
+        selected_label = next((label for label, profile_id in choices if profile_id == chosen_id), NO_API_LABEL)
+        self.api_profile_combo.configure(values=labels)
+        self.api_profile_var.set(selected_label)
+
+    def _api_selection_changed(self, _event=None) -> None:
+        profile_id = self._api_profile_ids.get(self.api_profile_var.get(), NO_API_PROFILE_ID)
+        try:
+            save_selected_profile_id(self.settings_dir, profile_id)
+        except OSError as exc:
+            self._log(f"API 选择保存失败：{exc}")
+
+    def _api_profiles_saved(self) -> None:
+        self._refresh_api_profiles(selected_profile_id(self.settings_dir))
+        self._api_selection_changed()
+
+    def _selected_api_profile(self) -> dict | None:
+        profile_id = self._api_profile_ids.get(self.api_profile_var.get(), NO_API_PROFILE_ID)
+        return selected_api_profile(self.settings_dir, profile_id)
+
+    def _open_api_config(self) -> None:
+        if self._processing_busy or self.updates.busy:
+            messagebox.showinfo("提示", "请等待当前处理结束。", parent=self)
+            return
+        try:
+            self._open_tool_page('api')
+        except Exception as exc:
+            messagebox.showerror("配置 API", str(exc), parent=self)
+
+    def _log_workspace_summary(self):
+        if hasattr(self, "evidence_status_var"):
+            self._refresh_evidence_status()
+        if self._workspace_blocked or not self.workspace_var.get().strip():
+            return
+        from .workspace_summary import restoration_summary
+        settings = dict(grouping=self.preset_var.get(), per_page=self.per_page_var.get(),
+                        columns=self.columns_var.get(), screening=self.screening_var.get(),
+                        body_screening=self.body_screening_var.get(),
+                        confidence=self.crop_settings.detection_confidence)
+        for line in restoration_summary(Path(self.workspace_var.get()),
+                                        self.scan_result.assets if self.scan_result else None,
+                                        settings, self._sheets_ready(), self._processing_job):
+            self._log(line)
+        self._log(self.next_step_var.get())
+
+    def _restore_processing_job(self):
+        if self._workspace_blocked or not self.input_var.get().strip() or not self.workspace_var.get().strip():
+            self._processing_job = None
+            self.continue_button.configure(state="disabled")
+            self.next_step_var.set(
+                ("推荐下一步：重新定位原照片或选择其他工作区"
+                 if not Path(self.input_var.get()).is_dir()
+                 else "推荐下一步：清空工作区或选择其他工作区")
+                if self._workspace_blocked else "推荐下一步：扫描图片"
+            )
+            return
+        try:
+            from .processing_job import load_job
+            self._processing_job = load_job(self.workspace_var.get(), self.input_var.get())
+        except Exception as exc:
+            self._processing_job = None
+            self._log(str(exc))
+        self.continue_button.configure(state="normal" if self._processing_job else "disabled")
+        if self._processing_job:
+            self._processing_mode = self._job_mode(self._processing_job)
+            self._set_progress(self._processing_job.percent)
+        self.next_step_var.set("推荐下一步：" + (
+            self._next_step_after_restore()
+        ))
+
+    @staticmethod
+    def _job_mode(job) -> str:
+        mode = getattr(job, "mode", None) or getattr(job, "kind", None) or "scan"
+        return "rescan" if mode == "regenerate" else str(mode)
+
+    def _stage_path(self) -> Path | None:
+        if self._workspace_blocked:
+            return None
+        value = self.workspace_var.get().strip()
+        return Path(value) / "workflow-stage.json" if value else None
+
+    def _set_sheets_ready(self, ready: bool) -> None:
+        path = self._stage_path()
+        if path is None:
+            return
+        try:
+            from .ai_project import atomic_json
+            atomic_json(path, {"version": 1, "contact_sheets_ready": bool(ready)})
+        except OSError as exc:
+            self._log(f"流程状态保存失败：{exc}")
+
+    def _sheets_ready(self) -> bool:
+        if not self.scan_result:
+            return False
+        path = self._stage_path()
+        if path and path.is_file():
+            try:
+                return json.loads(path.read_text("utf-8")).get("contact_sheets_ready") is True
+            except (OSError, ValueError, TypeError):
+                return False
+        # Workspaces created by older versions have no stage file.  Their saved
+        # pages remain usable until a staged operation marks them stale.
+        return bool(self.scan_result.main_pages or self.scan_result.rejected_pages)
+
+    def _next_step_after_restore(self) -> str:
+        from .workspace_summary import recommended_next_step
+        return recommended_next_step(Path(self.workspace_var.get()),
+                                     self.scan_result.assets if self.scan_result else None,
+                                     self._sheets_ready(), self._processing_job)
+
+    def _mode_label(self, mode: str | None = None) -> str:
+        return {
+            "scan": "扫描图片",
+            "rescan": "重新扫描修改过的图片",
+            "focus": "AI 复核",
+            "sheets": "生成联系表",
+        }.get(mode or self._processing_mode, "处理")
+
+    def _set_progress(self, value):
+        value = max(0, min(100, int(value)))
+        self._scan_progress = value
+        if self._update_progress_active:
+            return
+        self._display_progress(f"{self._mode_label()}进度：", value)
+
+    def _display_progress(self, label, value):
+        self.progress_var.set(value)
+        self.progress_label.set('进度：')
+        self.progress_text.set(f"{value}%")
+
+    def _show_update_progress(self, value):
+        self._update_progress_active = True
+        self._display_progress("更新进度：", max(0, min(100, int(value))))
+
+    def _restore_scan_progress(self):
+        self._update_progress_active = False
+        self._display_progress(f"{self._mode_label()}进度：", self._scan_progress)
+
+    def _set_update_busy(self, busy):
+        controls = (self.scan_button, self.continue_button, self.update_button)
+        if busy:
+            self._update_disabled_widgets = [(widget, str(widget.cget("state"))) for widget in controls]
+            for widget, _ in self._update_disabled_widgets:
+                widget.configure(state="disabled")
+        else:
+            for widget, state in getattr(self, "_update_disabled_widgets", []):
+                if widget.winfo_exists():
+                    widget.configure(state=state)
+            self.continue_button.configure(state="normal" if self._processing_job else "disabled")
+        self._resize_shared_log()
+
+    def _set_processing_busy(self, busy):
+        self._processing_busy = busy
+        if busy:
+            self._disabled_widgets = []
+            def walk(parent):
+                for widget in parent.winfo_children():
+                    if isinstance(widget, tk.Toplevel):
+                        continue
+                    if widget in (self.stop_button, self.clear_workspace_button, self.clear_log_button) or getattr(widget, "_always_available", False):
+                        continue
+                    if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Spinbox, ttk.Checkbutton)):
+                        self._disabled_widgets.append((widget, str(widget.cget("state"))))
+                        widget.configure(state="disabled")
+                    walk(widget)
+            walk(self)
+        else:
+            for widget, state in getattr(self, "_disabled_widgets", []):
+                if widget.winfo_exists():widget.configure(state=state)
+            self.continue_button.configure(state="normal" if self._processing_job else "disabled")
+        self.stop_button.configure(state="normal" if busy else "disabled")
+        self._resize_shared_log()
+
+    def _start_processing(self, resume=False, mode="scan", regroup=False, focus_errors_skipped=False):
+        if self._review_busy():
+            messagebox.showinfo('选片任务进行中', '请先停止或等待 AI 选片完成，再开始照片处理。', parent=self)
+            return
+        if self._processing_busy or self.updates.busy:
+            return
+        if not self._sync_selected_workspace():
+            return
+        if not self.input_var.get().strip():
+            messagebox.showinfo("处理照片", "请先选择照片文件夹。", parent=self)
+            return
+        try:
+            options = self._processing_options()
+            if not 8 <= options['photos_per_page'] <= 60 or not 2 <= options['columns'] <= 6:
+                raise ValueError("每页照片数应为 8～60，列数应为 2～6")
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showerror("设置无效", str(exc), parent=self)
+            return
+        input_dir, workspace = self.input_var.get(), self.workspace_var.get()
+        self._commit_detection_confidence()
+        crops = copy.deepcopy(self.crop_settings)
+        if resume:
+            try:
+                from .processing_job import load_job
+                interrupted = load_job(workspace, input_dir)
+            except Exception as exc:
+                messagebox.showerror("继续处理", str(exc), parent=self)
+                return
+            if interrupted is None:
+                messagebox.showinfo("继续处理", "没有可继续的中断任务。", parent=self)
+                return
+            mode = self._job_mode(interrupted)
+        if mode == "focus" and self._warn_unconfirmed_people():
+            return
+        focus_work_exists = True
+        if mode == "focus" and self.scan_result:
+            from .lightroom_results import focus_review_status
+            focus_work_exists = any(
+                asset.ai_focus_dirty or getattr(asset, "ai_focus_stale", False)
+                or (asset.ai_focus_result is None and focus_review_status(asset) is True)
+                for asset in self.scan_result.assets
+            )
+        if focus_errors_skipped:
+            focus_work_exists = False
+        selected_profile = (
+            self._selected_api_profile()
+            if mode == "legacy" or (mode == "focus" and focus_work_exists)
+            else None
+        )
+        if mode == "focus" and focus_work_exists and selected_profile is None:
+            messagebox.showinfo("AI 复核", "请先在主页面配置并选择可识图的 API。", parent=self)
+            return
+        focus_profile = MappingProxyType(copy.deepcopy(selected_profile)) if selected_profile else None
+        previous = copy.deepcopy(self.scan_result) if mode != "scan" else None
+        if mode == "scan" and self.scan_result is not None and not resume:
+            from .session_store import load_session, source_changes
+            try:
+                restored = load_session(workspace, input_dir)
+                added, _ = source_changes(workspace, input_dir)
+                if restored is not None:
+                    self.scan_result = restored
+                    same_mode = all(getattr(a, 'analysis_mode', 'portrait') == options['analysis_mode'] for a in restored.assets)
+                    if added and same_mode:
+                        previous = copy.deepcopy(restored)
+            except ValueError as exc:
+                self._log(f"已有原片发生变化，本次执行完整扫描：{exc}")
+            except OSError as exc:
+                messagebox.showerror("扫描图片", f"无法访问照片或工作区：{exc}", parent=self)
+                return
+        if not resume and mode != "scan" and previous is None:
+            messagebox.showinfo(self._mode_label(mode), "请先扫描图片。", parent=self)
+            return
+        if mode != 'rescan' and not self._confirm_face_draft_reset():
+            return
+        self._discard_workspace_pages(keep=('focus', 'faces') if mode == 'rescan' else ('focus',))
+        self._save_preferences()
+        self._workspace_cleared = False
+        self._stop_event.clear()
+        self._processing_mode = mode
+        if mode in {"scan", "rescan", "focus", "sheets"}:
+            self._set_sheets_ready(False)
+        self._set_processing_busy(True)
+        if not resume:self._set_progress(0)
+        self.next_step_var.set("推荐下一步：等待处理完成")
+        self._log(
+            "继续处理，已完成部分保留原设置，未完成部分使用当前设置。"
+            if resume else f"开始{self._mode_label(mode)}。"
+        )
+        def work():
+            try:
+                from .processing_job import start_job, load_job
+                job = load_job(workspace, input_dir) if resume else start_job(
+                    input_dir, workspace, options, crops,
+                    result=previous, regroup=regroup, mode=mode,
+                )
+                if job is None:raise ValueError("没有可继续的中断任务")
+                self._process_events.put(("job", job))
+                result = job.run(
+                    options,
+                    crops,
+                    self._stop_event,
+                    lambda percent: self._process_events.put(("progress", percent)),
+                    focus_profile=focus_profile,
+                    on_log=lambda text: self._process_events.put(("log", text)),
+                )
+                self._process_events.put(("done", (job, result)))
+            except Exception as exc:
+                self._process_events.put(("error", str(exc)))
+        self._scan_thread = threading.Thread(target=work, daemon=True)
+        self._scan_thread.start()
+
+    def _poll_processing(self):
+        if hasattr(self, "evidence_cleanup_button"):
+            self._refresh_evidence_button()
+        review_busy = self._review_busy()
+        if review_busy != getattr(self, '_review_controls_busy', False):
+            self._review_controls_busy = review_busy
+            if review_busy:
+                self._review_disabled_widgets = []
+                def disable(parent):
+                    for widget in parent.winfo_children():
+                        if getattr(widget, '_always_available', False):
+                            continue
+                        if isinstance(widget, (ttk.Button, ttk.Entry, ttk.Combobox, ttk.Spinbox, ttk.Checkbutton)):
+                            self._review_disabled_widgets.append((widget, str(widget.cget('state'))))
+                            widget.configure(state='disabled')
+                        disable(widget)
+                disable(self._home_page)
+                self.stop_button.configure(state='normal')
+                self.continue_button.configure(state='disabled')
+            else:
+                for widget, state in getattr(self, '_review_disabled_widgets', []):
+                    if widget.winfo_exists():
+                        widget.configure(state=state)
+                self.stop_button.configure(state='normal' if self._processing_busy else 'disabled')
+                self.continue_button.configure(state='normal' if self._processing_job else 'disabled')
+        if not review_busy and getattr(self, '_close_after_review', False):
+            self._close_after_review = False
+            self.after_idle(self._close)
+        try:
+            while True:
+                event, value = self._process_events.get_nowait()
+                if event == "progress":self._set_progress(value)
+                elif event == "log":self._log(value)
+                elif event == "job":self._processing_job = value
+                elif event == "done":
+                    job, result = value
+                    needs_error_decision = result is None and getattr(job, "awaiting_focus_error_decision", False)
+                    if result is None:
+                        self._processing_job = job
+                        if needs_error_decision:
+                            self._log(f"本轮 AI 复核已处理完，{len(job.pending_focus_errors)} 张出错，等待重试或跳过。")
+                        else:
+                            self._log("已停止并保存进度，下次可点击继续处理。")
+                    else:
+                        mode = self._job_mode(job)
+                        self.scan_result = result
+                        self.review_project = None
+                        self._processing_job = None
+                        self._set_progress(100)
+                        from .lightroom_results import focus_review_status
+                        ai_rejected = sum(1 for asset in result.assets if asset.screening_reason == "ai_focus_blur")
+                        uncertain = sum(1 for asset in result.assets if focus_review_status(asset) is True)
+                        local_rejected = sum(
+                            1 for asset in result.assets
+                            if asset.auto_rejected and asset.screening_reason != "ai_focus_blur"
+                        )
+                        rejected = local_rejected + ai_rejected
+                        from .ai_project import ReviewProject
+                        eligible = sum(ReviewProject._asset_is_admitted(asset) for asset in result.assets)
+                        if mode == "scan":
+                            self._log(
+                                f"扫描完成：{len(result.assets)} 张照片；本地虚焦/抖动弃置 {local_rejected} 张；"
+                                f"清晰度待确认 {uncertain} 张；可进入 AI 选片 {eligible} 张。"
+                            )
+                            next_step = "检测/调整人脸框"
+                        elif mode == "rescan":
+                            self._log(
+                                f"修改照片重新扫描完成；本地虚焦/抖动弃置共 {local_rejected} 张；"
+                                f"清晰度待确认 {uncertain} 张；可进入 AI 选片 {eligible} 张。"
+                            )
+                            next_step = "AI 复核"
+                        elif mode == "focus":
+                            self._log(
+                                f"AI 复核完成：弃置 {ai_rejected} 张；仍不确定 {uncertain} 张；"
+                                f"可进入选片 {eligible} 张。"
+                            )
+                            next_step = "生成联系表"
+                        elif mode == "sheets":
+                            self._set_sheets_ready(True)
+                            self._log(
+                                f"联系表生成完成：主联系表 {len(result.main_pages or [])} 页；"
+                                f"弃置复核表 {len(result.rejected_pages or [])} 页。"
+                            )
+                            next_step = "AI 选片与导出"
+                        else:  # interrupted all-in-one job created before v1.2
+                            self._set_sheets_ready(True)
+                            self._log(
+                                f"处理完成：{len(result.assets)} 张照片；初筛技术模糊/抖动弃置 {local_rejected} 张；"
+                                f"AI 复核弃置 {ai_rejected} 张；清晰度仍不确定 {uncertain} 张；"
+                                f"剩余可进入 AI 选片 {eligible} 张；主联系表 {len(result.main_pages or [])} 页。"
+                            )
+                            next_step = "AI 选片与导出"
+                    self._set_processing_busy(False)
+                    self.next_step_var.set("推荐下一步：" + (
+                        self._next_step_after_restore()
+                    ))
+                    if self._close_after_stop:
+                        self._close_after_stop = False
+                        self.after(50, self._close)
+                    elif needs_error_decision:
+                        self.after(0, lambda current=job: self._resolve_focus_errors(current))
+                elif event == "error":
+                    self._log("处理未完成：" + value)
+                    self._set_processing_busy(False)
+                    self._restore_processing_job()
+                    messagebox.showerror("处理未完成", value, parent=self)
+        except queue.Empty:
+            pass
+        self.after(100, self._poll_processing)
+
+    def _resolve_focus_errors(self, job):
+        if self._processing_job is not job or self._processing_busy:
+            return
+        errors = job.pending_focus_errors
+        if not errors:
+            return
+        names = "、".join(str(item["filename"]) for item in errors[:5])
+        if len(errors) > 5:
+            names += "等"
+        retry = messagebox.askyesno(
+            "AI 复核完成，有照片处理出错",
+            f"其余照片已处理，共 {len(errors)} 张出错：{names}\n\n"
+            "是否重新处理这些照片？\n"
+            "是：只重试出错照片。\n否：本轮跳过，保留清晰度待确认，不自动弃置。",
+            parent=self,
+        )
+        try:
+            if retry:
+                job.retry_failed()
+            else:
+                job.skip_failed()
+                self._log(f"本轮跳过 {len(errors)} 张出错照片的 AI 清晰度复核，保留待确认。")
+            self._start_processing(resume=True, focus_errors_skipped=not retry)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("处理出错照片", str(exc), parent=self)
+
+    def _stop_processing(self):
+        if self._review_busy():
+            page = self._workspace_pages['review']
+            if page._api_active:
+                page._pause_api()
+            elif page._preparing_task:
+                page._prepare_stop.set()
+            return
+        if getattr(self, "_clearing_workspace", False) or getattr(self, "_relocating_source", False):
+            self.next_step_var.set("正在整理工作区，请等待完成")
+            return
+        if self._processing_busy:
+            self._stop_event.set()
+            self.stop_button.configure(state="disabled")
+            self.next_step_var.set("正在停止：等待当前请求结束并保存进度，完成后可清空工作区")
+
+    def _continue_processing(self):
+        self._start_processing(resume=True, mode=self._processing_mode)
+
+    def _run_scan_thread(self):
+        self._start_processing(mode="scan")
+
+    def _run_focus_review(self):
+        self._start_processing(mode="focus")
+
+    def _review_busy(self):
+        page = self._workspace_pages.get('review')
+        return bool(page and page.winfo_exists() and
+                    (getattr(page, '_api_active', False) or getattr(page, '_preparing_task', False)))
+
+    def _toggle_shared_details(self):
+        self._compact_tasks_expanded = not self._compact_tasks_expanded
+        self._resize_shared_log()
+
+    def _resize_shared_log(self, _event=None):
+        # Short forms use their natural height and give surplus space to logs.
+        # Photo editors reserve most height for images, with a bounded log area.
+        compact = self._visible_page in ('home', 'focus')
+        # The complete homepage takes its natural height; only the log absorbs
+        # surplus space. Embedded photo editors still expand with the window.
+        home = self._visible_page == 'home'
+        self._resize_home_font()
+        self._workspace_layout.rowconfigure(0, weight=0 if home else 1)
+        very_compact = self._workspace_layout.winfo_height() < round(
+            self.winfo_fpixels("1i") * 4.5)
+        # The added analysis-mode control can wrap the parameter toolbar onto
+        # another row. Reclaim vertical whitespace on short homepages while
+        # keeping control sizes, horizontal spacing and a complete log line.
+        short_home = home and very_compact
+        for toolbar, regular_gap in self._home_spacing_toolbars:
+            toolbar.set_row_gap(2 if short_home else regular_gap)
+        for row in self._home_path_rows:
+            row.grid_configure(pady=0 if short_home else 3)
+        self._home_actions.grid_configure(pady=(2, 2) if short_home else (8, 2))
+        self._shared_progress.grid_configure(pady=(0, 2) if short_home else (0, 6))
+        self._shared_log_heading.pack_configure(pady=(0, 2) if short_home else (0, 4))
+        # Keep a complete text line inside the log's padding and border at
+        # minimum height; reclaim outer whitespace, not glyph height.
+        self._workspace_layout.configure(padding=(16, 2) if home and very_compact else (16, 8))
+        self._workspace_layout.rowconfigure(4, weight=1 if home or not very_compact else 0)
+        lines = (1 if very_compact else 3) if compact else max(
+            1, min(5, (self._workspace_layout.winfo_height() - 360) // 100))
+        faces = self._visible_page == 'faces'
+        if faces or (very_compact and (home or not compact)):
+            lines = min(lines, 2)
+            self._shared_status.grid_remove()
+            self._compact_next_step.pack(side='right')
+        else:
+            self._shared_status.grid()
+            self._compact_next_step.pack_forget()
+        self._shared_controls.grid()
+        self._shared_progress.grid()
+        self._shared_log_frame.grid()
+        self._shared_controls.grid_configure(pady=(2, 2) if faces or home else (8, 6))
+        compact_review = very_compact and self._visible_page == 'review'
+        busy = self._processing_busy or getattr(getattr(self, 'updates', None), 'busy', False)
+        collapsed = compact_review and not busy and not self._compact_tasks_expanded
+        if collapsed:
+            for widget in (self._shared_controls, self._shared_status, self._shared_progress, self._shared_log_frame):
+                widget.grid_remove()
+        else:
+            self._shared_controls.grid()
+            self._shared_progress.grid()
+        if compact_review:
+            self._shared_toggle.configure(text='展开任务与日志' if collapsed else '收起任务与日志',
+                                          state='disabled' if busy else 'normal')
+            self._shared_toggle.grid(row=5, column=0, sticky='e')
+        else:
+            self._shared_toggle.grid_remove()
+        if int(self.log_text.cget('height')) != lines:
+            self.log_text.configure(height=lines)
+
+    def _show_workspace_page(self, name):
+        page = self._home_page if name == 'home' else self._workspace_pages.get(name)
+        if page is None or not page.winfo_exists():
+            return False
+        self._home_page.grid_remove()
+        for cached in self._workspace_pages.values():
+            if cached.winfo_exists():
+                cached.grid_remove()
+        page.grid(row=0, column=0, sticky='nsew')
+        activate = getattr(page, 'on_activate', None)
+        if activate:
+            activate()
+        if name == "home" and not self._processing_busy and not self._workspace_blocked:
+            self.next_step_var.set("推荐下一步：" + self._next_step_after_restore())
+        self._visible_page = self._page_id = name
+        from .ui_style import style_page_chrome
+        style_page_chrome(self)
+        self._resize_shared_log()
+        return True
+
+    def _mount_workspace_page(self, name, page):
+        page._page_id = name
+        self._workspace_pages[name] = page
+        def closed(event):
+            if event.widget is page and self._workspace_pages.get(name) is page:
+                self._workspace_pages.pop(name, None)
+                if self._visible_page == name:
+                    self._show_workspace_page('home')
+        page.bind('<Destroy>', closed, add='+')
+        self._show_workspace_page(name)
+        return page
+
+    def _navigate_workspace(self, name):
+        if getattr(self, '_cleaning_evidence', False):
+            messagebox.showinfo('正在清理证据', '请等待证据图片处理结束后再切换页面或任务。', parent=self)
+            return
+        if name == 'home':
+            self._show_workspace_page('home')
+            return
+        if name == 'focus':
+            self._open_focus_page()
+            return
+        if (self._processing_busy or self.updates.busy or self._review_busy()) and name != 'review':
+            messagebox.showinfo('暂不能编辑', '当前任务仍在处理，请停止或等待完成后再编辑照片。', parent=self)
+            return
+        {'groups': self._open_group_editor, 'faces': self._open_crop_settings,
+         'review': self._open_ai_review}[name]()
+
+    def _discard_workspace_pages(self, *, keep=()):
+        for name, page in list(self._workspace_pages.items()):
+            if name in keep:
+                continue
+            if page.winfo_exists():
+                close = getattr(page, 'dispose', None) or page.destroy
+                close()
+
+    def _confirm_face_draft_reset(self):
+        page = self._workspace_pages.get('faces')
+        if page is None or not page.winfo_exists():
+            return True
+        page.store_current()
+        if not page._changed_face_assets(page.global_settings()) and page._confidence_value() == self.crop_settings.detection_confidence:
+            return True
+        return messagebox.askyesno('尚未保存人脸修改', '人脸框页有未保存的修改。继续将放弃这些草稿；如需保留，请返回人脸框页保存。是否继续？', parent=self)
+
+    def _review_progress(self, percent, label):
+        if not self._processing_busy and not self._update_progress_active:
+            self._scan_progress = max(0, min(100, int(percent)))
+            self._display_progress(label, self._scan_progress)
+
+    def _open_focus_page(self):
+        if self._show_workspace_page('focus'):
+            return
+        page = self._focus_page = tk.Frame(self._page_host)
+        body = ttk.Frame(page, padding=(20, 16))
+        body.pack(fill='both', expand=True)
+        ttk.Label(body, text='AI 清晰度复核', style='Heading.TLabel').pack(anchor='w', pady=(0, 16))
+        ttk.Label(body, textvariable=self.api_profile_var).pack(anchor='w', pady=(0, 12))
+        label = ttk.Label(body, textvariable=self.workspace_var, wraplength=620)
+        label.pack(fill='x', pady=(0, 20))
+        body.bind('<Configure>', lambda event: label.configure(wraplength=max(180, event.width - 40)))
+        ttk.Label(body, textvariable=self.next_step_var, style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
+        actions = ttk.Frame(body)
+        actions.pack(fill='x')
+        for title, callback in [('开始 AI 复核', self._run_focus_review),
+                                ('停止处理', self._stop_processing),
+                                ('继续处理', self._continue_processing)]:
+            ttk.Button(actions, text=title, command=callback).pack(side='left', padx=(0, 8))
+        ttk.Button(actions, text='返回主页', command=lambda: self._show_workspace_page('home')).pack(side='right')
+        apply_page(page)
+        install_control_help(page, 'focus')
+        self._mount_workspace_page('focus', page)
+
+    def _generate_contact_sheets(self):
+        self._start_processing(mode="sheets")
+
+    def _open_crop_settings(self) -> None:
+        self._commit_detection_confidence()
+        if self.updates.busy:
+            messagebox.showinfo("提示", "请等待更新完成。", parent=self)
+            return
+        if not self._sync_selected_workspace():
+            return
+        assets = self.scan_result.assets if self.scan_result else []
+        if assets and all(getattr(a, 'analysis_mode', 'portrait') == 'landscape' for a in assets):
+            messagebox.showinfo("风景模式", "风景模式采用整图分析，无需框选。可在选片页打开照片全屏查看。", parent=self)
+            return
+        if self._show_workspace_page('faces'):
+            return
+        self._mount_workspace_page('faces', CropDialog(self._page_host, assets, self.crop_settings, self._save_crop_settings, embedded=True))
+
+    def _save_crop_settings(self, settings: CropSettings) -> None:
+        if not self._sync_selected_workspace():
+            return
+        self._workspace_cleared = False
+        if self._active_input and self._active_workspace:
+            save_workspace_preferences(
+                Path(self._active_workspace),
+                asdict(settings),
+                self._workspace_options(),
+            )
+        if self.scan_result:
+            for asset in self.scan_result.assets:
+                key = settings.key(asset)
+                previous_entry = {k: v for k, v in self.crop_settings.photos.get(key, {}).items()
+                                  if (k != 'offset_x_factor' or v != 0) and (k != 'preview_version' or v != 'v04')}
+                current_entry = {k: v for k, v in settings.photos.get(key, {}).items()
+                                 if (k != 'offset_x_factor' or v != 0) and (k != 'preview_version' or v != 'v04')}
+                if (previous_entry != current_entry
+                        or self.crop_settings.detection_confidence != settings.detection_confidence):
+                    asset.ai_focus_dirty = True
+                    asset.ai_focus_stale = asset.ai_focus_result is not None
+            self._save_session()
+        self.crop_settings = settings
+        self.detection_confidence_var.set(f"{settings.detection_confidence:.2f}")
+        if self.scan_result:
+            self._set_sheets_ready(False)
+            self._log("人脸设置已保存，正在重新扫描修改过的图片。")
+            self._start_processing(mode="rescan")
+        else:
+            self._log("人脸设置已保存，将在下次扫描时应用。")
+            self.next_step_var.set("推荐下一步：扫描图片")
+
+    def _open_group_editor(self) -> None:
+        if self.updates.busy:
+            messagebox.showinfo("提示", "请等待更新完成。", parent=self)
+            return
+        if not self._sync_selected_workspace():
+            return
+        if self._show_workspace_page('groups'):
+            return
+        if not self.scan_result:
+            messagebox.showinfo("提示", "请先扫描照片。")
+            return
+
+        def save_changes() -> None:
+            if not self.scan_result:
+                return
+            persist_manual_groups(self.scan_result)
+            self._workspace_cleared = False
+            self._set_sheets_ready(False)
+            self._save_session()
+            self._log("人工分组已保存到 groups.json。")
+            self.next_step_var.set("推荐下一步：AI 复核")
+            self._discard_workspace_pages(keep=('groups', 'faces', 'focus'))
+
+        self._mount_workspace_page('groups', GroupEditor(self._page_host, self.scan_result.assets, save_changes, embedded=True))
+
+    def _clear_workspace(self):
+        if self._review_busy():
+            messagebox.showinfo('暂不能清理', 'AI 选片仍在处理，请停止并等待保存完成。', parent=self)
+            return
+        if self._processing_busy:
+            messagebox.showinfo("暂不能清理", "当前任务尚未结束。请先停止处理，等待当前请求和后台图片准备收尾后再清空工作区。", parent=self)
+            return
+        if self.updates.busy:
+            messagebox.showinfo("暂不能清理", "正在检查或安装更新，请等待更新结束后再清空工作区。", parent=self)
+            return
+        if any(
+            isinstance(child, tk.Toplevel) and child.winfo_exists()
+            for child in self.winfo_children()
+        ):
+            messagebox.showinfo("暂不能清理", "请先关闭编辑选片组、人脸框、AI 选片等子窗口，再清空工作区。", parent=self)
+            return
+        if not self.input_var.get().strip() or not self.workspace_var.get().strip():
+            messagebox.showinfo("暂不能清理", "请先选择照片文件夹。", parent=self)
+            return
+        synced = self._sync_selected_workspace()
+        if not synced and (
+            not self._workspace_blocked
+            or self.input_var.get().strip() != self._active_input
+            or self.workspace_var.get().strip() != self._active_workspace
+        ):
+            messagebox.showinfo("暂不能清理", "请先选择有效的照片文件夹和工作区。", parent=self)
+            return
+        if not messagebox.askyesno(
+            "清空工作区",
+            "将清空当前工作区中的扫描结果、分组、人脸调整、AI 结果、联系表、缓存和日志。\n"
+            "原照片和全局 API 配置不会删除。是否继续？",
+            parent=self,
+        ):
+            return
+        originals = []
+        self._discard_workspace_pages()
+        if self.scan_result:
+            for asset in self.scan_result.assets:
+                originals.extend(
+                    value for value in (
+                        asset.primary_path, asset.raw_path, asset.jpg_path, *asset.rating_target_paths
+                    ) if value
+                )
+        # Cancel delayed preference writes before deleting their destination.
+        if self._settings_pending:
+            self.after_cancel(self._settings_pending)
+            self._settings_pending = None
+        with self._log_lock:
+            self._log_epoch += 1
+        workspace = self.workspace_var.get()
+        input_dir = self.input_var.get()
+        program_dir = application_dir()
+        completed = queue.Queue()
+        self._clearing_workspace = True
+        self._set_processing_busy(True)
+        self.stop_button.configure(state="disabled")
+        self.next_step_var.set("正在清空工作区，请等待完成")
+
+        def remove_files():
+            try:
+                from .workspace_clear import clear_workspace
+                clear_workspace(workspace, input_dir=input_dir,
+                                program_dir=program_dir, original_paths=originals)
+            except Exception as exc:
+                completed.put(exc)
+            else:
+                completed.put(None)
+
+        def finish():
+            try:
+                error = completed.get_nowait()
+            except queue.Empty:
+                self.after(50, finish)
+                return
+            self._clearing_workspace = False
+            if error is None:
+                self._reset_cleared_workspace()
+            self._set_processing_busy(False)
+            if error is not None:
+                self.next_step_var.set("工作区未清空，请检查错误后重试")
+                messagebox.showerror("无法清空工作区", str(error), parent=self)
+            if self._close_after_stop:
+                self._close_after_stop = False
+                self.after(0, self._close)
+
+        threading.Thread(target=remove_files, name="workspace-clear", daemon=True).start()
+        self.after(50, finish)
+
+    def _reset_cleared_workspace(self):
+        with self._log_lock:
+            self.scan_result = None
+            self.review_project = None
+            self._processing_job = None
+            self.crop_settings = CropSettings()
+            self._suppress_settings_trace = True
+            try:
+                self.detection_confidence_var.set("0.80")
+                self.preset_var.set("标准")
+                self.per_page_var.set(16)
+                self.columns_var.set(4)
+                self.screening_var.set(True)
+                self.body_screening_var.set(False)
+            finally:
+                self._suppress_settings_trace = False
+            self.saved_options = {"no_auto_updates": self.no_updates_var.get()}
+            self._workspace_cleared = True
+            self._workspace_blocked = False
+            self._workspace_error = ""
+            self._processing_mode = "scan"
+            self._scan_progress = 0
+            self._display_progress("扫描图片进度：", 0)
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", "end")
+            self.log_text.configure(state="disabled")
+        self.continue_button.configure(state="disabled")
+        self.next_step_var.set("推荐下一步：扫描图片")
+
+    def _clear_log(self):
+        """Clear only this window, also discarding queued old display messages."""
+        with self._log_lock:
+            self._log_epoch += 1
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", "end")
+            self.log_text.configure(state="disabled")
+
+    def _open_contact_dir(self) -> None:
+        if not self._sync_selected_workspace():
+            return
+        if not self.scan_result or not self._sheets_ready():
+            messagebox.showinfo("提示", "请先生成联系表")
+            return
+        path = self.scan_result.contact_dir
+        if not path.exists():
+            messagebox.showerror("错误", f"目录不存在：{path}")
+            return
+        try:
+            import os
+            os.startfile(path)  # type: ignore[attr-defined]
+        except Exception:
+            messagebox.showinfo("联系表目录", str(path))
+
+    def _open_results_dir(self) -> None:
+        if not self._sync_selected_workspace():
+            return
+        workspace = self.workspace_var.get().strip()
+        if not workspace:
+            messagebox.showinfo("选片结果", "请先选择工作区。", parent=self)
+            return
+        # Resolve the same location as export(), including legacy root files.
+        # Never use the cached review project, which may belong to another set.
+        result = workspace_path(Path(workspace), 'lightroom_results.json')
+        if not result.is_file():
+            messagebox.showinfo("选片结果", f"尚无选片结果文件，请先导出到 LR。\n{result}", parent=self)
+            return
+        path = result.parent
+        if not path.is_dir():
+            messagebox.showinfo("选片结果", f"结果目录尚不存在，请先导出到 LR。\n{path}", parent=self)
+            return
+        try:
+            import os
+            os.startfile(path)  # type: ignore[attr-defined]
+        except Exception:
+            messagebox.showinfo("选片结果目录", str(path), parent=self)
+
+    def _ensure_selected_session(self):
+        if not self._sync_selected_workspace():
+            return
+        if self.scan_result and (self.scan_result.workspace_dir.resolve() != Path(self.workspace_var.get()).resolve() or (self.scan_result.input_dir and self.scan_result.input_dir.resolve() != Path(self.input_var.get()).resolve())):
+            self.scan_result = None
+            self._restore_session()
+            self._restore_processing_job()
+
+    def _warn_unconfirmed_people(self):
+        from .participant_review import needs_person_review
+        assets = self.scan_result.assets if self.scan_result else []
+        pending = [a for a in assets if needs_person_review(a, self.crop_settings.photos.get(self.crop_settings.key(a), {}))]
+        if not pending:
+            return False
+        messagebox.showinfo('人物待确认', f'{len(pending)} 张照片有多个人脸，尚未确认主体。请进入“检测/调整人脸框”，使用“下一张未标记”选择所有合影成员，再重新扫描修改过的图片。', parent=self)
+        self.next_step_var.set('推荐下一步：检测/调整人脸框 → 确认合影主体')
+        return True
+
+    def _open_ai_review(self):
+        if getattr(self, '_cleaning_evidence', False):
+            messagebox.showinfo('正在清理证据', '请等待证据图片处理结束后再切换页面或任务。', parent=self)
+            return
+        if self._warn_unconfirmed_people():
+            return
+        if self._show_workspace_page('review'):
+            return
+        if self.updates.busy or (getattr(self, '_scan_thread', None) and self._scan_thread.is_alive()):
+            messagebox.showinfo("提示", "请等待扫描或更新结束。", parent=self)
+            return
+        self._ensure_selected_session()
+        if not self.scan_result:
+            messagebox.showinfo("提示", "请先扫描图片并生成联系表。", parent=self)
+            return
+        try:
+            from .ai_project import ReviewProject
+            from .ai_review_ui import ReviewDialog
+            self.review_project = ReviewProject(self.scan_result.workspace_dir)
+            if (not self.review_project.current_task() and not self._sheets_ready()
+                    and any(ReviewProject._asset_is_admitted(a) for a in self.scan_result.assets)):
+                messagebox.showinfo("提示", "当前联系表尚未生成或已经过期，请先生成联系表。", parent=self)
+                return
+            page = ReviewDialog(self._page_host,self.review_project,self.scan_result.assets,self.crop_settings,self.settings_dir,
+                home_pages=list(self.scan_result.main_pages or []) + list(self.scan_result.rejected_pages or []),
+                embedded=True, on_close=lambda: self._show_workspace_page('home'),
+                on_progress=self._review_progress, on_log=self._log)
+            self._mount_workspace_page('review', page)
+        except Exception as exc:
+            messagebox.showerror("AI 选片",str(exc),parent=self)
+
+    def _open_tool_page(self, page_id, *, help_context=None):
+        from .tool_window import ToolWindow
+        window = getattr(self, '_tool_window', None)
+        if window is None or not window.winfo_exists():
+            window = self._tool_window = ToolWindow(self)
+        window.show_page(page_id, help_context=help_context)
+        return window
+
+    def _open_update_page(self):
+        self._update_page = self._open_tool_page('update')
+
+    def _open_lr_page(self):
+        self._lr_page = self._open_tool_page('lr')
+
+    def _open_help_page(self, page_id='home'):
+        self._open_tool_page('help', help_context=page_id)
+
+    def _open_lr_plugin(self):
+        import os
+        path = application_dir() / "lightroom"
+        if path.exists():
+            os.startfile(path)
+        else:
+            messagebox.showinfo("Lightroom 插件", "请使用完整便携包中的 lightroom 文件夹。", parent=self)
+
+    def _log(self, text: str) -> None:
+        with self._log_lock:
+            epoch = self._log_epoch
+            try:
+                workspace_value = self.workspace_var.get().strip()
+                if workspace_value and not self._workspace_blocked:
+                    append_log(Path(workspace_value), text)
+            except OSError:
+                pass
+        def append():
+            if epoch != self._log_epoch:return
+            self.log_text.configure(state="normal")
+            self.log_text.insert("end", text + "\n")
+            self.log_text.see("end")
+            self.log_text.configure(state="disabled")
+        self.after(0, append)
+
+
+def main() -> None:
+    app = App()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

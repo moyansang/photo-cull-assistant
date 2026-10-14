@@ -1,0 +1,30 @@
+name: 问题反馈
+description: 扫描、工作区、AI 提交或 Lightroom 导入异常
+title: "[问题] "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      placeholder: 例如 v1.5，便携版或源码运行
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 使用环境
+      description: Windows、CPU、内存、相机/照片格式；API 问题可写平台及模型，不要填写 Key。
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤与实际结果
+      description: 说明预期结果、实际结果，必要时附截图或脱敏日志。
+    validations:
+      required: true
+  - type: checkboxes
+    id: private_data
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 我未在此问题中提交 API Key。
+          required: true

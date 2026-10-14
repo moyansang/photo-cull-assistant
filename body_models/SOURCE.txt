@@ -1,0 +1,32 @@
+OpenCV Zoo MediaPipe person detection and pose estimation models
+
+Repository: https://github.com/opencv/opencv_zoo
+Pinned commit: 47534e27c9851bb1128ccc0102f1145e27f23f98
+Release filenames: 2023mar (unmodified upstream ONNX inference weights)
+License: Apache-2.0; see LICENSE-APACHE-2.0.txt in this directory.
+Each upstream model directory declares all its files Apache-2.0.
+
+Person source: models/person_detection_mediapipe/person_detection_mediapipe_2023mar.onnx
+Bytes: 11990159
+SHA256: 47fd5599d6fa17608f03e0eb0ae230baa6e597d7e8a2c8199fe00abea55a701f
+Person license: https://github.com/opencv/opencv_zoo/blob/47534e27c9851bb1128ccc0102f1145e27f23f98/models/person_detection_mediapipe/LICENSE
+Person provenance: upstream describes a PINTO model zoo download or conversion
+from MediaPipe TFLite with tflite2tensorflow (custom densify), then onnx-simplifier.
+
+Pose source: models/pose_estimation_mediapipe/pose_estimation_mediapipe_2023mar.onnx
+Bytes: 5557238
+SHA256: 9d89c599319a18fb7d2e28451a883476164543182bafca5f09eb2cf767ed2f3f
+Pose license: https://github.com/opencv/opencv_zoo/blob/47534e27c9851bb1128ccc0102f1145e27f23f98/models/pose_estimation_mediapipe/LICENSE
+Pose provenance: upstream describes MediaPipe TFLite to ONNX conversion using
+tensorflow-onnx, then onnx-simplifier. It predicts 33 landmarks and a body mask.
+
+Tracked copies: src/ai_cull_assistant/data/body_models/ in this repository.
+Canonical machine-readable checksum list: body_models/manifest.json.
+Verify offline: python body_models/download.py --verify-only
+Explicit repair from the pinned upstream: python body_models/download.py
+Runtime processing never downloads models. build/body_models is a legacy ignored
+cache, not the source of packaged weights. No model has been fine-tuned here.
+
+Upstream README attribution and conversion references:
+https://github.com/opencv/opencv_zoo/blob/47534e27c9851bb1128ccc0102f1145e27f23f98/models/person_detection_mediapipe/README.md
+https://github.com/opencv/opencv_zoo/blob/47534e27c9851bb1128ccc0102f1145e27f23f98/models/pose_estimation_mediapipe/README.md

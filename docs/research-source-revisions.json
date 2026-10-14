@@ -1,0 +1,45 @@
+{
+  "checked_utc": "2026-10-13T08:22:00Z",
+  "purpose": "Research repository HEAD anchors; not vendored source revisions or claims that installed package wheels equal these commits. Exact package/model versions and licensing decisions are in research-*.md. No third-party application source was copied.",
+  "repositories": [
+    {
+      "repo": "python-pillow/Pillow",
+      "commit": "9ddcb85d3faa911778fe510911b7a97bab7ae559"
+    },
+    {
+      "repo": "letmaik/rawpy",
+      "commit": "a39c2e7a44911889c3360891012f862f904ba551",
+      "date": "2026-08-30T04:28:14Z"
+    },
+    {
+      "repo": "bigcat88/pillow_heif",
+      "commit": "64dc06fa7e0142e9133b98ea0d85ffe99544d82f",
+      "date": "2026-10-11T13:22:43Z"
+    },
+    {
+      "repo": "JohannesBuchner/imagehash",
+      "commit": "a906ed9f7d13c5e1eb2b75da85e7918769d9bb9a",
+      "date": "2026-10-12T10:57:43Z"
+    },
+    {
+      "repo": "benhoyt/pybktree",
+      "commit": "a8497009f29d339feecc8b8e09372ca996839f19",
+      "date": "2020-09-25T09:09:48Z"
+    },
+    {
+      "repo": "opencv/opencv_zoo",
+      "commit": "47534e27c9851bb1128ccc0102f1145e27f23f98",
+      "date": "2026-05-28T14:46:51Z"
+    },
+    {
+      "repo": "Yuumi0221/Cullumi",
+      "commit": "168f9c4d705a3a2c667cfe3554c214e7e3f566b9",
+      "date": "2026-10-09T12:04:38Z"
+    },
+    {
+      "repo": "marcel-goldschen-ohm/PyQtImageViewer",
+      "commit": "a8b53249bbc13029744829c05c573d1c2a670c3c",
+      "date": "2024-02-15T22:30:16Z"
+    }
+  ]
+}

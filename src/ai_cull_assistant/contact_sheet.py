@@ -1,0 +1,359 @@
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+from dataclasses import dataclass
+from math import ceil
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+from .models import PhotoAsset
+from .subject import face_crop, detail_features, detail_features_list
+from .crop_settings import CropSettings
+
+PAGE_BG = "white"
+TEXT_COLOR = "black"
+GROUP_BG = (236, 236, 236)
+REJECT_BG = (250, 232, 232)
+# Four columns -> ~2024 px wide, close to the 2048 px target for chat upload.
+THUMB_BOX = (456, 380)
+CELL_W = 490
+CELL_H = 452
+GROUP_HEADER_H = 48
+PAGE_HEADER_H = 78
+MARGIN = 32
+MAX_PAGE_HEIGHT = 2800
+
+
+@dataclass(slots=True)
+class ContactSheetSet:
+    main_pages: list[Path]
+    rejected_pages: list[Path]
+
+
+def _detail_rail_labels(total: int) -> tuple[str, str | None]:
+    remaining = max(0, total - 4)
+    return f"SELECTED TOTAL: {total}", (f"REMAINING DETAILS: {remaining}" if remaining else None)
+
+
+
+
+def page_filename(assets: list[PhotoAsset], page_index: int) -> str:
+    if not assets:
+        return f"sheet_{page_index:03d}_empty.jpg"
+    group_ids = [asset.group_id for asset in assets]
+    return (
+        f"sheet_{page_index:03d}_"
+        f"G{min(group_ids):03d}-G{max(group_ids):03d}_"
+        f"{assets[0].stem}-{assets[-1].stem}.jpg"
+    )
+
+
+
+def estimate_page_height(assets: list[PhotoAsset], columns: int = 4) -> int:
+    if not assets:
+        return MARGIN * 2 + PAGE_HEADER_H
+    height = MARGIN * 2 + PAGE_HEADER_H
+    for _, group_assets in _chunk_groups(assets):
+        height += GROUP_HEADER_H + ceil(len(group_assets) / columns) * CELL_H
+    return height
+
+
+def paginate_for_layout(
+    assets: list[PhotoAsset],
+    photos_per_page: int = 20,
+    columns: int = 4,
+    max_page_height: int = MAX_PAGE_HEIGHT,
+) -> list[list[PhotoAsset]]:
+    """Paginate by both photo count and rendered page height."""
+    if photos_per_page < 1:
+        raise ValueError("photos_per_page must be >= 1")
+    if columns < 1:
+        raise ValueError("columns must be >= 1")
+    if not assets:
+        return []
+
+    groups = _chunk_groups(assets)
+    usable = max_page_height - (MARGIN * 2 + PAGE_HEADER_H + GROUP_HEADER_H)
+    max_rows_for_single_group = max(1, usable // CELL_H)
+    max_single_group_photos = max(1, min(photos_per_page, max_rows_for_single_group * columns))
+
+    pages: list[list[PhotoAsset]] = []
+    current: list[PhotoAsset] = []
+    for _, group in groups:
+        if len(group) > max_single_group_photos:
+            if current:
+                pages.append(current)
+                current = []
+            for start in range(0, len(group), max_single_group_photos):
+                pages.append(group[start:start + max_single_group_photos])
+            continue
+
+        candidate = current + group
+        would_overflow = (
+            len(candidate) > photos_per_page
+            or estimate_page_height(candidate, columns) > max_page_height
+        )
+        if current and would_overflow:
+            pages.append(current)
+            current = list(group)
+        else:
+            current = candidate
+    if current:
+        pages.append(current)
+    return pages
+
+def generate_contact_sheet_sets(
+    assets: list[PhotoAsset],
+    out_dir: str | Path,
+    photos_per_page: int = 20,
+    columns: int = 4,
+    crop_settings: CropSettings = CropSettings(),
+) -> ContactSheetSet:
+    root = Path(out_dir)
+    main_dir = root / "main"
+    rejected_dir = root / "rejected_review"
+    main_assets = [asset for asset in assets if not asset.auto_rejected]
+    rejected_assets = [asset for asset in assets if asset.auto_rejected]
+
+    main_pages = generate_contact_sheets(
+        main_assets,
+        main_dir,
+        photos_per_page=photos_per_page,
+        columns=columns,
+        review_mode=False,
+        crop_settings=crop_settings,
+    )
+    rejected_pages = generate_contact_sheets(
+        rejected_assets,
+        rejected_dir,
+        photos_per_page=photos_per_page,
+        columns=columns,
+        review_mode=True,
+        crop_settings=crop_settings,
+    )
+    # Remove legacy root pages from older versions so users do not upload stale sheets.
+    for pattern in ("contact_sheet_*.jpg", "sheet_*.jpg"):
+        for stale in root.glob(pattern):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+    return ContactSheetSet(main_pages=main_pages, rejected_pages=rejected_pages)
+
+
+def generate_contact_sheets(
+    assets: list[PhotoAsset],
+    out_dir: str | Path,
+    photos_per_page: int = 20,
+    columns: int = 4,
+    *,
+    review_mode: bool = False,
+    crop_settings: CropSettings = CropSettings(),
+    stop_event=None,
+) -> list[Path]:
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    for pattern in ("contact_sheet_*.jpg", "sheet_*.jpg"):
+        for stale in out.glob(pattern):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+
+    pages_data = paginate_for_layout(assets, photos_per_page=photos_per_page, columns=columns)
+    title_font = _load_font(30)
+    group_font = _load_font(23)
+    filename_font = _load_font(25)
+    small_font = _load_font(18)
+    pages: list[Path] = []
+    total_pages = len(pages_data)
+
+    group_total_counts = Counter(asset.group_id for asset in assets)
+    group_page_counts: dict[int, int] = Counter()
+    for page in pages_data:
+        for group_id, _ in _chunk_groups(page):
+            group_page_counts[group_id] += 1
+    group_page_seen: dict[int, int] = defaultdict(int)
+
+    for page_index, chunk in enumerate(pages_data, start=1):
+        group_chunks = _chunk_groups(chunk)
+        page_w = MARGIN * 2 + columns * CELL_W
+        page_h = MARGIN * 2 + PAGE_HEADER_H
+        for _, group_assets in group_chunks:
+            page_h += GROUP_HEADER_H + ceil(len(group_assets) / columns) * CELL_H
+
+        canvas = Image.new("RGB", (page_w, page_h), PAGE_BG)
+        draw = ImageDraw.Draw(canvas)
+        page_title = "Rejected Review" if review_mode else "AI Photo Culling Sheet"
+        draw.text((MARGIN, MARGIN), f"{page_title}  {page_index}/{total_pages}", fill=TEXT_COLOR, font=title_font)
+        sub = f"Photos: {len(chunk)}   Groups: {len(group_chunks)}"
+        if review_mode:
+            sub += "   Auto-rejected: obvious subject blur / severe shake only"
+        draw.text((MARGIN, MARGIN + 42), sub, fill=TEXT_COLOR, font=small_font)
+
+        y_cursor = MARGIN + PAGE_HEADER_H
+        for group_id, group_assets in group_chunks:
+            group_page_seen[group_id] += 1
+            part_idx = group_page_seen[group_id]
+            part_total = group_page_counts[group_id]
+            total_count = group_total_counts[group_id]
+            segment_count = len(group_assets)
+            header_top = y_cursor
+            fill = REJECT_BG if review_mode else GROUP_BG
+            draw.rectangle([MARGIN, header_top, page_w - MARGIN, header_top + GROUP_HEADER_H - 4], fill=fill)
+            if part_total > 1:
+                group_label = (
+                    f"G{group_id:03d}   ·   {segment_count}/{total_count} photos"
+                    f"   ·   part {part_idx}/{part_total}"
+                )
+            else:
+                group_label = f"G{group_id:03d}   ·   {total_count} photos"
+            draw.text((MARGIN + 12, header_top + 9), group_label, fill=TEXT_COLOR, font=group_font)
+            y_cursor += GROUP_HEADER_H
+            # Compute group-local offset so #01/#02 remain stable even across page splits.
+            group_assets_all = [a for a in assets if a.group_id == group_id]
+            index_map = {id(a): i + 1 for i, a in enumerate(group_assets_all)}
+            for idx, asset in enumerate(group_assets):
+                if stop_event is not None and stop_event.is_set():
+                    raise InterruptedError("已取消联系表准备")
+                row = idx // columns
+                col = idx % columns
+                x0 = MARGIN + col * CELL_W
+                y0 = y_cursor + row * CELL_H
+                _draw_cell(
+                    canvas,
+                    draw,
+                    asset,
+                    x0,
+                    y0,
+                    index_map[id(asset)],
+                    filename_font,
+                    small_font,
+                    review_mode=review_mode,
+                    crop_settings=crop_settings,
+                )
+            y_cursor += ceil(len(group_assets) / columns) * CELL_H
+
+        page_path = out / page_filename(chunk, page_index)
+        canvas.save(page_path, "JPEG", quality=93, optimize=True)
+        pages.append(page_path)
+    return pages
+
+
+def _chunk_groups(chunk: list[PhotoAsset]) -> list[tuple[int, list[PhotoAsset]]]:
+    """Keep one workspace-wide group together even when source order interleaves."""
+    groups: dict[int, list[PhotoAsset]] = {}
+    for asset in chunk:
+        groups.setdefault(asset.group_id, []).append(asset)
+    return list(groups.items())
+
+
+def _draw_cell(
+    canvas: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    asset: PhotoAsset,
+    x0: int,
+    y0: int,
+    group_index: int,
+    filename_font: ImageFont.ImageFont,
+    small_font: ImageFont.ImageFont,
+    *,
+    review_mode: bool = False,
+    crop_settings: CropSettings = CropSettings(),
+) -> None:
+    border = (190, 90, 90) if review_mode else (180, 180, 180)
+    draw.rectangle([x0, y0, x0 + CELL_W - 8, y0 + CELL_H - 8], outline=border, width=1)
+
+    bottom = y0 + THUMB_BOX[1]
+    if asset.preview_path and not Path(asset.preview_path).exists():
+        from .preview import ensure_preview
+        ensure_preview(asset)
+    if asset.preview_path and Path(asset.preview_path).exists():
+        with Image.open(asset.preview_path) as img:
+            img = ImageOps.exif_transpose(img)
+            img = img.convert("RGB")
+            entry = crop_settings.photos.get(crop_settings.key(asset), {})
+            if 'selected_faces' in entry:
+                subjects = detail_features_list(asset, crop_settings)
+            else:
+                subject = detail_features(asset, crop_settings)
+                subjects = [subject] if subject else []
+            local_settings = crop_settings.for_asset(asset)
+            details = [
+                subject for subject in subjects
+                if subject and (getattr(subject, 'face', None) or getattr(subject, 'head', None))
+            ]
+            explicit_people = 'selected_faces' in entry
+            photo_box = (330, THUMB_BOX[1]) if details else THUMB_BOX
+            from .sheet_thumbnail import thumbnail
+            thumb = thumbnail(asset, img, photo_box)
+            paste_x = x0 + 10 + (photo_box[0] - thumb.width) // 2
+            paste_y = y0 + 8
+            canvas.paste(thumb, (paste_x, paste_y))
+            if len(details) == 1:
+                subject = details[0]
+                face = getattr(subject, 'face', None)
+                subject_settings = crop_settings.for_face(asset, face) if explicit_people and face else local_settings
+                crop = ImageOps.contain(face_crop(img, face, subject.head, subject_settings), (124, 150))
+                tile = Image.new("RGB", (124, 150), "white")
+                tile.paste(crop, ((124 - crop.width) // 2, (150 - crop.height) // 2))
+                inset_x = x0 + 350
+                inset_y = y0 + 30
+                draw.text((inset_x, y0 + 7), "FACE 1" if face else "HEAD 1", fill=TEXT_COLOR, font=small_font)
+                canvas.paste(tile, (inset_x, inset_y))
+                draw.rectangle([inset_x - 2, inset_y - 2, inset_x + 126, inset_y + 152], outline=(100, 100, 100), width=2)
+            elif details:
+                # The narrow detail rail fits four numbered selected people.
+                # Additional selections remain part of focus assessment even
+                # when the compact sheet cannot display every crop.
+                total_label, remaining_label = _detail_rail_labels(len(details))
+                draw.text((x0 + 346, y0 + 7), total_label, fill=TEXT_COLOR, font=small_font)
+                for index, subject in enumerate(details[:4], 1):
+                    face = getattr(subject, 'face', None)
+                    subject_settings = crop_settings.for_face(asset, face) if explicit_people and face else local_settings
+                    crop = ImageOps.contain(face_crop(img, face, subject.head, subject_settings), (58, 70))
+                    tile = Image.new("RGB", (58, 70), "white")
+                    tile.paste(crop, ((58 - crop.width) // 2, (70 - crop.height) // 2))
+                    col = (index - 1) % 2
+                    row = (index - 1) // 2
+                    inset_x = x0 + 346 + col * 66
+                    inset_y = y0 + 55 + row * 100
+                    draw.text((inset_x, inset_y - 22), f"P{index}", fill=TEXT_COLOR, font=small_font)
+                    canvas.paste(tile, (inset_x, inset_y))
+                    draw.rectangle([inset_x - 1, inset_y - 1, inset_x + 59, inset_y + 71], outline=(100, 100, 100), width=1)
+                if len(details) > 4:
+                    draw.text((x0 + 346, y0 + 255), remaining_label, fill=TEXT_COLOR, font=small_font)
+                    draw.text((x0 + 346, y0 + 277), "NOT SHOWN", fill=TEXT_COLOR, font=small_font)
+            bottom = paste_y + thumb.height
+    else:
+        draw.rectangle([x0 + 10, y0 + 10, x0 + CELL_W - 18, y0 + THUMB_BOX[1]], outline=(180, 0, 0))
+        draw.text((x0 + 20, y0 + 20), "Preview unavailable", fill=(180, 0, 0), font=small_font)
+
+    text_y = max(y0 + THUMB_BOX[1] + 10, bottom + 8)
+    label = f"{asset.stem} · #{group_index:02d}"
+    label_size = 25
+    while draw.textbbox((0, 0), label, font=filename_font)[2] > CELL_W - 28 and label_size > 10:
+        label_size -= 1
+        filename_font = _load_font(label_size)
+    draw.text((x0 + 12, text_y), label, fill=TEXT_COLOR, font=filename_font)
+    if review_mode:
+        meta = "AUTO REJECT"
+        if asset.focus_score is not None:
+            meta += f" · focus: {asset.focus_score:.2f}"
+        draw.text((x0 + 12, text_y + 29), meta, fill=TEXT_COLOR, font=small_font)
+
+
+def _load_font(size: int) -> ImageFont.ImageFont:
+    candidates = [
+        Path("C:/Windows/Fonts/msyh.ttc"),
+        Path("C:/Windows/Fonts/simhei.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            try:
+                return ImageFont.truetype(str(candidate), size=size)
+            except OSError:
+                continue
+    return ImageFont.load_default()

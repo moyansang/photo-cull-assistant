@@ -1,0 +1,93 @@
+﻿param([switch]$UseExistingEnvironment)
+$ErrorActionPreference = "Stop"
+Set-Location $PSScriptRoot
+
+. "$PSScriptRoot/release_version.ps1"
+Write-Host "=== AI选片助手 $ReleaseVersion Windows 便携版构建 ==="
+
+# 优先 Python 3.12；没有则使用系统默认 py。
+if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
+    throw "未找到 Windows Python Launcher (py.exe)。请先安装 Python 3.12，并勾选 Add Python to PATH / Install launcher。"
+}
+
+$PythonLauncher = "py"
+$PythonArgs = @()
+try {
+    & py -3.12 -c "import sys; print(sys.version)" *> $null
+    if ($LASTEXITCODE -eq 0) {
+        $PythonArgs = @("-3.12")
+    } else {
+        Write-Host "未检测到 Python 3.12，使用默认 Python。"
+    }
+} catch {
+    Write-Host "无法调用 py -3.12，使用默认 Python 启动器。"
+}
+
+if (-not (Test-Path .venv)) {
+    & $PythonLauncher @PythonArgs -m venv .venv
+    if ($LASTEXITCODE -ne 0) { throw "创建构建环境失败" }
+}
+
+. .\.venv\Scripts\Activate.ps1
+if (-not $UseExistingEnvironment) {
+python -m pip install --upgrade pip setuptools wheel
+if ($LASTEXITCODE -ne 0) { throw "更新构建依赖失败" }
+pip install -e ".[raw,codecs]"
+if ($LASTEXITCODE -ne 0) { throw "安装应用依赖失败" }
+pip install "pyinstaller>=6.10"
+if ($LASTEXITCODE -ne 0) { throw "安装 PyInstaller 失败" }
+}
+
+# Optional complete Tcl/Tk runtimes for locally repaired Python installations.
+$RuntimeData = @()
+if ($env:TCL_LIBRARY -and $env:TK_LIBRARY) {
+    if (-not (Test-Path (Join-Path $env:TCL_LIBRARY "init.tcl"))) { throw "Invalid TCL_LIBRARY" }
+    if (-not (Test-Path (Join-Path $env:TK_LIBRARY "tk.tcl"))) { throw "Invalid TK_LIBRARY" }
+    $RuntimeData += @("--add-data", "$($env:TCL_LIBRARY);_tcl_data", "--add-data", "$($env:TK_LIBRARY);_tk_data")
+    $TclModules = Join-Path (Split-Path $env:TCL_LIBRARY -Parent) "tcl8"
+    if (Test-Path $TclModules) { $RuntimeData += @("--add-data", "$TclModules;tcl8") }
+}
+
+# PyInstaller handles replacement of its own output with --noconfirm.
+# Verify tracked body-model assets offline; explicit repairs use download.py.
+python body_models/download.py --verify-only
+if ($LASTEXITCODE -ne 0) { throw "身体实验模型下载或校验失败" }
+
+pyinstaller `
+    --noconfirm `
+    --clean `
+    --onedir `
+    --noconsole `
+    --manifest app.manifest `
+    --name "AI选片助手" `
+    --paths src `
+    --add-data "LICENSE;licenses/photo-cull-assistant" `
+    --add-data "src/ai_cull_assistant/data;ai_cull_assistant/data" `
+    --add-data "body_models/manifest.json;ai_cull_assistant/data/body_model_sources" `
+    --add-data "body_models/README.md;ai_cull_assistant/data/body_model_sources" `
+    --add-data "body_models/SOURCE.txt;ai_cull_assistant/data/body_model_sources" `
+    --add-data "body_models/LICENSE-APACHE-2.0.txt;ai_cull_assistant/data/body_model_sources" `
+    --add-data "body_models/download.py;ai_cull_assistant/data/body_model_sources" `
+    --collect-data ttkbootstrap `
+    --collect-data cv2 `
+    --collect-binaries cv2 `
+    --collect-binaries rawpy `
+    --hidden-import rawpy `
+    --hidden-import exifread `
+    --collect-all pi_heif `
+    --copy-metadata pi-heif `
+    --copy-metadata rawpy `
+    --copy-metadata Pillow `
+    @RuntimeData `
+    launcher.py
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller 构建失败" }
+
+Copy-Item "README-快速开始.txt" "dist\AI选片助手\README-快速开始.txt" -Force
+Write-Host ""
+Write-Host "构建完成：dist\AI选片助手\AI选片助手.exe"
+Write-Host "可继续运行 .\make_portable_zip.ps1 生成便携 ZIP。"
+
+Copy-Item -LiteralPath "lightroom" -Destination "dist/AI选片助手/lightroom" -Recurse -Force
+
+python build_manifest.py "dist/AI选片助手"
+if ($LASTEXITCODE -ne 0) { throw "程序清单生成失败" }

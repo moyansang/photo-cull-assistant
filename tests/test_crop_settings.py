@@ -1,0 +1,121 @@
+from dataclasses import asdict
+from datetime import datetime
+
+from PIL import Image
+
+from ai_cull_assistant.crop_settings import CropSettings, crop_bounds, face_box_key
+from ai_cull_assistant.settings import save_paths, save_values, read_values, load_paths
+from ai_cull_assistant import contact_sheet
+from ai_cull_assistant.models import PhotoAsset
+from ai_cull_assistant.subject import SubjectFeatures, detail_features_list
+
+
+def test_scale_shift_ratio_and_bounds():
+    head = (.3, .3, .2, .3)
+    normal = crop_bounds((1000, 1000), head, CropSettings())
+    bigger = crop_bounds((1000, 1000), head, CropSettings(1.5))
+    up = crop_bounds((1000, 1000), head, CropSettings(1, -.2))
+    right = crop_bounds((1000, 1000), head, CropSettings(offset_x_factor=.4))
+    assert bigger[2]-bigger[0] > normal[2]-normal[0]
+    assert up[1] < normal[1]
+    assert right[0] > normal[0]
+    square = crop_bounds((1000, 1000), head, CropSettings(aspect_ratio='1:1'))
+    assert square[2]-square[0] == square[3]-square[1]
+    edges = crop_bounds((100, 100), (0, 0, .7, .9), CropSettings(2, -.5))
+    assert 0 <= edges[0] < edges[2] <= 100 and 0 <= edges[1] < edges[3] <= 100
+
+
+def test_directory_and_crop_saves_preserve_each_other(tmp_path):
+    settings = CropSettings(1.2, -.1, '3:4', .75)
+    save_values(tmp_path, {'face_crop': asdict(settings)})
+    save_paths(tmp_path, {'input': 'D:/photos', 'workspace': 'D:/work', 'export': 'D:/out'})
+    assert CropSettings.from_dict(read_values(tmp_path)['face_crop']) == settings
+    save_values(tmp_path, {'face_crop': asdict(CropSettings())})
+    assert load_paths(tmp_path)['input'] == 'D:/photos'
+    assert CropSettings.from_dict({'scale_factor': float('nan')}) == CropSettings()
+    assert CropSettings.from_dict({'scale_factor': 1.2}).detection_confidence == .8
+    assert CropSettings.from_dict({'detection_confidence': .2}).detection_confidence == .7
+    assert CropSettings.from_dict({'offset_x_factor': .75}).offset_x_factor == .75
+
+
+def test_regenerate_reuses_detection_and_does_not_change_groups(tmp_path, monkeypatch):
+    path = tmp_path / 'photo.jpg'
+    Image.new('RGB', (500, 800), 'blue').save(path)
+    asset = PhotoAsset('TEST', path, path, None, path, datetime.now(), '.jpg', group_id=7, preview_path=path)
+    calls = []
+    def detect(p, *args):
+        calls.append(p)
+        return SubjectFeatures('0', '0', '0', (.3,.2,.2,.2), (.2,.1,.4,.4))
+    monkeypatch.setattr('ai_cull_assistant.subject.features', detect)
+    contact_sheet.generate_contact_sheet_sets([asset], tmp_path/'sheets')
+    contact_sheet.generate_contact_sheet_sets([asset], tmp_path/'sheets', crop_settings=CropSettings(1.5, -.1, '1:1'))
+    assert len(calls) == 1
+    assert asset.group_id == 7
+    assert not path.with_suffix('.xmp').exists()
+
+
+def test_confidence_change_refreshes_but_cropping_reuses_detection(tmp_path, monkeypatch):
+    path = tmp_path / 'photo.jpg'
+    Image.new('RGB', (200, 300), 'blue').save(path)
+    asset = PhotoAsset('TEST', path, path, None, path, datetime.now(), '.jpg', group_id=9, preview_path=path)
+    thresholds = []
+    def detect(p, confidence):
+        thresholds.append(confidence)
+        return SubjectFeatures('0','0',None,None)
+    monkeypatch.setattr('ai_cull_assistant.subject.features', detect)
+    for settings in (CropSettings(), CropSettings(1.2), CropSettings(detection_confidence=.75)):
+        contact_sheet.generate_contact_sheet_sets([asset], tmp_path/'sheets', crop_settings=settings)
+    assert thresholds == [.8, .75]
+    assert asset.group_id == 9
+
+
+def test_selected_faces_are_explicit_ordered_per_photo_and_empty_is_meaningful(tmp_path, monkeypatch):
+    path = tmp_path / 'photo.jpg'
+    Image.new('RGB', (200, 300), 'blue').save(path)
+    asset = PhotoAsset('TEST', path, path, None, path, datetime.now(), '.jpg', preview_path=path)
+    key = str(path.resolve()).casefold()
+    boxes = [[.1, .1, .2, .2], [.6, .2, .2, .2]]
+    settings = CropSettings(photos={key: {'selected_faces': boxes, 'scale_factor': 1.3}})
+    monkeypatch.setattr('ai_cull_assistant.subject.asset_features', lambda *a, **k: SubjectFeatures('0','0',None,None))
+    monkeypatch.setattr(
+        'ai_cull_assistant.subject._manual_detail',
+        lambda _asset, _settings, base, box: SubjectFeatures(base.whole, base.center, None, tuple(box)),
+    )
+
+    assert [item.face for item in detail_features_list(asset, settings)] == [tuple(box) for box in boxes]
+    assert settings.for_asset(asset).scale_factor == 1.3
+    assert detail_features_list(asset, CropSettings(photos={key: {'selected_faces': []}})) == []
+    restored = CropSettings.from_dict(asdict(settings))
+    assert restored.photos[key]['selected_faces'] == boxes
+
+
+def test_each_selected_face_has_a_stable_independent_crop_with_photo_fallback(tmp_path):
+    path = tmp_path / 'photo.jpg'
+    asset = PhotoAsset('TEST', path, path, None, path, datetime.now(), '.jpg')
+    first = [.1, .2, .25, .3]
+    second = [.6, .2, .2, .25]
+    first_key = face_box_key(first)
+    settings = CropSettings(photos={
+        str(path.resolve()).casefold(): {
+            'selected_faces': [first, second],
+            'scale_factor': 1.2,
+            'shift_factor': -.1,
+            'aspect_ratio': '3:4',
+            'face_crops': {
+                first_key: {
+                    'scale_factor': 1.65,
+                    'shift_factor': .3,
+                    'offset_x_factor': -.4,
+                    'aspect_ratio': '1:1',
+                },
+            },
+        },
+    })
+
+    assert face_box_key(tuple(first)) == first_key
+    assert settings.for_face(asset, first).scale_factor == 1.65
+    assert settings.for_face(asset, first).offset_x_factor == -.4
+    assert settings.for_face(asset, first).aspect_ratio == '1:1'
+    assert settings.for_face(asset, second).scale_factor == 1.2
+    assert settings.for_face(asset, second).shift_factor == -.1
+    assert settings.for_face(asset, second).aspect_ratio == '3:4'

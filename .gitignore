@@ -1,0 +1,80 @@
+.venv/
+build/
+dist/
+*.spec
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+/settings.json
+/settings.json.tmp
+工作区/
+精选/
+
+# Runtime user data (legacy root layout and portable data directories)
+/settings/
+/workspaces/
+/.analysis-cache/
+/.processing/
+/cache/
+/logs/
+/exports/
+/previews/
+/contact_sheets/
+/ai_tasks/
+/focus-evidence/
+/ai-api-profiles.json
+/ai_project.json
+/groups.json
+/lightroom_results.json
+/processing-settings.json
+/scan-session.json
+/screening_results.json
+/workspace-settings.json
+/session.log
+/update-cache.json
+/workflow-stage.json
+/.workspace-archive.zip
+/.workspace-storage.json
+/.workspace-restore-*/
+
+# Locally quarantined disposable build artifacts
+/待清理/
+/待手动删除/
+
+# Local-only project handoff notes
+/项目交接说明.md
+/目录说明.md
+/项目待办.md
+/项目策略.md
+
+# Local experiment inputs and generated results; experiment code remains visible
+/experiments/data/
+/experiments/results/
+
+# Future local training data and outputs; pinned inference assets remain tracked
+/training-data/
+/training-checkpoints/
+/training-runs/
+
+# Additional root-level workspace records used by current runtime
+/assist-feedback.json
+/workspace-identity.json
+/scan-performance.json
+/.source-location.json
+/.source-relocation-transaction.json
+/.archive-manifest.json
+
+# Local environment secrets (sanitized examples can be versioned)
+.env
+.env.*
+!.env.example
+
+# CI / local verification outputs
+/smoke-test.json
+/regression-tests.xml
+/.coverage
+/htmlcov/
+
+# Local agent instructions; transferred privately between computers
+/AGENTS.md

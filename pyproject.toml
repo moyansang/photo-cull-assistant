@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "photo-cull-mvp"
+dynamic = ["version"]
+description = "Local contact-sheet based photo culling assistant"
+readme = "README.md"
+authors = [{name = "moyansang"}]
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+dependencies = [
+    "Pillow>=11.3.0",
+    "numpy>=1.26,<3",
+    "ttkbootstrap==2.2.3",
+    "opencv-python-headless>=4.10.0,<5",
+]
+
+[project.optional-dependencies]
+# Decoder-only HEIF wheels omit the GPL-licensed x265 encoder.
+codecs = ["pi-heif==1.4.0"]
+raw = [
+    "rawpy>=0.22.0",
+    "ExifRead>=3.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "lupa>=2.0",
+]
+
+[project.scripts]
+aicull = "ai_cull_assistant.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+version = {attr = "ai_cull_assistant.version.VERSION"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ai_cull_assistant = ["data/*.onnx", "data/*.txt", "data/body_models/*.onnx", "data/body_models/*.txt"]
+
+[tool.pytest.ini_options]
+# Repeated Windows Tk initialization failed under pytest's OS fd capture in
+# local reproduction. Python-level capture avoids that interaction without
+# changing assertions, skipping failures, or replacing process file descriptors.
+addopts = "--capture=sys"
