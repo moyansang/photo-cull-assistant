@@ -1,0 +1,346 @@
+{
+  "existing_two_tests": {
+    "utc": "2026-10-14T03:21:36.077641+00:00",
+    "git_commit": "f36376dc37319ec80df17852f7366a604182ff1e",
+    "scope": "existing two raw integration tests, Linux only; no modified assertions; not Windows/camera-family/quality acceptance",
+    "tests": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "deselected": 9
+    },
+    "rawpy": "0.27.1",
+    "LibRaw": "0.22.1",
+    "Pillow": "12.3.0",
+    "fixtures": [
+      {
+        "name": "RAW_CANON_40D_SRAW_V103.CR2",
+        "bytes": 6800865,
+        "sha256": "152382ce4dbf644899d12b41b4c577f07638aa3ec5745ac344c36bad93826125",
+        "after_test_matches_downloaded_expected": true
+      },
+      {
+        "name": "iss030e122639.NEF",
+        "bytes": 10656312,
+        "sha256": "5922721d13f11795557d97fdeb0a60b900086c402bc82a848ff280d15b99ffd4",
+        "after_test_matches_downloaded_expected": true
+      }
+    ],
+    "photo_payloads_to_be_delivered": false,
+    "evidence": [
+      "raw-cr2-nef-restored.log",
+      "raw-cr2-nef-restored.xml"
+    ]
+  },
+  "additional_five_sample_probe": {
+    "utc": "2026-10-14T03:26:34.381624+00:00",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+    "python": "3.12.14",
+    "rawpy": "0.27.1",
+    "libraw": [
+      0,
+      22,
+      1
+    ],
+    "Pillow": "12.3.0",
+    "commit": "f36376dc37319ec80df17852f7366a604182ff1e",
+    "scope": "Five real single-sample native decode probes; no quality/all-camera/Windows acceptance",
+    "cases": [
+      {
+        "filename": "Canon - EOS R - 3:2.CR3",
+        "model": "Canon EOS R",
+        "mode": "3:2",
+        "source_url": "https://raw.pixls.us/",
+        "catalog_url": "https://raw.pixls.us/json/getrepository.php?set=all",
+        "download_url": "https://raw.pixls.us/getfile.php/4611/nice/Canon%20-%20EOS%20R%20-%203%3A2.CR3",
+        "license": "CC0-1.0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "bytes": 29045112,
+        "sha256": "cfd118af4477ef37538eb953421572a7a5c80694e59764049223107cc0c9ae83",
+        "stages": [
+          {
+            "full_raw_requested": false,
+            "source": "raw_embedded_jpeg",
+            "size": [
+              6720,
+              4480
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_embedded_jpeg",
+              "source_size": [
+                6720,
+                4480
+              ],
+              "full_resolution": false,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 0.2117860219987051
+          },
+          {
+            "full_raw_requested": true,
+            "source": "raw_full_decode",
+            "size": [
+              6742,
+              4498
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_full_decode",
+              "source_size": [
+                6742,
+                4498
+              ],
+              "full_resolution": true,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 0.7729866219997348
+          }
+        ],
+        "original_unchanged": true
+      },
+      {
+        "filename": "Sony - ILCE-7M3 - 14bit 14bit compressed (3:2).ARW",
+        "model": "Sony ILCE-7M3",
+        "mode": "14bit 14bit compressed (3:2)",
+        "source_url": "https://raw.pixls.us/",
+        "catalog_url": "https://raw.pixls.us/json/getrepository.php?set=all",
+        "download_url": "https://raw.pixls.us/getfile.php/2414/nice/Sony%20-%20ILCE-7M3%20-%2014bit%2014bit%20compressed%20%283%3A2%29.ARW",
+        "license": "CC0-1.0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "bytes": 25639680,
+        "sha256": "250784580ea527442c09004417bb0eead484f2bf3ee8f9121a776ac65bb50d0f",
+        "stages": [
+          {
+            "full_raw_requested": false,
+            "source": "raw_embedded_jpeg",
+            "size": [
+              1616,
+              1080
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_embedded_jpeg",
+              "source_size": [
+                1616,
+                1080
+              ],
+              "full_resolution": false,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 0.021983540002111113
+          },
+          {
+            "full_raw_requested": true,
+            "source": "raw_full_decode",
+            "size": [
+              6024,
+              4024
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_full_decode",
+              "source_size": [
+                6024,
+                4024
+              ],
+              "full_resolution": true,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 0.6850680780007679
+          }
+        ],
+        "original_unchanged": true
+      },
+      {
+        "filename": "Fujifilm - X-T4 - 14bit 14bit compressed (3:2).RAF",
+        "model": "Fujifilm X-T4",
+        "mode": "14bit 14bit compressed (3:2)",
+        "source_url": "https://raw.pixls.us/",
+        "catalog_url": "https://raw.pixls.us/json/getrepository.php?set=all",
+        "download_url": "https://raw.pixls.us/getfile.php/3918/nice/Fujifilm%20-%20X-T4%20-%2014bit%2014bit%20compressed%20%283%3A2%29.RAF",
+        "license": "CC0-1.0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "bytes": 26971008,
+        "sha256": "871836938ffa695f4c41765ddb107c2703ce755f7f3ced7e10f9e04746f1734e",
+        "stages": [
+          {
+            "full_raw_requested": false,
+            "source": "raw_embedded_jpeg",
+            "size": [
+              4416,
+              2944
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_embedded_jpeg",
+              "source_size": [
+                4416,
+                2944
+              ],
+              "full_resolution": false,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 0.11857465300272452
+          },
+          {
+            "full_raw_requested": true,
+            "source": "raw_full_decode",
+            "size": [
+              6246,
+              4170
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_full_decode",
+              "source_size": [
+                6246,
+                4170
+              ],
+              "full_resolution": true,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 2.479424757999368
+          }
+        ],
+        "original_unchanged": true
+      },
+      {
+        "filename": "Ricoh - GR III - 14bit (3:2).DNG",
+        "model": "Ricoh GR III",
+        "mode": "14bit (3:2)",
+        "source_url": "https://raw.pixls.us/",
+        "catalog_url": "https://raw.pixls.us/json/getrepository.php?set=all",
+        "download_url": "https://raw.pixls.us/getfile.php/3115/nice/Ricoh%20-%20GR%20III%20-%2014bit%20%283%3A2%29.DNG",
+        "license": "CC0-1.0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "bytes": 33374940,
+        "sha256": "05513ee72f7cac4165534c9f64995412084f414a033c80c473c79fd94154292e",
+        "stages": [
+          {
+            "full_raw_requested": false,
+            "source": "raw_embedded_jpeg",
+            "size": [
+              6000,
+              4000
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_embedded_jpeg",
+              "source_size": [
+                6000,
+                4000
+              ],
+              "full_resolution": false,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 0.1387760920006258
+          },
+          {
+            "full_raw_requested": true,
+            "source": "raw_full_decode",
+            "size": [
+              6020,
+              4024
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_full_decode",
+              "source_size": [
+                6020,
+                4024
+              ],
+              "full_resolution": true,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 0.9668407860008301
+          }
+        ],
+        "original_unchanged": true
+      },
+      {
+        "filename": "OM System - OM-1 - 16bit (4:3).ORF",
+        "model": "OM System OM-1",
+        "mode": "16bit (4:3)",
+        "source_url": "https://raw.pixls.us/",
+        "catalog_url": "https://raw.pixls.us/json/getrepository.php?set=all",
+        "download_url": "https://raw.pixls.us/getfile.php/5283/nice/OM%20System%20-%20OM-1%20-%2016bit%20%284%3A3%29.ORF",
+        "license": "CC0-1.0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "bytes": 21820729,
+        "sha256": "bf2eef6becc0851e48231617c3e2eac27a2cdb44c75b93035c561d837952c18b",
+        "stages": [
+          {
+            "full_raw_requested": false,
+            "source": "raw_embedded_jpeg",
+            "size": [
+              3200,
+              2400
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_embedded_jpeg",
+              "source_size": [
+                3200,
+                2400
+              ],
+              "full_resolution": false,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 0.044634894002228975
+          },
+          {
+            "full_raw_requested": true,
+            "source": "raw_full_decode",
+            "size": [
+              5220,
+              3912
+            ],
+            "mode": "RGB",
+            "evidence": {
+              "version": "source-first-v1",
+              "source_kind": "raw_full_decode",
+              "source_size": [
+                5220,
+                3912
+              ],
+              "full_resolution": true,
+              "color_space": "sRGB",
+              "warnings": []
+            },
+            "status": "passed",
+            "seconds": 1.028865334999864
+          }
+        ],
+        "original_unchanged": true
+      }
+    ]
+  }
+}
