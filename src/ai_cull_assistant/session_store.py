@@ -9,7 +9,8 @@ from .workflow import ScanResult
 from .ai_project import atomic_json
 
 
-def save_session(result, fresh=False):
+def save_session(result, fresh=False, *, writer=None):
+    writer = atomic_json if writer is None else writer
     data=asdict(result)
     data['version']=1
     data['source_stats']={}
@@ -26,12 +27,12 @@ def save_session(result, fresh=False):
         if isinstance(value,Path):return str(value.resolve())
         if isinstance(value,datetime):return value.isoformat()
         raise TypeError(type(value).__name__)
-    atomic_json(result.workspace_dir/'scan-session.json',json.loads(json.dumps(data,default=encode)))
+    writer(result.workspace_dir/'scan-session.json',json.loads(json.dumps(data,default=encode)))
     # Relative inventory is portable; the active session retains legacy absolute
     # paths for existing code and is rebound by the relocation operation.
     if result.input_dir:
         root = Path(result.input_dir).resolve()
-        atomic_json(result.workspace_dir / '.source-location.json', {
+        writer(result.workspace_dir / '.source-location.json', {
             'version': 1, 'input_dir': str(root),
             'files': {str(Path(name).relative_to(root)): stats
                       for name, stats in data['source_stats'].items()},

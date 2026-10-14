@@ -45,3 +45,12 @@ No remote push, release, replacement of the user's installed application, or pai
 The new transaction checks establish cooperative cancellation and rollback after caught exceptions. They do not establish arbitrary process termination/power-loss recovery or cancellation inside publication itself. The supplied Windows full-suite log retains 65 Tk after-command diagnostics after window destruction; zero pytest failures must not be described as zero diagnostics.
 
 Final combined cloud run after adding the seven new cases: 1,037 collected, 831 passed, 24 skipped, 142 failures and 40 setup errors, in 62.13 seconds. The complete failed/error node-ID and message mapping is identical to the 1,030-case recovered baseline above. No additional failure or error was introduced. The seven focused results are included here, not added again to the total.
+
+
+## Later cloud readiness audit and process-crash recovery
+
+On `52bd1b4` (including Tk repair `8a29559`), the 831 previously passing headless nodes plus ten Tcl lifecycle cases were selected explicitly and all 841 passed. This is distinct from the older 1037-case full-suite report above. Real RAW samples were subsequently restored and bounded native-memory measurements completed; see cloud-readiness-recovery-20261014.md.
+
+Controlled process exits exposed a publication-recovery defect not covered by the seven exception/cancellation tests: moved artifacts could be mistaken for missing staging, causing backup deletion or a dangling incremental preview path. A transaction-journal repair is now under independent review with true subprocess-exit regressions. The historical nine missing test sources remain missing; the new tests do not claim to reconstruct them.
+
+Final reviewed-candidate headless selection: **873 passed in 55.90 seconds**, comprising the 841 selected baseline cases and 32 new crash-recovery, lock, and stale-object cases. All production changes are confined to processing publication/recovery and the optional session JSON writer; no UI layout, image ranking, threshold or Windows installation change. This final selection does not include native Windows/Tk platform verification. Source hashes and raw output are retained in readiness-audit/final-candidate-manifest.json and headless-reviewed-final.log/.xml.

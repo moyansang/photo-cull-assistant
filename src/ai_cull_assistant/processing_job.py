@@ -37,6 +37,7 @@ from .workflow import ScanResult
 from .workspace_layout import workspace_path as resolve_workspace_path
 from .scan_resources import ResourceBudget
 from .processing_journal import append_patch, replay_patches
+from . import publication_transaction
 from .scan_timing import collect_timings, merge_timings, timed, timing_summary
 
 
@@ -223,7 +224,12 @@ def _existing_screening_results(workspace: Path, assets: list[PhotoAsset]) -> di
     return results
 
 
-def start_job(
+def start_job(input_dir, workspace, options, crops, result=None, regroup=False, *, mode=None):
+    with publication_transaction.operation(Path(workspace)):
+        return _start_job(input_dir, workspace, options, crops, result, regroup, mode=mode)
+
+
+def _start_job(
     input_dir: str | Path,
     workspace: str | Path,
     options: Mapping,
@@ -347,6 +353,13 @@ def start_job(
 
 
 def load_job(workspace: str | Path, input_dir: str | Path) -> "ProcessingJob | None":
+    if not _active_path(Path(workspace)).is_file():
+        return None
+    with publication_transaction.operation(Path(workspace)):
+        return _load_job(workspace, input_dir)
+
+
+def _load_job(workspace: str | Path, input_dir: str | Path) -> "ProcessingJob | None":
     """Load the active job for this source, invalidating only it if photos changed."""
     workspace_path = Path(workspace).resolve()
     input_path = Path(input_dir).resolve()
@@ -371,12 +384,22 @@ def load_job(workspace: str | Path, input_dir: str | Path) -> "ProcessingJob | N
         if data.get("id") != identifier or Path(data.get("input_dir", "")).resolve() != input_path:
             raise ValueError("job identity mismatch")
         job = ProcessingJob(root, data)
+        recovered = publication_transaction.recover(root, workspace_path, identifier)
+        if recovered == 'committed':
+            # A verified commit may have died only during cleanup. Never rerun
+            # it with the old staging paths recorded before publication.
+            active_path.unlink(missing_ok=True)
+            shutil.rmtree(root)
+            return None
         job._check_artifacts()
         job._validate_sources()
         return job
-    except SourceChangedError:
+    except (SourceChangedError, publication_transaction.PublicationRecoveryError):
         raise
     except Exception as exc:
+        if "root" in locals() and publication_transaction.pending(root):
+            raise publication_transaction.PublicationRecoveryError(
+                "中断任务包含未恢复发布；保留备份和现场") from exc
         safe_parent = resolve_workspace_path(workspace_path, ".processing").resolve()
         if "root" in locals() and root.is_dir() and root.resolve().parent == safe_parent:
             shutil.rmtree(root, ignore_errors=True)
@@ -445,6 +468,14 @@ class ProcessingJob:
         )
 
     def retry_failed(self) -> None:
+        with publication_transaction.operation(self.workspace):
+            current = _load_job(self.workspace, self.input_dir)
+            if current is None or current._data['id'] != self._data['id']:
+                raise ProcessingJobError('任务已结束或被替换，请重新加载工作区')
+            self._data, self.assets = current._data, current.assets
+            self._retry_failed_locked()
+
+    def _retry_failed_locked(self) -> None:
         """Prepare a new pass containing only the failed focus-review photos."""
         if not self.awaiting_focus_error_decision:
             raise ProcessingJobError("当前没有等待重试的 AI 清晰度复核照片")
@@ -466,6 +497,14 @@ class ProcessingJob:
         self._persist()
 
     def skip_failed(self) -> None:
+        with publication_transaction.operation(self.workspace):
+            current = _load_job(self.workspace, self.input_dir)
+            if current is None or current._data['id'] != self._data['id']:
+                raise ProcessingJobError('任务已结束或被替换，请重新加载工作区')
+            self._data, self.assets = current._data, current.assets
+            self._skip_failed_locked()
+
+    def _skip_failed_locked(self) -> None:
         """Accept the failed photos as pending and allow the job to publish."""
         if not self.awaiting_focus_error_decision:
             raise ProcessingJobError("当前没有可跳过的 AI 清晰度复核照片")
@@ -481,6 +520,24 @@ class ProcessingJob:
         self._persist()
 
     def run(self, options, crops, stop_event, progress, *, focus_profile=None, on_log=None):
+        with publication_transaction.operation(self.workspace):
+            active = _active_path(self.workspace)
+            if (not (self.root / 'job.json').is_file() or not active.is_file()
+                    or json.loads(active.read_text('utf-8')).get('job_id') != self._data['id']):
+                raise ProcessingJobError('任务已结束或被替换，请重新加载工作区')
+            if publication_transaction.pending(self.root):
+                raise publication_transaction.PublicationRecoveryError(
+                    "先重新加载并恢复未完成发布，不直接重复运行")
+            # Another instance may have completed checkpoints since this
+            # object was loaded. Refresh under the lock before any mutation.
+            current = _load_job(self.workspace, self.input_dir)
+            if current is None or current._data['id'] != self._data['id']:
+                raise ProcessingJobError('任务状态已变化，请重新加载工作区')
+            self._data, self.assets = current._data, current.assets
+            return self._run_guarded(options, crops, stop_event, progress,
+                                     focus_profile=focus_profile, on_log=on_log)
+
+    def _run_guarded(self, options, crops, stop_event, progress, *, focus_profile=None, on_log=None):
         if self.mode == 'focus':
             from .focus_prefetch import FocusPrefetch
             settings = crops if isinstance(crops, CropSettings) else CropSettings.from_dict(crops or {})
@@ -504,7 +561,7 @@ class ProcessingJob:
             finally:
                 totals = self._data.setdefault('stage_timings', {})
                 merge_timings(totals, values)
-                if self.root.is_dir():
+                if self.root.is_dir() and not publication_transaction.pending(self.root):
                     self._persist()
                 _notify_log(on_log, f'扫描耗时统计：本次用时 {perf_counter()-started:.1f} 秒；'
                             + timing_summary(totals) + '。阶段耗时为累计工作时间，并行时可能大于实际用时。')
@@ -1085,6 +1142,9 @@ class ProcessingJob:
                 raise ProcessingJobError("已完成的联系表文件丢失")
 
     def _invalidate(self) -> None:
+        if publication_transaction.pending(self.root):
+            raise publication_transaction.PublicationRecoveryError(
+                "未完成发布不能清除；保留事务文件")
         processing_root = resolve_workspace_path(self.workspace, ".processing")
         try:
             if self.root.resolve().parent == processing_root.resolve():
@@ -1133,27 +1193,19 @@ class ProcessingJob:
         if self.mode == "scan" or (self.mode == "legacy" and (self.kind == "scan" or self._data.get("regroup"))):
             destinations.append((output / "groups.json", self.workspace / "groups.json"))
 
-        backup = self.root / "backup"
-        backup.mkdir(exist_ok=True)
-        # save_session also publishes the portable source inventory. Roll it
-        # back together with the session when any later publication step fails.
-        passive = [self.workspace / "scan-session.json", self.workspace / "processing-settings.json",
-                   self.workspace / ".source-location.json"]
-        existed_before = {path: path.exists() for path in [item[1] for item in destinations] + passive}
-        moved_old: list[tuple[Path, Path]] = []
-        moved_new: list[tuple[Path, Path]] = []
+        original_assets = [_asset_to_dict(asset) for asset in self.assets]
+        state = publication_transaction.begin(self.root, self.workspace, self._data['id'], destinations)
         try:
             self.workspace.mkdir(parents=True, exist_ok=True)
-            for destination in [item[1] for item in destinations] + passive:
+            for entry in state['entries']:
+                source, destination, saved = publication_transaction._paths(
+                    self.root, self.workspace, self._data['id'], entry)
                 if destination.exists():
-                    saved = backup / f"{len(moved_old):03d}-{destination.name}"
                     destination.replace(saved)
-                    moved_old.append((saved, destination))
             for source, destination in destinations:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 if source.exists():
                     source.replace(destination)
-                    moved_new.append((destination, source))
 
             if self.kind == "scan":
                 stage_preview = self.root / "output" / "previews"
@@ -1186,44 +1238,25 @@ class ProcessingJob:
                 main_pages=main_pages,
                 rejected_pages=rejected_pages,
             )
-            save_session(result, fresh=True)
-            atomic_json(self.workspace / "processing-settings.json", {
+            def write_published_json(path, value):
+                publication_transaction.write_json(self.root, self.workspace, state, path, value, writer=atomic_json)
+            save_session(result, fresh=True, writer=write_published_json)
+            write_published_json(self.workspace / "processing-settings.json", {
                 "version": 1,
                 "grouping_preset": self.actual_grouping_preset,
                 "last_options": self._data["last_options"],
             })
+            publication_transaction.commit(self.root, self.workspace, self._data['id'], state)
         except Exception:
-            for destination, source in reversed(moved_new):
-                if destination.exists():
-                    source.parent.mkdir(parents=True, exist_ok=True)
-                    destination.replace(source)
-            backed_destinations = {destination for _saved, destination in moved_old}
-            for destination in passive:
-                if destination in backed_destinations or not existed_before[destination]:
-                    if destination.is_dir():
-                        shutil.rmtree(destination, ignore_errors=True)
-                    else:
-                        destination.unlink(missing_ok=True)
-            for saved, destination in reversed(moved_old):
-                if saved.exists():
-                    saved.replace(destination)
-            if self.kind == "scan" or publish_staged_previews:
-                formal_preview = self.workspace / "previews"
-                if self.kind != 'scan':
-                    formal_preview = formal_preview / self._data['id']
-                staged_preview = self.output / "previews"
-                for asset in self.assets:
-                    if asset.preview_path:
-                        try:
-                            relative = Path(asset.preview_path).relative_to(formal_preview)
-                        except ValueError:
-                            continue
-                        asset.preview_path = staged_preview / relative
-                self._data["assets"] = [_asset_to_dict(asset) for asset in self.assets]
-                self._persist()
+            # Uses the same durable rollback path as the next-process recovery.
+            # If rollback cannot verify every artifact, keep the journal/backup.
+            try:
+                publication_transaction.recover(self.root, self.workspace, self._data['id'])
+            finally:
+                self.assets = [_asset_from_dict(row) for row in original_assets]
+                self._data['assets'] = original_assets
             raise
 
-        shutil.rmtree(backup, ignore_errors=True)
         self._data["percent"] = 100
         self._notify(progress)
         active = _active_path(self.workspace)

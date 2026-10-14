@@ -2,7 +2,7 @@
 
 Baseline inspected: `fe0aaf3e0a0a0b15f47b70a2759e281a8195427d`.
 No HEIF, decoding, visual layout, update-installation or persistence behavior was
-changed. The repair is uncommitted pending integration.
+changed. The repair was integrated as `8a29559`; Windows verification remains pending. A later headless selection on `52bd1b4` passed 841 cases, including the ten lifecycle cases; this is not a Windows full-suite result.
 
 ## Findings and changes
 
