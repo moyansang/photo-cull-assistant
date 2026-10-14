@@ -93,7 +93,7 @@ def test_scan_payload_response_manual_export_crop_regroup_wired(tmp_path,monkeyp
     assert web['focus_photo_ids']==[] and web['focus_image_map']=={} and len(requests)==1
 
     project.confirm(photo_id(assets['A']),5,1)
-    rows={row['filename']:row for row in json.loads(project.export_final().read_text())['photos']}
+    rows={row['filename']:row for row in json.loads(project.export_final().read_text(encoding='utf-8'))['photos']}
     assert rows['A.png']['rating']==5 and rows['A.png']['decision_source']=='manual'
     assert rows['B.png']['rating']==4 and rows['B.png']['decision_source']=='ai'
     assert 'rating' not in rows['C.png'] and rows['C.png']['decision_source']=='local'
@@ -135,9 +135,9 @@ def test_scan_payload_response_manual_export_crop_regroup_wired(tmp_path,monkeyp
     assert current_selection(a) is None and current_selection(b) is None
     assert current_focus(b)['status']=='clear'
     assert len(b['history'])>=2 and b['focus_history']==[old_focus]
-    rows={row['filename']:row for row in json.loads(project.export_final().read_text())['photos']}
+    rows={row['filename']:row for row in json.loads(project.export_final().read_text(encoding='utf-8'))['photos']}
     assert rows['A.png']['rating']==5 and rows['A.png']['pick_status']==1
     assert 'rating' not in rows['B.png'] and rows['B.png']['decision_source']=='ai'
     assert 'rating' not in rows['C.png'] and rows['C.png']['decision_source']=='local'
     assert original=={p:p.read_bytes() for p in original}
-    assert 'synthetic-key-never-persist' not in project.path.read_text()
+    assert 'synthetic-key-never-persist' not in project.path.read_text(encoding='utf-8')

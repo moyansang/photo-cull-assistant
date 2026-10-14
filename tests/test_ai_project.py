@@ -77,7 +77,7 @@ def test_human_decisions_preserved_and_manual_only_mode_is_explicit(tmp_path):
     project,assets,task,batch=setup_project(tmp_path)
     project.ingest(task,batch,answer(task,batch))
     with pytest.raises(ValueError):project.export_final(ai_ratings=False)
-    assert len(json.loads(project.export_final().read_text())['photos'])==2
+    assert len(json.loads(project.export_final().read_text(encoding='utf-8'))['photos'])==2
     project.confirm(photo_id(assets[0]),5,None)
     project.ingest(task,batch,answer(task,batch,1))
     output=json.loads(project.export_final(ai_ratings=False).read_text('utf-8'))
@@ -91,7 +91,7 @@ def test_changed_group_invalidates_results_but_keeps_human_values(tmp_path):
     project.confirm(photo_id(assets[0]),4,-1)
     assets[0].group_id=2;project.refresh(assets,CropSettings())
     assert project.data['photos'][photo_id(assets[0])]['stale']
-    assert json.loads(project.export_final().read_text())['photos'][0]['rating']==4
+    assert json.loads(project.export_final().read_text(encoding='utf-8'))['photos'][0]['rating']==4
     assert project.ingest(task,batch,answer(task,batch))
     project.confirm(photo_id(assets[0]),4,0)
     assert json.loads(project.export_final().read_text('utf-8'))['photos'][0]['pick_status']==0
@@ -267,7 +267,7 @@ def test_all_local_rejects_can_request_selection_without_losing_human_result(tmp
     task=project.create_task(assets,CropSettings(),{},replace_current=True)
     assert task['batches'] and old in project.data['tasks']
     assert project.data['photos'][photo_id(assets[0])]['final']['confirmed']
-    rows=json.loads(project.export_final().read_text())['photos']
+    rows=json.loads(project.export_final().read_text(encoding='utf-8'))['photos']
     assert rows[0]['rating']==5 and rows[0]['pick_status']==1
     assert rows[1]['pick_status']==-1 and 'rating' not in rows[1]
 
@@ -561,7 +561,7 @@ def test_web_selection_concern_never_replaces_manual_or_technical_result(tmp_pat
     assert 'ai_focus_result' not in photo
     if status in {'blur','uncertain'}:assert photo['selection_focus_concern']['status']==status
     project.refresh(assets,project._crops)
-    row=next(row for row in json.loads(project.export_final().read_text())['photos'] if row['filename']=='A.jpg')
+    row=next(row for row in json.loads(project.export_final().read_text(encoding='utf-8'))['photos'] if row['filename']=='A.jpg')
     assert row['rating']==5 and row['pick_status']==1
 
 

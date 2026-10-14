@@ -62,13 +62,13 @@ def test_unsafe_states_preserve_records_and_evidence(tmp_path, monkeypatch, kind
     elif kind=='modified':result.assets[1].primary_path.write_bytes(b'changed')
     elif kind=='running':
         (root/'cache/processing').mkdir(exist_ok=True)
-        (root/'cache/processing/active.json').write_text('{}')
+        (root/'cache/processing/active.json').write_text('{}', encoding='utf-8')
     elif kind=='unknown':(root/'focus-evidence/requests/unknown.bin').write_bytes(b'keep')
-    elif kind=='unanswered':(root/'focus-evidence/requests/pending.json').write_text('{"images": []}')
+    elif kind=='unanswered':(root/'focus-evidence/requests/pending.json').write_text('{"images": []}', encoding='utf-8')
     else:
-        d=json.loads((root/'scan-session.json').read_text())
+        d=json.loads((root/'scan-session.json').read_text(encoding='utf-8'))
         d['assets'][0]['ai_focus_result']['audit']='../outside.json'
-        (root/'scan-session.json').write_text(json.dumps(d))
+        (root/'scan-session.json').write_text(json.dumps(d), encoding='utf-8')
     if kind!='offline':result.assets[0].primary_path.unlink()
     before=(root/'scan-session.json').read_bytes()
     with pytest.raises((ValueError, KeyError)):load_session(root, photos)

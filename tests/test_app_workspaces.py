@@ -314,7 +314,7 @@ def test_latest_photo_selection_wins_over_pending_workspace_edit(tmp_path, monke
         assert app.input_var.get() == str(second)
         assert app._active_input == str(second)
         assert Path(app.workspace_var.get()).name.startswith('110_PANA-')
-        assert json.loads((old / 'workspace-identity.json').read_text())['input_dir'] == str(first)
+        assert json.loads((old / 'workspace-identity.json').read_text(encoding='utf-8'))['input_dir'] == str(first)
         chosen = app.workspace_var.get()
         app.input_var.set(str(first))
         app._save_preferences()

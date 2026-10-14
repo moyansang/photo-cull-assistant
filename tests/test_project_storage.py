@@ -23,17 +23,17 @@ def test_workspace_migration_rebases_only_owned_paths_and_preserves_source(tmp_p
     original={'workspace_dir':str(old),'input_dir':str(old),
               'primary_path':str(photo),'preview_path':str(preview),
               'image_paths':[str(snapshot)],'fingerprint':'keep','image_hashes':['keep']}
-    (old/'scan-session.json').write_text(json.dumps(original))
-    (old/'ai-api-profiles.json').write_text('{"do_not_copy":true}')
+    (old/'scan-session.json').write_text(json.dumps(original), encoding='utf-8')
+    (old/'ai-api-profiles.json').write_text('{"do_not_copy":true}', encoding='utf-8')
     new=tmp_path/'workspaces'/'project'
     storage.migrate_workspace(old,new)
-    data=json.loads((new/'scan-session.json').read_text())
+    data=json.loads((new/'scan-session.json').read_text(encoding='utf-8'))
     assert data['workspace_dir']==str(new)
     assert data['input_dir']==str(old) and data['primary_path']==str(photo)
     assert data['preview_path']==str(new/'previews'/'p.jpg')
     assert data['image_paths']==[str(new/'ai_tasks'/'task'/'sheet.jpg')]
     assert data['fingerprint']=='keep' and data['image_hashes']==['keep']
-    assert json.loads((old/'scan-session.json').read_text())==original
+    assert json.loads((old/'scan-session.json').read_text(encoding='utf-8'))==original
     assert not (new/'original.jpg').exists() and not (new/'ai-api-profiles.json').exists()
     assert storage.migrate_workspace(old,new)==new
 
@@ -49,18 +49,18 @@ def test_workspace_migration_rebases_formal_and_checkpoint_previews(tmp_path):
     (old / 'scan-session.json').write_text(json.dumps({
         'workspace_dir': str(old),
         'preview_path': str(formal),
-    }))
+    }), encoding='utf-8')
     job = checkpoint.parents[3] / 'job.json'
     job.write_text(json.dumps({
         'workspace': str(old),
         'assets': [{'preview_path': str(checkpoint)}],
-    }))
+    }), encoding='utf-8')
 
     new = tmp_path / 'new'
     storage.migrate_workspace(old, new)
 
-    session = json.loads((new / 'scan-session.json').read_text())
-    migrated_job = json.loads((new / 'cache' / 'processing' / 'a' / 'job.json').read_text())
+    session = json.loads((new / 'scan-session.json').read_text(encoding='utf-8'))
+    migrated_job = json.loads((new / 'cache' / 'processing' / 'a' / 'job.json').read_text(encoding='utf-8'))
     assert session['preview_path'] == str(new / 'previews' / 'v05' / 'formal.jpg')
     assert migrated_job['workspace'] == str(new)
     assert migrated_job['assets'][0]['preview_path'] == str(

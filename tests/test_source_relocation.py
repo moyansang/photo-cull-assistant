@@ -36,7 +36,7 @@ def test_relocate_archived_workspace_preserves_ai_and_crops(tmp_path):
     stats = relocate_source(copied, new_source, tmp_path / 'settings')
     assert stats['matched'] == 1
     restored = load_session(copied, new_source)
-    new_crops = CropSettings.from_dict(json.loads((copied/'workspace-settings.json').read_text())['face_crop'])
+    new_crops = CropSettings.from_dict(json.loads((copied/'workspace-settings.json').read_text(encoding='utf-8'))['face_crop'])
     assert new_crops.photos[new_crops.key(restored.assets[0])]['offset_x_factor'] == .1
     assert photo_id(restored.assets[0]) == before_id
     assert fingerprint(restored.assets[0], new_crops) == before_fp
@@ -49,7 +49,7 @@ def test_relocate_archived_workspace_preserves_ai_and_crops(tmp_path):
     # Rebinding back again also preserves IDs/signatures, not just the first move.
     relocate_source(copied, photos, tmp_path / 'settings')
     again = load_session(copied, photos)
-    again_crops = CropSettings.from_dict(json.loads((copied/'workspace-settings.json').read_text())['face_crop'])
+    again_crops = CropSettings.from_dict(json.loads((copied/'workspace-settings.json').read_text(encoding='utf-8'))['face_crop'])
     assert photo_id(again.assets[0]) == before_id
     assert fingerprint(again.assets[0], again_crops) == before_fp
     assert (workspace/'.workspace-archive.zip').is_file()

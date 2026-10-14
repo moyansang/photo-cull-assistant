@@ -121,7 +121,7 @@ def test_export_matches_effective_result_and_never_changes_originals_or_xmp(tmp_
     assets[2].clarity_evidence={'state':'uncertain'}
     sidecar=assets[0].primary_path.with_suffix('.xmp');sidecar.write_text('existing stars')
     before={p:p.read_bytes() for p in [a.primary_path for a in assets]+[sidecar]}
-    rows=json.loads(project.export_final().read_text())['photos']
+    rows=json.loads(project.export_final().read_text(encoding='utf-8'))['photos']
     for asset,row in zip(assets,rows):
         decision=project.effective_decision(photo_id(asset))
         assert row.get('rating')==decision['rating']

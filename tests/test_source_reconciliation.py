@@ -95,7 +95,7 @@ def test_copied_workspace_with_deleted_photo_can_restore(tmp_path):
     copied = tmp_path/'copied'
     shutil.copytree(workspace, copied)
     result.assets[0].primary_path.unlink()
-    relocate_copied_workspace(copied, json.loads((copied/'scan-session.json').read_text()))
+    relocate_copied_workspace(copied, json.loads((copied/'scan-session.json').read_text(encoding='utf-8')))
     restored = load_session(copied, photos)
     assert len(restored.assets) == 2
     assert restored.workspace_dir == copied
