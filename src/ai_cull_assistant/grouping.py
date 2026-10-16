@@ -15,7 +15,7 @@ from PIL import Image, ImageOps
 from .models import PhotoAsset, RAW_EXTENSIONS, source_identity_path
 
 # Stored for diagnostics, not used to invalidate or silently regroup old sessions.
-GROUPING_VERSION = "workspace-dhash64-block-ssim-crop-connected-experimental-v1"
+GROUPING_VERSION = "workspace-dhash64-scene-pose-guarded-v1"
 GRAY_SIZE = 64
 BLOCK_SIZE = 8
 # One-sided central alignment only; at least 81% of the source area remains.
@@ -49,6 +49,10 @@ class GroupingStats:
     missing_visuals: int = 0
     crop_candidates: int = 0
     crop_matches: int = 0
+    pose_candidates: int = 0
+    pose_matches: int = 0
+    pose_component_rejections: int = 0
+    portrait_contexts: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -445,6 +449,7 @@ def _assign_groups_fixed_legacy(assets: list[PhotoAsset], preset: str = "standar
     stats.photos = len(assets)
     stats.representatives = stats.hash_candidates = stats.structure_comparisons = stats.missing_visuals = 0
     stats.crop_candidates = stats.crop_matches = 0
+    stats.pose_candidates = stats.pose_matches = stats.pose_component_rejections = stats.portrait_contexts = 0
     protected = set(protected_group_ids)
     ordered = sorted(assets, key=_asset_order)
     existing: dict[int, list[PhotoAsset]] = {}
@@ -527,14 +532,75 @@ class GroupingCancelled(RuntimeError):
     """Optional caller cancellation; no group/anchor changes have been committed."""
 
 
+def _merge_portrait_components(pending, parent, preset, stats, check_cancel):
+    """A relaxed portrait edge cannot bridge incompatible strict components.
+
+    Every cross-component member must have direct scene/appearance evidence.
+    Existing manual groups never enter ``pending``. No asset is mutated here.
+    """
+    from .portrait_grouping import build_portrait_context, pose_compatible
+
+    contexts = []
+    index = _HashIndex()
+    for position, asset in enumerate(pending):
+        check_cancel()
+        context = build_portrait_context(asset)
+        contexts.append(context)
+        if context is not None:
+            index.add(context.context_hash, position)
+            stats.portrait_contexts += 1
+
+    def find(position):
+        while parent[position] != position:
+            parent[position] = parent[parent[position]]
+            position = parent[position]
+        return position
+
+    members = {}
+    for position in range(len(pending)):
+        members.setdefault(find(position), []).append(position)
+    compared = {}
+
+    def compatible(left, right):
+        check_cancel()
+        key = min(left, right), max(left, right)
+        if key not in compared:
+            a, b = (contexts[p] for p in key)
+            compared[key] = a is not None and b is not None and pose_compatible(a, b, preset)
+        return compared[key]
+
+    for left, context in enumerate(contexts):
+        if context is None:
+            continue
+        candidates = sorted(p for _, p in index.find(
+            context.context_hash, PRESETS[preset].hash_distance_threshold) if p > left)
+        for right in candidates:
+            check_cancel()
+            a, b = find(left), find(right)
+            if a == b:
+                continue
+            stats.pose_candidates += 1
+            if not compatible(left, right):
+                continue
+            if not all(compatible(i, j) for i in members[a] for j in members[b]):
+                stats.pose_component_rejections += 1
+                continue
+            keep, removed = min(a, b), max(a, b)
+            parent[removed] = keep
+            members[keep] = sorted(members.pop(a) + members.pop(b))
+            stats.pose_matches += 1
+
+
 def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
                   preserve_existing: bool = True,
                   protected_group_ids: Collection[int] = (),
                   stats: GroupingStats | None = None,
                   cancel_check=None) -> list[PhotoAsset]:
-    """Experimental connected grouping for fresh scans or explicit regrouping.
+    """Connected strict matches plus guarded same-scene portrait matches.
 
-    Pair thresholds, subject gates and one-sided crop rules are unchanged.
+    Strict pair thresholds, subject gates and crop rules are unchanged. A
+    separate portrait fallback requires scene geometry and face/body appearance,
+    and checks every cross-component member before a merge.
     Existing sessions retain the legacy fixed-anchor path unless the caller
     explicitly sets preserve_existing=False. Protected positive groups are
     excluded from the graph, never used as bridges, and their IDs are reserved.
@@ -574,6 +640,7 @@ def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
     stats.photos = len(assets)
     stats.representatives = stats.hash_candidates = stats.structure_comparisons = stats.missing_visuals = 0
     stats.crop_candidates = stats.crop_matches = 0
+    stats.pose_candidates = stats.pose_matches = stats.pose_component_rejections = stats.portrait_contexts = 0
     ordered = sorted(assets, key=_asset_order)
     pending = [asset for asset in ordered
                if not (asset.group_id > 0 and asset.group_id in protected)]
@@ -629,6 +696,8 @@ def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
             elif _crop_aligned_similar(asset, other, visual, right, cfg, stats):
                 stats.crop_matches += 1
                 union(left_position, right_position)
+
+    _merge_portrait_components(pending, parent, preset, stats, check_cancel)
 
     components = {}
     for position in range(len(pending)):

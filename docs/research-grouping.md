@@ -1,7 +1,8 @@
 # Workspace-wide similarity grouping
 
-Implemented 2026-10-13; bounded crop fallback added 2026-10-14. Algorithm version:
-`workspace-dhash64-block-ssim-crop-v2`.
+Implemented 2026-10-13; bounded crop fallback added 2026-10-14; conservative
+portrait context added 2026-10-16. Algorithm version:
+`workspace-dhash64-scene-pose-guarded-v1`.
 
 ## Research and reuse decision
 
@@ -44,8 +45,11 @@ vendors an implementation, its full original license/notices must accompany it.
   There is no capture-time, adjacency, directory, or filename proximity gate.
 - Input order stays intact. Fresh groups are built in stable source-identity
   order, making the same workspace deterministic even if the input is shuffled.
-- Every automatic member must pass against its group's fixed representative.
-  A-B and B-C alone cannot cause C to join A's group. The representative
+- Fresh grouping connects pairs passing the unchanged strict whole-frame/crop
+  rules. Additional portrait edges can merge strict components only when every
+  cross-component pair passes the portrait evidence rule below. A weak A-B /
+  B-C chain cannot override an incompatible A-C pair. Existing positive
+  memberships retain the legacy fixed-representative path. The representative
   source ID is persisted in `PhotoAsset.grouping_anchor_id` and automatic
   stores' `group_anchors`, so a newly imported earlier filename cannot shift
   the representative between scans. If that representative disappears, the
@@ -85,12 +89,81 @@ edge before trimming. Tiny images do not receive variants. There is no
 translation, arbitrary crop, rotation or representative-changing search.
 Saved memberships are not silently regrouped when the algorithm version changes.
 
+### Corroborated portrait context
+
+This separate fallback requires one automatic face and one automatic body ROI,
+unambiguous selected primaries, the explicit ROI feature schema, and a stable
+prepared preview whose encoded SHA-256 matches the saved descriptors. Manual
+ROIs, stale/incomplete fields, decode errors, and ambiguous selections never
+enter it. It does not modify persisted descriptors or confirmation digests.
+
+Standard matching requires face displacement <= .06, area quotient <= 1.25,
+face dHash <= 8 and block SSIM >= .65, plus matching HSV colour distributions.
+A broad **face-anchored body context** must also pass dHash <= 10 and colour
+comparison. This is appearance evidence, not skeletal pose or person identity.
+An unbound or unstable explicit body box is neither positive proof nor a veto;
+its original hash and the original strict path stay unchanged.
+
+Scene proof comes from ORB keypoints outside the face-anchored context and all
+body candidates. Every rotated, scale-dependent descriptor patch must remain
+outside those masks, not just its centre. Partial affine RANSAC requires at
+least 12 inliers, .55 inlier ratio, distributed points in both frames, scale
+.94..1.06, rotation <= 3 degrees, and centre displacement <= .06 of the frame.
+Warped common background must cover >= .12 of the frame and have RGB MAE <= .04.
+Low-texture backgrounds and narrowly clustered matches stay separate. Strict
+uses narrower bounds; loose does not weaken these portrait safeguards.
+
+An independent body-ROI drift path permits only a phase-correlation proposal
+within 3% translation and response >= .80. It requires conflicting old body
+hashes with genuinely changed automatic rectangles, body IoU >= .60, unchanged
+whole-frame hash limits, face SSIM >= .80, and face-context SSIM >= .65. The
+aligned whole frame **and the full union of both body rectangles** must meet
+the existing strict-crop SSIM reference .86, plus body colour agreement >= .80.
+Comparing only the intersection could hide changed clothing at a rectangle's
+edge; every available union pixel contributes. Face and body are independent
+appearance witnesses, never assumed to be the same person's confirmed ROI.
+
+The proposal then needs independent common-background proof, excluding expanded
+hair/body-top masks and full interpolation support. Common area >= 12% and RGB
+MAE <= .04 remain required. Only actual unmasked pixels enter 16-square cells
+(>=32 pixels and standard deviation >=8 on both sides). At least eight cells
+and 512 textured pixels are required. Their area-weighted median SSIM must be
+>= .78 and >=60% weight must meet .70. Matching support centroids must span half
+of each axis with convex hull area >= .10. Thin strips contribute their actual
+area; a centre outside a person never makes the surrounding cell background.
+Flat or spatially concentrated texture cannot validate a translation. Strict
+uses narrower limits. ORB geometry thresholds are unchanged.
+
+Only transient descriptors are kept: ORB keypoints/descriptors at a maximum
+640-pixel edge and 128-square RGB/mask arrays. There is no disk cache, new
+dependency, detection, model inference, API request, or original-photo read.
+The context-hash index filters candidates; every member across two components
+must pass the same direct evidence before their merge. Protected manual groups
+are excluded and cancellation commits no partial memberships.
+
+Local evaluation reproduced a frozen 1,000-photo / 731-group baseline exactly.
+The final second-round variant produced 691 groups, preserving every original
+component. All 36 newly merged components (77 previews) were visually reviewed
+without an obvious subject/scene switch. Four selected real negative pairs
+remain separate. Seven additional real negative pairs have valid contexts on
+both sides and reject in both input directions, including same-set subject
+changes and same-costume scene changes. All three diagnostic positive pairs
+now join. Seven additional positive pairs
+retain four pre-existing joins and three misses (weak background, face change,
+or multiple detected faces). Same-clothing/different-person and fixed-companion
+body-change cases also have independent synthetic pixel checks. This is a
+bounded repair, not a dataset-wide
+accuracy estimate. The old 529-group partition was unavailable and is not
+treated as ground truth. Existing saved workspaces are not automatically
+recomputed by installing the new build or performing an ordinary rescan.
+
 ## Scaling and limitations
 
 Each image is decoded once per cached source signature, storing only about
 13.5 KiB of grayscale descriptor arrays per cached image (one whole-frame and
 two optional crop descriptors; no retained full raster). The file feature cache
-holds at most 256 entries. Only fixed representative hashes are indexed in
+holds at most 256 entries. Fixed-representative hashes (legacy loading) or all
+pending hashes (fresh grouping) are indexed in
 separate whole-frame and crop Hamming-distance BK-trees, at most three indexed
 entries per representative. A pair's covariance/pixel products are evaluated
 only after the hash, aspect and subject tests and a cheap SSIM upper bound.
@@ -104,7 +177,8 @@ identical burst, plus exact BK-tree search results against brute force.
 
 This is not a guarantee of subquadratic runtime for all possible inputs. Many
 colliding hashes with mutually incompatible grayscale structure can still
-require many representative comparisons. Grayscale/hash methods can miss
+require many pair comparisons. Complete cross-component checks for portrait
+edges can also have quadratic cost. Grayscale/hash methods can miss
 large crops, translations and rotations, or confuse color-only changes. The
 64×64 descriptor and fixed thresholds need evaluation on the user's real
 photography before any calibrated accuracy claims. Frozen benchmark inputs

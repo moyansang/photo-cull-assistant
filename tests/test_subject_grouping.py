@@ -27,7 +27,7 @@ def setup_visuals(monkeypatch, items, values):
         asset.subject_checked = True
 
 
-def test_fast_pose_change_splits_despite_identical_background(monkeypatch):
+def test_legacy_body_conflict_without_corroborated_scene_stays_separate(monkeypatch):
     items = assets(2)
     setup_visuals(monkeypatch, items, [visual('0'), visual('ffffffffffffffff')])
     grouping.assign_groups(items)
