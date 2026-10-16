@@ -666,7 +666,7 @@ class ReviewDialog(WorkspacePage):
             return
         selected = list(self.web_tree.selection())
         self._set_preparing(True)
-        self.status_var.set("正在准备网页联系表和清晰度细节图片…")
+        self.status_var.set("正在准备网页选片联系表与提示词…")
         self._report_progress(0, "正在准备网页选片")
         def work():
             try:
@@ -695,7 +695,7 @@ class ReviewDialog(WorkspacePage):
                 submission["status"] = "awaiting_response"
                 self.project.save()
                 self._refresh_web(submission["id"])
-            self.status_var.set(f"已复制完整提示词，请在网页上传目录中的 {len(images)} 张图片（联系表及清晰度细节）并粘贴提示词。")
+            self.status_var.set(f"已复制完整提示词，请在网页上传目录中的 {len(images)} 张选片图片并粘贴提示词。")
         except Exception as exc:
             messagebox.showerror("复制失败", str(exc), parent=self)
 
@@ -1500,7 +1500,7 @@ class ReviewDialog(WorkspacePage):
         flag={'keep':'推荐保留','reject':'推荐弃置','review':'待复核'}[decision['recommendation']]
         self.review_flag_var.set(f"{flag} · {source}")
         self.review_clarity_var.set(
-            "清晰度待确认" if decision['focus_review'] else
+            "人工确认结果" if decision['source']=='manual' else "清晰度待确认" if decision['focus_review'] else
             {"clear":"AI 复查清楚","blur":"AI 复查模糊"}.get(focus_result.get('status'),'本地已检查'))
         details = (f"当前结果：{source} · {decision['reason']}\n\n"
             f"AI 选片理由：{ai.get('reason') or '无有效 AI 回答'}\n"
@@ -1509,9 +1509,31 @@ class ReviewDialog(WorkspacePage):
         if focus_result:
             focus_label={"clear":"清楚","blur":"模糊","uncertain":"清晰度待确认"}[focus_result['status']]
             details+=f"\nAI 技术复核：{focus_label}\n复核理由：{focus_result.get('reason','')}"
-            for person in focus_result.get('participants',[]):
-                details+=f"\n人物 {person.get('participant','?')}：{person.get('status','uncertain')} · {person.get('reason','')}"
+            for index,person in enumerate(focus_result.get('participants',[]),1):
+                if focus_result.get('version') == 'focus-technical-v4':
+                    states={'clear':'清楚','mild':'轻微模糊','severe':'严重模糊','uncertain':'证据不足'}
+                    for part in person.get('parts', []):
+                        details+=f"\n人物 {index} · {part['location']}：{states[part['severity']]} · {part['reason']}"
+                else:
+                    details+=f"\n人物 {person.get('participant','?')}：{person.get('status','uncertain')} · {person.get('reason','')}"
+        policy=(photo.get('clarity_evidence') or {}).get('primary_quality') or {}
+        identities={person['id']:index for index,person in enumerate(policy.get('subjects',[]),1)}
+        parts={'face':'脸部/眼区','body':'身体','selection':'主体范围','measurement':'测量记录'}
+        labels={'primary_selection_unconfirmed':'尚未确认主要人物范围',
+                'measurement_confirmation_mismatch':'框选或照片已变化，需要重新扫描',
+                'weak_eye_and_face_detail':'脸部和眼区有充分的严重模糊证据',
+                'multiple_major_body_regions_severely_blurred':'多个主要身体部位有充分的严重模糊证据',
+                'body_evidence_missing':'身体尚未测量','face_evidence_missing':'脸部尚未测量',
+                'face_and_eyes_unassessed':'脸部及眼区尚未评估','body_association_unresolved':'人物与身体的对应关系有歧义'}
+        for issue in policy.get('issues', []):
+            codes=issue.get('reasons', []) or [issue.get('reason', '')]
+            reasons='；'.join(dict.fromkeys(labels.get(code,'当前证据不足，需检查原图') for code in codes))
+            name=identities.get(issue.get('subject_id'),'待确认')
+            details+=f"\n本地人物 {name} · {parts.get(issue.get('part'),'相关部位')}：{reasons}"
         if outdated:details+='\n旧 AI 结果保留为历史，不参与当前显示或导出；不会自动重新付费。'
+        if not focus_result and isinstance(photo.get('ai_focus_result'),dict):
+            old=photo['ai_focus_result']
+            details+=f"\n历史技术复核（未作为当前结论）：{old.get('status','')} · {old.get('reason','')}"
         self._set_details(details)
         self.update_idletasks()
         width = max(160, min(720, self.preview_label.winfo_width()))

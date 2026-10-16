@@ -19,7 +19,11 @@ from ai_cull_assistant.subject import SubjectFeatures, detail_features, selectio
 from ai_cull_assistant.yunet import FaceDetection
 
 
-def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
+def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path,monkeypatch):
+    prompts=[]
+    choice=[False]
+    monkeypatch.setattr('ai_cull_assistant.crop_dialog.messagebox.askyesno',
+                        lambda title,text,**kwargs:prompts.append(text) or choice[0])
     assets=[]
     for name in ('a','b'):
         path=tmp_path/f'{name}.jpg'
@@ -46,7 +50,14 @@ def test_photo_edit_navigation_manual_hide_save_cancel(tmp_path):
         assert d.offset_x.get()==.2
         assert detail_features(assets[0],d.global_settings()).face is not None
         d.save()
+        assert saved==[] and d.winfo_exists()  # declining never confirms or saves
+        choice[0]=True
+        d.save()
         settings=CropSettings.from_dict(asdict(saved[0]))
+        from ai_cull_assistant.primary_quality import confirmed_selection
+        assert prompts and '手动选中的人物' in prompts[0]
+        assert confirmed_selection(assets[0],settings) is not None
+        assert confirmed_selection(assets[1],settings) is None
         assert settings.for_asset(assets[0]).aspect_ratio=='1:1'
         assert settings.for_asset(assets[0]).offset_x_factor==.2
         assert settings.for_asset(assets[1]).scale_factor==1

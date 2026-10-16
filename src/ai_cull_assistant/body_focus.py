@@ -179,7 +179,7 @@ class _PoseEstimator:
         scale = np.array([rotated.shape[1] / 256, rotated.shape[0] / 256], dtype=np.float32)
         local_xy = (points[:, :2] - 128.0) * scale
         coord_rotation = cv2.getRotationMatrix2D((0, 0), angle, 1.0)[:, :2]
-        local_xy = local_xy @ coord_rotation.T
+        local_xy = local_xy @ coord_rotation
         rc = np.array([rotated.shape[1] / 2, rotated.shape[0] / 2, 1.0])
         inv = cv2.invertAffineTransform(rotation)
         original_center = rc @ inv.T

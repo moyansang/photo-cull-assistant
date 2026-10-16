@@ -39,11 +39,11 @@ def test_all_workspace_photos_compare_across_dates_folders_and_intervening_photo
     assert assets == original_order
 
 
-def test_fixed_representative_prevents_transitive_chaining(monkeypatch):
+def test_connected_grouping_keeps_transitive_chain(monkeypatch):
     assets = [make_asset(name) for name in 'ABC']
     hash_visuals(monkeypatch, {'A': 0, 'B': 0xff, 'C': 0xffff})
     assign_groups(assets)
-    assert [asset.group_id for asset in assets] == [1, 1, 2]
+    assert [asset.group_id for asset in assets] == [1, 1, 1]
 
 
 def test_shuffle_does_not_change_fresh_group_membership_or_ids(monkeypatch):
@@ -150,7 +150,7 @@ def test_thousands_use_candidate_filter_not_all_pairs_grayscale(monkeypatch):
     assert len({asset.group_id for asset in assets}) > 2400
 
 
-def test_long_identical_burst_compares_only_to_one_representative(monkeypatch):
+def test_connected_dense_burst_skips_already_connected_structure_checks(monkeypatch):
     assets = [make_asset(f'P{index:05}') for index in range(2500)]
     hash_visuals(monkeypatch, {asset.stem: 0 for asset in assets})
     stats = grouping.GroupingStats()

@@ -16,7 +16,7 @@ def test_web_summary_ignores_stale_technical_ai_and_respects_manual_priority():
     messages=[]
     fake=SimpleNamespace(_photos=lambda:rows,_on_log=messages.append)
     ReviewDialog._log_web_focus(fake,{'photo_ids':list(rows)})
-    assert messages==['网页回答已处理：有效 AI 技术复核 1 张；当前推荐弃置 0 张；清晰度待确认 1 张。']
+    assert messages==['网页回答已处理：有效 AI 技术复核 0 张；当前推荐弃置 0 张；清晰度待确认 2 张。']
 
 
 def test_headless_review_filter_uses_effective_current_decision():
@@ -28,9 +28,11 @@ def test_headless_review_filter_uses_effective_current_decision():
     fake.filter_var.get=lambda:'4～5 星'
     assert not ReviewDialog._matches_filter(fake,photo)
     fake.filter_var.get=lambda:'清晰度待确认'
-    assert not ReviewDialog._matches_filter(fake,photo)
+    assert ReviewDialog._matches_filter(fake,photo)  # old clear has no current binding
     fake.filter_var.get=lambda:'结果已过时'
     assert ReviewDialog._matches_filter(fake,photo)
     photo['final']={'confirmed':True,'rating':5,'pick_status':1}
+    from ai_cull_assistant.lightroom_results import effective_decision
+    assert effective_decision(photo)['focus_review'] is False
     fake.filter_var.get=lambda:'4～5 星'
     assert ReviewDialog._matches_filter(fake,photo)

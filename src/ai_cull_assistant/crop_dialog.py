@@ -667,7 +667,10 @@ class CropDialog(WorkspacePage):
         self.store_current()
         asset = self.assets[self.index]
         key = self.global_settings().key(asset)
-        from .body_subject_dialog import BodySubjectDialog
+        from .body_subject_dialog import BodySubjectDialog, effective_face_boxes
+        if effective_face_boxes(asset, self.current_entry()):
+            self.caption.configure(text='当前照片有人脸，仅编辑人脸框；身体选择保留供后台分析。')
+            return
         def apply(boxes):
             entry = self.edits.setdefault(key, {})
             if boxes is None:
@@ -906,13 +909,18 @@ class CropDialog(WorkspacePage):
                 self._loading = True
                 self.person.set(picker_value)
                 self._loading = False
-            self.candidates = candidates
+            self.candidates = ([] if entry.get('hidden') or entry.get('subjects_disabled')
+                               or ('selected_faces' in entry and not entry['selected_faces'])
+                               else candidates)
             if needs_person_review(asset, entry):
                 self.caption.configure(text=f'{self.index+1}/{len(self.assets)} · {asset.stem} · 多个人脸，待人工确认主体；点击要选择的人脸框')
             marked = original.copy()
             painter = ImageDraw.Draw(marked)
             from .body_subject_dialog import visible_body_boxes
-            for body_index, (bx, by, bw, bh) in enumerate(visible_body_boxes(asset, entry), 1):
+            display_bodies = visible_body_boxes(asset, entry, face_boxes=self._selected_boxes)
+            if display_bodies:
+                self.candidates = []
+            for body_index, (bx, by, bw, bh) in enumerate(display_bodies, 1):
                 bounds = (bx*original.width, by*original.height, (bx+bw)*original.width, (by+bh)*original.height)
                 painter.rectangle(bounds, outline='#cc77ff', width=max(3,original.width//300))
                 painter.text((bounds[0]+3,bounds[1]+3), f'B{body_index}', fill='#cc77ff')
@@ -943,7 +951,7 @@ class CropDialog(WorkspacePage):
                 color = "#ff9900" if face_box_key(box) == self._active_face_key else "#00aa66"
                 painter.rectangle(bounds, outline=color, width=max(3, original.width // 300))
                 painter.text((bounds[0] + 3, bounds[1] + 3), str(selected_index), fill=color)
-            head = (getattr(subject, 'head', None) or getattr(subject, 'face', None)) if subject else None
+            head = (getattr(subject, 'head', None) or getattr(subject, 'face', None)) if subject and not display_bodies else None
             if head:
                 bounds = crop_bounds(original.size, head, self.settings())
                 self._current_head = head
@@ -1065,7 +1073,7 @@ class CropDialog(WorkspacePage):
             entry = self.current_entry()
             entry.pop('manual_face', None)
             entry.pop('selected_faces', None)
-            entry.pop('selected_bodies', None)
+            # Restoring faces is not permission to reset hidden body selections.
             entry.pop('face_crops', None)
             entry.pop('preview_version', None)
             entry.pop('hidden', None)
@@ -1282,14 +1290,28 @@ class CropDialog(WorkspacePage):
             self.store_current()
             settings = self.global_settings()
             changed = self._changed_face_assets(settings)
+            from .primary_quality import CONFIRMATION_KEY, confirm_selection, selection_regions
+            candidates = list(changed)
+            if self.assets and all(asset is not self.assets[self.index] for asset in candidates):
+                candidates.append(self.assets[self.index])
+            confirmations = []
+            for asset in candidates:
+                entry = settings.photos.get(settings.key(asset), {})
+                if selection_regions(entry):
+                    confirmations.append((asset, confirm_selection(asset, settings)))
+                else:
+                    entry.pop(CONFIRMATION_KEY, None)
             reviewed = sum(1 for asset in changed if getattr(asset, 'ai_focus_result', None) is not None)
-            if reviewed and not messagebox.askyesno(
-                "保存人脸修改",
-                f"将保存 {len(changed)} 张照片的人脸修改，其中 {reviewed} 张已有 AI 清晰度复核结论。"
-                "保存后这些照片需重新复核；本次不会自动调用 API。确定保存？",
+            if (reviewed or confirmations) and not messagebox.askyesno(
+                "确认主要人物并保存",
+                f"将保存 {len(changed)} 张照片的修改，并确认 {len(confirmations)} 张照片中手动选中的人物为本次质量检查范围。"
+                "请确认已选中所有主要人物，并排除背景路人。自动候选、空框和无效框不算确认。"
+                f"其中 {reviewed} 张已有 AI 复核结果；修改后需重新复核，本次不会自动调用 API。确定保存？",
                 parent=self,
             ):
                 return
+            for asset, confirmation in confirmations:
+                settings.photos[settings.key(asset)][CONFIRMATION_KEY] = confirmation
             self.on_save(settings)
         except Exception as exc:
             messagebox.showerror("保存失败", str(exc), parent=self)

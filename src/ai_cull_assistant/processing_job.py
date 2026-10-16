@@ -10,6 +10,7 @@ from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from datetime import datetime
 import json
+import hashlib
 from pathlib import Path
 import shutil
 from threading import Event, get_ident
@@ -23,7 +24,7 @@ from . import contact_sheet as sheet
 from .ai_project import atomic_json
 from .crop_settings import CropSettings
 from .group_store import load_groups, save_groups, manual_group_ids
-from .grouping import assign_groups
+from .grouping import GroupingCancelled, assign_groups
 from .models import PhotoAsset
 from .preview import build_preview, ensure_preview
 from .scan_diagnostics import collect_diagnostics, DiagnosticReport
@@ -85,6 +86,14 @@ def _source_inventory(input_dir: Path) -> dict[str, list[int]]:
     return inventory
 
 
+def _group_store_snapshot(workspace: Path) -> str | None:
+    """Content generation, including absent stores, for a staged ROI regroup."""
+    try:
+        return hashlib.sha256((workspace / 'groups.json').read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return None
+
+
 def _asset_to_dict(asset: PhotoAsset) -> dict:
     value = asdict(asset)
     for key in ("display_path", "primary_path", "raw_path", "jpg_path", "preview_path"):
@@ -123,7 +132,7 @@ def _notify_log(callback: LogCallback | None, message: str) -> None:
         pass
 
 
-def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: Mapping) -> None:
+def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: Mapping, crop_settings=None) -> None:
     if not isinstance(reviewed, Mapping):
         raise ValueError("API 清晰度复核返回格式无效")
     status = reviewed.get("status")
@@ -133,6 +142,20 @@ def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: 
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("API 清晰度复核没有提供原因")
     result = dict(reviewed)
+    if getattr(asset, 'analysis_mode', 'portrait') != 'landscape':
+        from .focus_protocol import current_result
+        valid = current_result(result, asset, crop_settings or CropSettings())
+        if valid is None:
+            # Keep the original answer readable without treating an old blur
+            # or stale identity as a new severe verdict.
+            legacy = (result['legacy_result'] if set(result)=={'status','reason','legacy_result'}
+                      and result.get('reason')=='旧协议或过时的技术结果，需重新复核。' else result)
+            result = dict(status='uncertain', reason='旧协议或过时的技术结果，需重新复核。',
+                          legacy_result=legacy)
+            status, reason = result['status'], result['reason']
+        else:
+            result = valid
+            asset.focus_scope = valid['scope']
     evidence = screened.focus_evidence or {}
     body = evidence.get('body') or {}
     body_unresolved = body.get('state') not in {None, 'clear'} and (
@@ -153,8 +176,15 @@ def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: 
     asset.ai_focus_attempt = None
     asset.ai_focus_result = result
     asset.ai_focus_stale = False
-    asset.auto_rejected = status == "blur"
-    asset.screening_reason = f"ai_focus_{status}"
+    local_policy = evidence.get('primary_quality') or {}
+    from .primary_quality import confirmed_selection
+    confirmation = confirmed_selection(asset, crop_settings or CropSettings())
+    local_reject = (local_policy.get('recommendation') == 'reject'
+                    and confirmation is not None
+                    and local_policy.get('confirmation_digest') == confirmation['digest']
+                    and evidence.get('measurement_confirmation_digest') == confirmation['digest'])
+    asset.auto_rejected = status == "blur" or local_reject
+    asset.screening_reason = 'confirmed_primary_severe_blur' if local_reject else f"ai_focus_{status}"
     screened.rejected = asset.auto_rejected
     screened.reason = asset.screening_reason
 
@@ -165,13 +195,25 @@ def _focus_review_log(asset: PhotoAsset, reviewed: Mapping) -> str:
     return f"AI 清晰度复核 {asset.primary_path.name}：{labels[reviewed['status']]}；{reason}"
 
 
-def _valid_focus_result(value: object) -> bool:
-    return (
+def _valid_focus_result(value: object, asset=None, crops=None) -> bool:
+    readable = (
         isinstance(value, Mapping)
         and value.get("status") in {"clear", "blur", "uncertain"}
         and isinstance(value.get("reason"), str)
         and bool(value["reason"].strip())
     )
+    if not readable:
+        return False
+    if asset is not None and getattr(asset, 'analysis_mode', 'portrait') == 'landscape':
+        return True
+    from .focus_protocol import current_result, validate_result, FocusProtocolError
+    if asset is not None and crops is not None:
+        return current_result(value, asset, crops) is not None
+    try:
+        validate_result(value)
+        return True
+    except (FocusProtocolError, KeyError, TypeError, ValueError):
+        return False
 
 
 def _has_reliable_face(asset: PhotoAsset, crops: CropSettings) -> bool:
@@ -189,6 +231,9 @@ def _has_reliable_face(asset: PhotoAsset, crops: CropSettings) -> bool:
 def _has_reviewable_subject(asset: PhotoAsset, crops: CropSettings) -> bool:
     if getattr(asset, 'analysis_mode', 'portrait') == 'landscape':
         return not any(str(n).startswith('decode_error:') for n in asset.notes)
+    from .primary_quality import confirmed_selection
+    if confirmed_selection(asset, crops) is None:
+        return False
     if _has_reliable_face(asset, crops):
         return True
     from .subject import body_candidates
@@ -197,6 +242,16 @@ def _has_reviewable_subject(asset: PhotoAsset, crops: CropSettings) -> bool:
 
 def _active_path(workspace: Path) -> Path:
     return resolve_workspace_path(workspace, ".processing") / "active.json"
+
+
+def _refresh_focus_scope(asset, crops):
+    from .focus_protocol import make_scope, FocusProtocolError
+    try:
+        asset.focus_scope = make_scope(asset, crops)
+    except (FocusProtocolError, OSError, TypeError, ValueError):
+        asset.focus_scope = None
+    if getattr(asset, 'analysis_mode', 'portrait') == 'portrait':
+        asset.person_review_pending = asset.focus_scope is None
 
 
 def _existing_screening_results(workspace: Path, assets: list[PhotoAsset]) -> dict[str, dict]:
@@ -298,11 +353,13 @@ def _start_job(
         work_indices = [index for index, asset in enumerate(assets) if asset.ai_focus_dirty]
     elif stage == "focus":
         from .lightroom_results import focus_review_status
+        for asset in assets:
+            _refresh_focus_scope(asset, CropSettings.from_dict(_crop_dict(crops)))
         work_indices = [
             index for index, asset in enumerate(assets)
             if asset.ai_focus_dirty or getattr(asset, "ai_focus_stale", False)
             or (
-                not _valid_focus_result(asset.ai_focus_result)
+                not _valid_focus_result(asset.ai_focus_result, asset, CropSettings.from_dict(_crop_dict(crops)))
                 and focus_review_status(asset) is True
             )
         ]
@@ -311,6 +368,9 @@ def _start_job(
     else:
         work_indices = list(range(len(assets)))
     completed_photos = 0
+    preserve_groups = result is not None and (
+        not regroup or mode in {"scan", "focus", "sheets"}
+    )
     data = {
         "version": JOB_VERSION,
         "id": identifier,
@@ -323,6 +383,9 @@ def _start_job(
         "last_options": normalised,
         "created_crops": _crop_dict(crops),
         "regroup": bool(regroup),
+        "groups_snapshot": (
+            _group_store_snapshot(workspace_path) if mode == 'rescan' and regroup else None
+        ),
         "source_stats": _source_inventory(input_path),
         "assets": [_asset_to_dict(asset) for asset in assets],
         "completed_photos": completed_photos,
@@ -332,14 +395,13 @@ def _start_job(
             if result is not None else {}
         ),
         "work_indices": work_indices,
-        # Split follow-up stages always preserve the current asset group IDs.
-        # ``regroup`` remains meaningful only to the legacy all-in-one path.
-        "grouping_complete": result is not None and (mode is not None or not regroup),
+        # Only an explicitly requested rescan regroup changes staged memberships.
+        "grouping_complete": preserve_groups,
         "actual_grouping_preset": None,
         "group_source": (
-            "preserved" if result is not None and (mode is not None or not regroup) else None
+            "preserved" if preserve_groups else None
         ),
-        "groups_loaded_from_store": result is not None and (mode is not None or not regroup),
+        "groups_loaded_from_store": preserve_groups,
         "pages": [],
         "focus_review_errors": [],
         "focus_review_skipped": [],
@@ -566,6 +628,23 @@ class ProcessingJob:
                 _notify_log(on_log, f'扫描耗时统计：本次用时 {perf_counter()-started:.1f} 秒；'
                             + timing_summary(totals) + '。阶段耗时为累计工作时间，并行时可能大于实际用时。')
 
+    def _stage_rescan_preview(self, asset):
+        """Keep lazy preview regeneration by downstream analysis off live files.
+
+        Even a valid preview is copied for dirty ROI assets: the source may
+        change after validation and an analysis helper may call ensure_preview.
+        Its inferred cache directory must remain inside this transaction.
+        """
+        from .preview import PREVIEW_VERSION
+        existing = Path(asset.preview_path) if asset.preview_path else None
+        legacy = bool(existing and existing.parent.name == 'v04')
+        target = self.output / 'previews' / ('v04' if legacy else PREVIEW_VERSION) / (asset.stem + '.jpg')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if existing is not None and existing.is_file() and existing.resolve() != target.resolve():
+            shutil.copy2(existing, target)
+        asset.preview_path = target
+        ensure_preview(asset, self.output / 'previews')
+
     def _scan_one(self, asset, current, crops):
         # Each worker owns a copy; only the coordinator publishes mutable state.
         asset = deepcopy(asset)
@@ -579,6 +658,8 @@ class ProcessingJob:
                     override = crops.photos.get(crops.key(asset), {})
                     legacy = bool(override.get('manual_face') and override.get('preview_version', 'v04') == 'v04')
                     build_preview(asset, self.output / 'previews', **({'legacy_orientation': True} if legacy else {}))
+                elif self.mode == 'rescan' and self._data.get('regroup'):
+                    self._stage_rescan_preview(asset)
                 else:
                     ensure_preview(asset, self.workspace / 'previews')
                 asset.notes = [n for n in asset.notes if not str(n).startswith('decode_error:')]
@@ -754,6 +835,16 @@ class ProcessingJob:
         # later subject edit. Change it by starting a new full scan.
         current['analysis_mode'] = self._data.get('created_options', {}).get('analysis_mode', 'portrait')
         crop_settings = crops if isinstance(crops, CropSettings) else CropSettings.from_dict(crops or {})
+        self._validate_group_snapshot()
+        if self.mode == 'rescan' and self._data.get('regroup'):
+            # A resumed subject-edit task must not mix old screening checkpoints
+            # with a newer ROI selection or a different pairing configuration.
+            if (json.dumps(_crop_dict(crop_settings), sort_keys=True)
+                    != json.dumps(_crop_dict(CropSettings.from_dict(
+                        self._data.get('created_crops', {}))), sort_keys=True)
+                    or current['grouping_preset'] != self._data['created_options']['grouping_preset']):
+                self._invalidate(preserve_staging=True)
+                raise ProcessingJobError('框选或分组设置已变化，旧任务已取消；已保存结果保留，请重新扫描')
         self._validate_sources()
         self._data["last_options"] = current
         self._persist()
@@ -823,10 +914,14 @@ class ProcessingJob:
                     asset.ai_focus_stale = asset.ai_focus_result is not None
                     asset.ai_focus_attempt = None
                     asset.ai_focus_dirty = False
-                elif self.kind == "regenerate" and asset.ai_focus_result and not asset.ai_focus_dirty and not asset.ai_focus_stale:
+                elif self.kind == "regenerate" and asset.ai_focus_result:
                     # Layout/face edits reuse the completed AI verdict. They are
                     # not an instruction to make another paid review request.
-                    _apply_focus_review(asset, screened, asset.ai_focus_result)
+                    if (not asset.ai_focus_dirty and not asset.ai_focus_stale
+                            and _valid_focus_result(asset.ai_focus_result, asset, crop_settings)):
+                        _apply_focus_review(asset, screened, asset.ai_focus_result, crop_settings)
+                    else:
+                        asset.ai_focus_stale = True
                 else:
                     asset.ai_focus_result = None
                 self._data["screening_results"][key] = asdict(screened)
@@ -886,7 +981,7 @@ class ProcessingJob:
                             focus_profile,
                             resolve_workspace_path(self.workspace, ".analysis-cache"),
                         )
-                        _apply_focus_review(asset, screened, reviewed)
+                        _apply_focus_review(asset, screened, reviewed, crop_settings)
                         asset.ai_focus_dirty = False
                         self._data["screening_results"][key] = asdict(screened)
                         _notify_log(on_log, _focus_review_log(asset, asset.ai_focus_result))
@@ -907,7 +1002,8 @@ class ProcessingJob:
                         asset.ai_focus_stale = asset.ai_focus_result is not None
                         asset.ai_focus_attempt = "failed"
                         asset.ai_focus_dirty = False
-                        asset.auto_rejected = False
+                        from .lightroom_results import local_recommendation
+                        asset.auto_rejected = local_recommendation(asset) == 'reject'
                         # Preserve a current local pending reason.  A stale
                         # screening-results row may still contain an older
                         # completed verdict, so never restore that on failure.
@@ -917,7 +1013,7 @@ class ProcessingJob:
                             else "face_focus_uncertain"
                         )
                         screened.reason = pending_reason
-                        screened.rejected = False
+                        screened.rejected = asset.auto_rejected
                         asset.screening_reason = pending_reason
                         self._data["screening_results"][key] = asdict(screened)
                         errors = self._data.get("focus_review_errors", [])
@@ -941,9 +1037,16 @@ class ProcessingJob:
             return None
 
         if self._data.get('incremental') and not self._data.get('incremental_grouped'):
+            if not self._refresh_grouping_features(crop_settings, stop_event):
+                return None
             protected = manual_group_ids(self.workspace / "groups.json", collection_key=str(self.input_dir))
-            assign_groups(self.assets, current['grouping_preset'],
-                          preserve_existing=True, protected_group_ids=protected)
+            try:
+                assign_groups(self.assets, current['grouping_preset'],
+                              preserve_existing=True, protected_group_ids=protected,
+                              cancel_check=stop_event.is_set)
+            except GroupingCancelled:
+                self._checkpoint(progress)
+                return None
             self._data['group_source'] = self._stored_group_source()
             self._data['incremental_grouped'] = True
             self._checkpoint(progress)
@@ -960,13 +1063,20 @@ class ProcessingJob:
                     allow_partial=True,
                 )
             if not loaded or any(a.group_id <= 0 for a in self.assets):
+                if not self._refresh_grouping_features(crop_settings, stop_event):
+                    return None
                 with timed('grouping'):
                     protected = manual_group_ids(self.workspace / "groups.json", collection_key=str(self.input_dir))
                     if protected:
                         load_groups(self.assets, self.workspace / "groups.json",
                                     collection_key=str(self.input_dir), allow_partial=True)
-                    assign_groups(self.assets, current["grouping_preset"],
-                                  preserve_existing=not self._data.get("regroup"), protected_group_ids=protected)
+                    try:
+                        assign_groups(self.assets, current["grouping_preset"],
+                                      preserve_existing=not self._data.get("regroup"),
+                                      protected_group_ids=protected, cancel_check=stop_event.is_set)
+                    except GroupingCancelled:
+                        self._checkpoint(progress)
+                        return None
             self._data["group_source"] = self._stored_group_source() if loaded or protected else "auto"
             self._data["groups_loaded_from_store"] = loaded
             self._data["actual_grouping_preset"] = self._prior_grouping_preset(current) if loaded else current["grouping_preset"]
@@ -1047,6 +1157,25 @@ class ProcessingJob:
         if stop_event.is_set():
             return None
         return self._publish(progress)
+
+    def _refresh_grouping_features(self, crops: CropSettings, stop_event: Event) -> bool:
+        """Use one ROI schema for every participant, including untouched photos.
+
+        These are job-owned assets. A partial refresh on stop/failure is never
+        published, and is recomputed on resume before pairing can begin.
+        """
+        from .roi_features import refresh_asset_roi_features
+        self._validate_sources()
+        for asset in self.assets:
+            if stop_event.is_set():
+                return False
+            if any(str(note).startswith('decode_error:') for note in asset.notes):
+                asset.subject_features = None
+                asset.subject_checked = False
+                continue
+            with timed('grouping_features'):
+                refresh_asset_roi_features(asset, crops)
+        return not stop_event.is_set()
 
     def _prior_grouping_preset(self, current: dict) -> str:
         path = self.workspace / "processing-settings.json"
@@ -1141,13 +1270,13 @@ class ProcessingJob:
             if not (self.output / page["path"]).is_file():
                 raise ProcessingJobError("已完成的联系表文件丢失")
 
-    def _invalidate(self) -> None:
+    def _invalidate(self, *, preserve_staging: bool = False) -> None:
         if publication_transaction.pending(self.root):
             raise publication_transaction.PublicationRecoveryError(
                 "未完成发布不能清除；保留事务文件")
         processing_root = resolve_workspace_path(self.workspace, ".processing")
         try:
-            if self.root.resolve().parent == processing_root.resolve():
+            if not preserve_staging and self.root.resolve().parent == processing_root.resolve():
                 shutil.rmtree(self.root, ignore_errors=True)
         finally:
             active = _active_path(self.workspace)
@@ -1158,7 +1287,19 @@ class ProcessingJob:
             if value.get("job_id") == self._data.get("id"):
                 active.unlink(missing_ok=True)
 
+    def _validate_group_snapshot(self) -> None:
+        if self.mode != 'rescan' or not self._data.get('regroup'):
+            return
+        # A grouping checkpoint may predate a manual edit through another
+        # entry point. Keeping groups.json alone would still publish stale
+        # memberships into scan-session.json. Refuse the entire old task.
+        if ('groups_snapshot' not in self._data
+                or self._data['groups_snapshot'] != _group_store_snapshot(self.workspace)):
+            self._invalidate(preserve_staging=True)
+            raise ProcessingJobError('已保存分组发生变化，旧任务已取消；已保存结果保留，请重新扫描')
+
     def _publish(self, progress: ProgressCallback | None) -> ScanResult:
+        self._validate_group_snapshot()
         output = self.output
         publish_staged_previews = (output / 'previews').is_dir()
         screening = {
@@ -1168,7 +1309,16 @@ class ProcessingJob:
         }
         if self.mode != "sheets":
             save_screening_results(screening, output / "screening_results.json")
-        if self.mode == "legacy" or self.mode == "scan":
+        publish_groups = (
+            self.mode == "scan"
+            or (self.mode == "legacy" and (self.kind == "scan" or self._data.get("regroup")))
+            or (self.mode == "rescan" and self._data.get("regroup"))
+        )
+        # Staging must not bypass save_groups' manual-store protection. Keep
+        # the entire saved manual store, including members absent this run.
+        if manual_group_ids(self.workspace / "groups.json", collection_key=str(self.input_dir)):
+            publish_groups = False
+        if publish_groups:
             save_groups(
                 self.assets,
                 output / "groups.json",
@@ -1190,7 +1340,7 @@ class ProcessingJob:
             ])
         elif publish_staged_previews:
             destinations.append((output / 'previews', self.workspace / 'previews' / self._data['id']))
-        if self.mode == "scan" or (self.mode == "legacy" and (self.kind == "scan" or self._data.get("regroup"))):
+        if publish_groups:
             destinations.append((output / "groups.json", self.workspace / "groups.json"))
 
         original_assets = [_asset_to_dict(asset) for asset in self.assets]

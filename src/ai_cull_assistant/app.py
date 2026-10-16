@@ -996,9 +996,12 @@ class App(EvidenceCleanupMixin, tk.Tk):
         focus_work_exists = True
         if mode == "focus" and self.scan_result:
             from .lightroom_results import focus_review_status
+            from .processing_job import _valid_focus_result, _refresh_focus_scope
+            for asset in self.scan_result.assets:
+                _refresh_focus_scope(asset, crops)
             focus_work_exists = any(
                 asset.ai_focus_dirty or getattr(asset, "ai_focus_stale", False)
-                or (asset.ai_focus_result is None and focus_review_status(asset) is True)
+                or (not _valid_focus_result(asset.ai_focus_result, asset, crops) and focus_review_status(asset) is True)
                 for asset in self.scan_result.assets
             )
         if focus_errors_skipped:
@@ -1410,8 +1413,17 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self._mount_workspace_page('faces', CropDialog(self._page_host, assets, self.crop_settings, self._save_crop_settings, embedded=True))
 
     def _save_crop_settings(self, settings: CropSettings) -> None:
+        # One saved batch is one job. Do not let a second edit replace the ROI
+        # snapshot while an earlier worker can still publish its result.
+        if (getattr(self, "_processing_busy", False)
+                or (hasattr(self, "_review_busy") and self._review_busy())
+                or getattr(getattr(self, "updates", None), "busy", False)):
+            raise RuntimeError("当前任务尚未完成，请停止并等待处理结束后再保存框选。")
+        settings = copy.deepcopy(settings)
         if not self._sync_selected_workspace():
             return
+        if getattr(self, "_processing_job", None) is not None:
+            raise RuntimeError("有尚未完成的处理任务，请先继续并完成该任务，再保存新的框选。")
         self._workspace_cleared = False
         if self._active_input and self._active_workspace:
             save_workspace_preferences(
@@ -1435,13 +1447,16 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self.detection_confidence_var.set(f"{settings.detection_confidence:.2f}")
         if self.scan_result:
             self._set_sheets_ready(False)
-            self._log("人脸设置已保存，正在重新扫描修改过的图片。")
-            self._start_processing(mode="rescan")
+            self._log("框选设置已保存，正在刷新分析并重新判断自动分组；人工分组保持不变。")
+            self._start_processing(mode="rescan", regroup=True)
         else:
             self._log("人脸设置已保存，将在下次扫描时应用。")
             self.next_step_var.set("推荐下一步：扫描图片")
 
     def _open_group_editor(self) -> None:
+        if getattr(self, "_processing_busy", False) or getattr(self, "_processing_job", None) is not None:
+            messagebox.showinfo("任务尚未完成", "请先完成当前处理任务，再编辑人工分组。", parent=self)
+            return
         if self.updates.busy:
             messagebox.showinfo("提示", "请等待更新完成。", parent=self)
             return
@@ -1456,6 +1471,8 @@ class App(EvidenceCleanupMixin, tk.Tk):
         def save_changes() -> None:
             if not self.scan_result:
                 return
+            if getattr(self, "_processing_busy", False) or getattr(self, "_processing_job", None) is not None:
+                raise RuntimeError("处理任务尚未完成，不能覆盖其人工分组快照。")
             persist_manual_groups(self.scan_result)
             self._workspace_cleared = False
             self._set_sheets_ready(False)
@@ -1639,20 +1656,19 @@ class App(EvidenceCleanupMixin, tk.Tk):
             self._restore_processing_job()
 
     def _warn_unconfirmed_people(self):
-        from .participant_review import needs_person_review
+        from .primary_quality import confirmed_selection
         assets = self.scan_result.assets if self.scan_result else []
-        pending = [a for a in assets if needs_person_review(a, self.crop_settings.photos.get(self.crop_settings.key(a), {}))]
+        pending = [a for a in assets if getattr(a,'analysis_mode','portrait')=='portrait'
+                   and confirmed_selection(a,self.crop_settings) is None]
         if not pending:
             return False
-        messagebox.showinfo('人物待确认', f'{len(pending)} 张照片有多个人脸，尚未确认主体。请进入“检测/调整人脸框”，使用“下一张未标记”选择所有合影成员，再重新扫描修改过的图片。', parent=self)
+        messagebox.showinfo('人物待确认', f'{len(pending)} 张照片的主要人物范围尚未确认或已变化。请进入“检测/调整人脸框”，手动选择主要人物并保存确认，再进行技术复核。', parent=self)
         self.next_step_var.set('推荐下一步：检测/调整人脸框 → 确认合影主体')
         return True
 
     def _open_ai_review(self):
         if getattr(self, '_cleaning_evidence', False):
             messagebox.showinfo('正在清理证据', '请等待证据图片处理结束后再切换页面或任务。', parent=self)
-            return
-        if self._warn_unconfirmed_people():
             return
         if self._show_workspace_page('review'):
             return

@@ -13,7 +13,8 @@ def test_confirmation_selection_and_draft_labels():
     assert '人物 2：明显模糊' in participant_labels(a,entry,entry,2)[1]
     assert all('待重新扫描' in s for s in participant_labels(a,entry,{},2))
     a.ai_focus_result={'participants':[{'participant':1,'status':'uncertain'},{'participant':2,'status':'clear'}]}
-    assert '待确认（AI）' in participant_labels(a,entry,entry,2)[0]
+    assert '清晰（本地）' in participant_labels(a,entry,entry,2)[0]
+    assert a.ai_focus_result['participants'][0]['status']=='uncertain'  # retained legacy history
 
 
 def test_unconfirmed_local_and_api_do_not_process(tmp_path, monkeypatch):
@@ -23,12 +24,14 @@ def test_unconfirmed_local_and_api_do_not_process(tmp_path, monkeypatch):
     from ai_cull_assistant.ai_focus import review_focus
     from ai_cull_assistant.ai_project import ReviewProject
     a=PhotoAsset('p',tmp_path/'p.jpg',tmp_path/'p.jpg',None,tmp_path/'p.jpg',datetime.now(),'.jpg')
+    from PIL import Image
+    Image.new('RGB',(200,200),'gray').save(a.primary_path)
     a.subject_features=NS(candidate_count=2)
     local=assess_asset_focus(a,crop_settings=CropSettings())
     assert local.reason=='person_selection_pending' and not local.rejected
-    assert not ReviewProject._asset_is_admitted(a)
-    assert not ReviewProject._photo_is_admitted({'person_review_pending':True,'clarity_version':'old'})
-    with pytest.raises(ValueError,match='人物待确认'):
+    assert ReviewProject._asset_is_admitted(a)  # whole-frame aesthetics stays independent
+    assert ReviewProject._photo_is_admitted({'person_review_pending':True,'clarity_version':'old'})
+    with pytest.raises(ValueError,match='确认主要主体'):
         review_focus(a,CropSettings(),{},tmp_path)
 
 def test_app_guard_blocks_unconfirmed_and_accepts_explicit_choice(tmp_path, monkeypatch):
@@ -37,6 +40,8 @@ def test_app_guard_blocks_unconfirmed_and_accepts_explicit_choice(tmp_path, monk
     from ai_cull_assistant.app import App
     from ai_cull_assistant import app as module
     a=PhotoAsset('p',tmp_path/'p.jpg',tmp_path/'p.jpg',None,tmp_path/'p.jpg',datetime.now(),'.jpg')
+    from PIL import Image
+    Image.new('RGB',(200,200),'gray').save(a.primary_path)
     a.subject_features=NS(candidate_count=2)
     notices=[]; steps=[]
     monkeypatch.setattr(module.messagebox,'showinfo',lambda *args,**kwargs:notices.append(args))
@@ -45,4 +50,7 @@ def test_app_guard_blocks_unconfirmed_and_accepts_explicit_choice(tmp_path, monk
     assert App._warn_unconfirmed_people(fake)
     assert len(notices)==1 and '确认合影主体' in steps[0]
     settings.photos[settings.key(a)]={'selected_faces':[[.1,.1,.2,.2]]}
+    assert App._warn_unconfirmed_people(fake)  # the saved field alone is not confirmation
+    from quality_cases import confirmed_settings
+    confirmed_settings(a,settings)
     assert not App._warn_unconfirmed_people(fake)

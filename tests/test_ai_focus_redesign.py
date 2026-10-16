@@ -6,6 +6,7 @@ from ai_cull_assistant import ai_focus
 from ai_cull_assistant.models import PhotoAsset
 from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.ai_api import ApiError
+from quality_cases import confirmed_settings, protocol_reply
 
 PROFILE={'id':'test','name':'Test','base_url':'https://example.test/v1','model':'test'}
 
@@ -35,16 +36,18 @@ def test_landscape_review_has_full_overview_distributed_native_details_no_faces(
 def test_body_fallback_can_review_body_without_claiming_eyes(tmp_path,monkeypatch):
     asset=photo(tmp_path,'portrait')
     settings=CropSettings(photos={CropSettings().key(asset):{'selected_bodies':[[.1,.1,.4,.8]]}})
+    confirmed_settings(asset,settings)
     monkeypatch.setattr(ai_focus,'detail_features',lambda *a:pytest.fail('manual body-only scope must not detect a background face'))
     captured={}
     def call(profile,prompt,images):
         captured['prompt']=prompt
-        return {'text':json.dumps({'photo_identity':'source','status':'clear','reason':'body edges clear; eyes unavailable'})}
+        return protocol_reply(prompt)
     monkeypatch.setattr(ai_focus,'call_model',call)
     result=ai_focus.review_focus(asset,settings,PROFILE,tmp_path/'cache')
-    assert result['status']=='clear'
-    assert '不能用身体清晰替代眼区证据' in captured['prompt']
-    assert result['body_box']==[.1,.1,.4,.8]
+    assert result['status']=='uncertain'
+    assert '身体清楚不能证明脸或眼睛清楚' in captured['prompt']
+    assert result['participants'][0]['parts'][0]['severity']=='uncertain'
+    assert result['participants'][0]['parts'][1]['severity']=='clear'
     assert result['participants'][0]['subject_id'].startswith('body:')
 
 
@@ -64,19 +67,19 @@ def test_multiple_selected_bodies_keep_each_result_and_do_not_reject_whole_photo
     asset=photo(tmp_path,'portrait')
     settings=CropSettings(photos={CropSettings().key(asset):{'selected_faces':[],
         'selected_bodies':[[.05,.05,.4,.9],[.55,.05,.4,.9]]}})
+    confirmed_settings(asset,settings)
     monkeypatch.setattr(ai_focus,'detail_features',lambda *a:None)
     seen=[]
     def call(profile,prompt,images):
         index=len(seen)+1;seen.append(prompt)
-        return {'text':json.dumps({'photo_identity':f'source · P{index}',
-            'status':'clear' if index==1 else 'blur','reason':'body edge evidence'})}
+        return protocol_reply(prompt,'clear' if index==1 else 'severe')
     monkeypatch.setattr(ai_focus,'call_model',call)
     result=ai_focus.review_focus(asset,settings,PROFILE,tmp_path/'cache')
-    assert result['status']=='uncertain'
-    assert [row['status'] for row in result['participants']]==['clear','blur']
-    assert all(row['evidence_kind']=='body' and not row['eye_evidence'] for row in result['participants'])
+    assert result['status']=='blur'
+    assert [row['parts'][1]['severity'] for row in result['participants']]==['clear','severe']
+    assert all(row['parts'][0]['severity']=='uncertain' for row in result['participants'])
     assert len(seen)==2
-    assert [row['body_box'] for row in result['participants']]==[[.05,.05,.4,.9],[.55,.05,.4,.9]]
+    assert all(row['subject_id'].startswith('body:') for row in result['participants'])
     assert len({row['subject_id'] for row in result['participants']})==2
 
 

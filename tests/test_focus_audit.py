@@ -53,7 +53,7 @@ def test_eye_crops_keep_exact_source_pixels(tmp_path,monkeypatch):
 
 def test_body_prompt_schema_and_conflicting_observations():
     prompt = ai_focus._prompt('photo', True, 2)
-    assert '最后 2 张' in prompt
+    assert '附带的 2 张' in prompt
     schema = json.loads(next(line for line in prompt.splitlines() if line.startswith('{')))
     assert 'body_motion' in schema['observations']
     schema.update(status='clear', reason='脸清楚')

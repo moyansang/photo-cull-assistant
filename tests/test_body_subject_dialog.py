@@ -75,22 +75,28 @@ def test_landscape_never_requires_subject_confirmation_from_old_face_data():
     assert not needs_person_review(a,{})
 
 
-def test_body_labels_match_valid_ai_by_box_not_mixed_participant_position():
+def test_body_labels_match_valid_ai_by_box_not_mixed_participant_position(tmp_path):
     from ai_cull_assistant.participant_review import body_participant_labels
     boxes=[[.1,.1,.3,.7],[.6,.1,.3,.7]]
     entry={'selected_bodies':boxes}
-    a=NS(ai_focus_dirty=False,ai_focus_stale=False,
-         ai_focus_result={'status':'uncertain','participants':[
-             {'evidence_kind':'face','participant':1,'status':'blur'},
-             {'evidence_kind':'body','body_box':boxes[1],'participant':2,'status':'blur'},
-             {'evidence_kind':'body','body_box':boxes[0],'participant':3,'status':'clear'}]},
-         clarity_evidence={'body_results':[{'evidence_kind':'body','box':box,'state':'uncertain'} for box in boxes]})
+    from test_ai_focus_redesign import photo
+    from quality_cases import technical_result
+    from ai_cull_assistant.crop_settings import CropSettings, face_box_key
+    from ai_cull_assistant import focus_protocol
+    a=photo(tmp_path,'portrait')
+    settings=CropSettings(photos={CropSettings().key(a):entry})
+    a.clarity_evidence={'body_results':[{'evidence_kind':'body','box':box,'state':'uncertain'} for box in boxes]}
+    result=technical_result(a,settings)
+    for person in result['participants']:
+        if person['subject_id']=='body:'+face_box_key(boxes[1]):
+            person['parts'][1]['severity']='severe'
+    a.ai_focus_result=focus_protocol.assemble_result(result['scope'],result['participants'])
     labels=body_participant_labels(a,entry,entry)
-    assert '身体细节清晰（AI' in labels[0] and '身体明显模糊（AI' in labels[1]
+    assert '身体细节清晰（AI' in labels[0] and '身体严重模糊（AI' in labels[1]
     a.ai_focus_stale=True
     assert all('身体待复核（本地' in value for value in body_participant_labels(a,entry,entry))
     a.ai_focus_stale=False
-    a.ai_focus_result['participants'][1].pop('body_box')
+    a.ai_focus_result['participants'][1]['parts'].pop()  # malformed new evidence is not displayed as valid
     assert '身体待复核（本地' in body_participant_labels(a,entry,entry)[1]
 
 

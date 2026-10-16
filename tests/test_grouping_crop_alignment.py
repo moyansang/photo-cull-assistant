@@ -40,12 +40,16 @@ def test_crop_fallback_is_symmetric_and_keeps_fixed_representative(tmp_path, rev
     assert stats.crop_matches==1
 
 
-def test_fallback_does_not_chain_two_successive_crops(tmp_path):
+def test_connected_policy_chains_successive_crop_edges(tmp_path):
     original=scene();trimmed=crop(original)
     a=asset(tmp_path,'A',original);b=asset(tmp_path,'B',trimmed);c=asset(tmp_path,'C',crop(trimmed))
     g.assign_groups([c,b,a])
-    assert a.group_id==b.group_id!=c.group_id
+    assert a.group_id==b.group_id==c.group_id
     assert b.grouping_anchor_id==g.source_photo_id(a)
+    # The preserved legacy policy still rejects the transitive second crop.
+    for item in (a,b,c):item.group_id=0;item.grouping_anchor_id=None
+    g._assign_groups_fixed_legacy([c,b,a])
+    assert a.group_id==b.group_id!=c.group_id
 
 
 def test_incremental_crop_addition_respects_manual_protection(tmp_path):
@@ -204,7 +208,7 @@ def test_crop_batch_matches_scalar_near_structure_threshold(direction):
             assert actual == expected
 
 
-def test_crop_enabled_collision_assignment_batches_bounded_scratch(monkeypatch):
+def test_legacy_crop_collision_assignment_batches_bounded_scratch(monkeypatch):
     # Unlike the legacy 64px fixture, these descriptors carry both crop views.
     rng = np.random.default_rng(983)
     visuals = {}
@@ -228,7 +232,7 @@ def test_crop_enabled_collision_assignment_batches_bounded_scratch(monkeypatch):
     monkeypatch.setattr(g, '_batch_structure_matches', record_size)
     assets = [_stub_asset(name) for name in visuals]
     stats = g.GroupingStats()
-    g.assign_groups(assets, stats=stats)
+    g._assign_groups_fixed_legacy(assets, stats=stats)
     assert len({item.group_id for item in assets}) == len(assets)
     assert stats.crop_candidates == 96 * 95 // 2
     assert stats.structure_comparisons == 5 * 96 * 95 // 2
@@ -236,6 +240,6 @@ def test_crop_enabled_collision_assignment_batches_bounded_scratch(monkeypatch):
     # Verify the optimized path preserves full production membership/anchors.
     monkeypatch.setattr(g, '_first_crop_matching_representative', _scalar_crop_first)
     scalar_assets = [_stub_asset(name) for name in reversed(visuals)]
-    g.assign_groups(scalar_assets)
+    g._assign_groups_fixed_legacy(scalar_assets)
     assert {item.stem: (item.group_id, item.grouping_anchor_id) for item in assets} == {
         item.stem: (item.group_id, item.grouping_anchor_id) for item in scalar_assets}

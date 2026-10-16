@@ -9,6 +9,7 @@ from ai_cull_assistant.ai_api import ApiError
 from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.models import PhotoAsset
 from ai_cull_assistant.focus_image_cache import cached_focus_images, clear_focus_images
+from quality_cases import confirmed_settings
 
 
 def setup(tmp_path, monkeypatch):
@@ -27,10 +28,11 @@ def test_api_failure_retry_and_different_provider_reuse_native_images(tmp_path, 
     profile = dict(id='test', model='vision', base_url='https://example.test')
     def fail(*args): raise ApiError('timeout')
     monkeypatch.setattr(ai_focus, 'call_model', fail)
+    settings=confirmed_settings(asset,CropSettings(),faces=[list(subject.face)])
     for model in ('vision', 'other-vision'):
         profile['model'] = model
         with pytest.raises(ApiError):
-            ai_focus.review_focus(asset, CropSettings(), profile, cache)
+            ai_focus.review_focus(asset, settings, profile, cache)
     assert len(decodes) == 1
     # Manual face edits invalidate just this geometry.
     cached_focus_images(asset, CropSettings(), cache, (.1,.1,.2,.2), subject=subject)

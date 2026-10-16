@@ -34,11 +34,11 @@ def test_fast_pose_change_splits_despite_identical_background(monkeypatch):
     assert [a.group_id for a in items] == [1, 2]
 
 
-def test_anchor_prevents_gradual_drift(monkeypatch):
+def test_connected_policy_keeps_gradual_transitive_chain(monkeypatch):
     items = assets(3)
     setup_visuals(monkeypatch, items, [visual('0'), visual('ff'), visual('ffff')])
     grouping.assign_groups(items)
-    assert [a.group_id for a in items] == [1, 1, 2]
+    assert [a.group_id for a in items] == [1, 1, 1]
 
 
 def test_same_pose_not_split_by_count(monkeypatch):

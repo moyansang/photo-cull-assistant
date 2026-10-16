@@ -11,6 +11,7 @@ from ai_cull_assistant.ai_project import ReviewProject, photo_id, technical_fing
 from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.lightroom_results import effective_decision, current_focus, current_selection
 from ai_cull_assistant.models import PhotoAsset
+from quality_cases import technical_result
 
 
 def make_project(tmp_path):
@@ -27,8 +28,7 @@ def seed(project,asset,crops):
     row=project.data['photos'][photo_id(asset)]
     row['ai']={'rating':4,'suggest_reject':False,'reason':'composition','review_items':[],
                'fingerprint':row['fingerprint']}
-    asset.ai_focus_result={'status':'clear','reason':'native detail','source':'api',
-                          'technical_fingerprint':technical_fingerprint(asset,crops)}
+    asset.ai_focus_result=technical_result(asset,crops)
 
 
 def test_effective_manual_survives_local_rejection_ai_blur_and_pending():
@@ -39,7 +39,7 @@ def test_effective_manual_survives_local_rejection_ai_blur_and_pending():
     assert (result['source'],result['rating'],result['pick_status'])==('manual',5,1)
 
 
-@pytest.mark.parametrize('state,expected,pick',[('clear','keep',1),('severe_blur','reject',-1),('uncertain','review',None)])
+@pytest.mark.parametrize('state,expected,pick',[('clear','review',None),('severe_blur','review',None),('uncertain','review',None)])
 def test_local_never_manufactures_stars(state,expected,pick):
     value=effective_decision({'clarity_evidence':{'state':state}})
     assert (value['recommendation'],value['pick_status'],value['rating'])==(expected,pick,None)
@@ -84,7 +84,7 @@ def test_subject_change_invalidates_photo_focus_and_entire_group_not_other_group
     project.refresh(assets,crops)
     first,second,third=(project.data['photos'][photo_id(asset)] for asset in assets)
     assert current_focus(first) is None and first['focus_stale']
-    assert first['ai_focus_result']['reason']=='native detail'
+    assert first['ai_focus_result']['participants'][0]['parts'][0]['reason']=='native detail'
     assert current_focus(second) is not None and current_focus(third) is not None
     assert first['stale'] and second['stale'] and not third['stale']
     reloaded=ReviewProject(project.workspace);reloaded.refresh(assets,crops)
@@ -108,7 +108,7 @@ def test_selection_does_not_require_paid_focus_and_web_does_not_bundle_it(tmp_pa
     monkeypatch.setattr('ai_cull_assistant.ai_api.call_model',lambda *a:pytest.fail('no automatic paid calls'))
     task=project.create_task(assets,crops,{})
     assert sum(len(batch['photo_ids']) for batch in task['batches'])==3
-    assert '技术证据' in task['batches'][0]['prompt']
+    assert '不实施清晰度质量判定' in task['batches'][0]['prompt']
     assert '完整画面' in task['batches'][0]['prompt']
     submission=project.create_web_submission(task,[b['id'] for b in task['batches']])
     assert submission['focus_photo_ids']==[] and submission['focus_image_map']=={}

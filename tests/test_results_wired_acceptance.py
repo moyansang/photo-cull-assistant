@@ -15,6 +15,7 @@ from ai_cull_assistant.crop_settings import CropSettings
 from ai_cull_assistant.lightroom_results import current_focus, current_selection
 from ai_cull_assistant.processing_job import start_job
 from ai_cull_assistant.workflow import persist_manual_groups
+from quality_cases import confirmed_settings, protocol_reply
 
 PROFILE={'id':'synthetic-acceptance','name':'Synthetic acceptance',
          'base_url':'https://example.invalid/v1','model':'test-model'}
@@ -45,8 +46,7 @@ def test_scan_payload_response_manual_export_crop_regroup_wired(tmp_path,monkeyp
         payload=json.loads(request.data);requests.append(payload)
         prompt=payload['messages'][0]['content'][0]['text']
         if '"photo_identity"' in prompt:
-            identity=json.loads(re.search(r'"photo_identity":("(?:[^"\\]|\\.)*")',prompt).group(1))
-            answer={'photo_identity':identity,'status':'clear','reason':'Synthetic native edge evidence'}
+            answer=json.loads(protocol_reply(prompt)['text'])
         else:
             task_id=re.search(r'"task_id":"([0-9a-f]+)"',prompt).group(1)
             batch_id=re.search(r'"batch_id":"(B\d+)"',prompt).group(1)
@@ -64,6 +64,15 @@ def test_scan_payload_response_manual_export_crop_regroup_wired(tmp_path,monkeyp
     assert len(result.assets)==3 and all(a.clarity_evidence for a in result.assets)
     assets={a.stem:a for a in result.assets}
     assert assets['A'].group_id==assets['B'].group_id
+    # Explicitly model the human save/confirm action before the automatic
+    # local rescan. Merely having a legacy manual_face is insufficient.
+    for name in ('A','B'):
+        confirmed_settings(assets[name],crops)
+        assets[name].ai_focus_dirty=True
+    result=start_job(source,workspace,options,crops,result=result,mode='rescan').run(
+        options,crops,Event(),None,focus_profile=PROFILE)
+    assets={a.stem:a for a in result.assets}
+    assert requests==[]
     persist_manual_groups(result)
     project=ReviewProject(workspace)
 
@@ -77,9 +86,9 @@ def test_scan_payload_response_manual_export_crop_regroup_wired(tmp_path,monkeyp
         return task,batch,prompt,paths
 
     task,batch,prompt,paths=select()
-    assert len(requests)==1 and '技术证据（非星级）' in prompt and '"local"' in prompt
-    assert '完整画面' in prompt and '不要求购买另一阶段' in prompt
-    assert '"ai_technical": null' in prompt
+    assert len(requests)==1 and '不实施清晰度质量判定' in prompt
+    assert '完整画面' in prompt and '"local"' not in prompt
+    assert 'ai_technical' not in prompt
     content=requests[0]['messages'][0]['content']
     assert len(content)==1+len(paths), 'Selection sends full-frame sheets, no forced technical package'
     for item,path in zip(content[1:],paths):
@@ -107,6 +116,7 @@ def test_scan_payload_response_manual_export_crop_regroup_wired(tmp_path,monkeyp
     before_change=len(requests)
     old_focus=copy.deepcopy(assets['B'].ai_focus_result)
     crops.photos[crops.key(assets['B'])]['manual_face']=[.25,.20,.4,.5]
+    confirmed_settings(assets['B'],crops)
     assets['B'].ai_focus_dirty=True
     result=start_job(source,workspace,options,crops,result=result,mode='rescan').run(
         options,crops,Event(),None,focus_profile=PROFILE)
@@ -133,7 +143,7 @@ def test_scan_payload_response_manual_export_crop_regroup_wired(tmp_path,monkeyp
     assert len(requests)==before_group
     a,b=(project.data['photos'][photo_id(assets[name])] for name in ('A','B'))
     assert current_selection(a) is None and current_selection(b) is None
-    assert current_focus(b)['status']=='clear'
+    assert current_focus(b)['status']=='uncertain'  # face-only evidence cannot establish limb clarity
     assert len(b['history'])>=2 and b['focus_history']==[old_focus]
     rows={row['filename']:row for row in json.loads(project.export_final().read_text(encoding='utf-8'))['photos']}
     assert rows['A.png']['rating']==5 and rows['A.png']['pick_status']==1

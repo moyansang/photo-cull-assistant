@@ -135,9 +135,9 @@ def test_manual_body_editor_to_settings_save_rescan_and_results(tmp_path,monkeyp
            detection_confidence_var=NS(set=lambda value:None),_set_sheets_ready=lambda value:None,_log=lambda value:None)
     app._save_session=lambda:save_session(app.scan_result)
     work={}
-    def run(mode):
-        assert mode=='rescan'
-        job=start_job(source,workspace,options,app.crop_settings,result=app.scan_result,mode=mode)
+    def run(mode, regroup=False):
+        assert mode=='rescan' and regroup
+        job=start_job(source,workspace,options,app.crop_settings,result=app.scan_result,mode=mode,regroup=regroup)
         work['indices']=job._data['work_indices']
         app.scan_result=job.run(options,app.crop_settings,Event(),None)
     app._start_processing=run
@@ -185,7 +185,8 @@ def test_public_screening_links_manual_face_to_manually_selected_body(tmp_path,m
     assert evidence['body_results'][0]['associated_face']==1
     assert evidence['body_results'][0]['association']=='pose_head_overlap'
     assert evidence['body_results'][0]['eye_evidence'] is False
-    assert asset.local_recommendation=='keep'
+    assert asset.local_recommendation=='review'
+    assert evidence['primary_quality']['issues'][0]['reason']=='primary_selection_unconfirmed'
 
 
 def test_landscape_subject_page_guard_precedes_old_cached_page(monkeypatch):

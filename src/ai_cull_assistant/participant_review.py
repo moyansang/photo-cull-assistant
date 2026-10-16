@@ -3,9 +3,9 @@
 def needs_person_review(asset, entry):
     if getattr(asset, 'analysis_mode', 'portrait') == 'landscape':
         return False
+    local = getattr(asset, 'clarity_evidence', None) or {}
     if entry.get('hidden') or entry.get('manual_face') or 'selected_faces' in entry or 'selected_bodies' in entry:
         return False
-    local = getattr(asset, 'clarity_evidence', None) or {}
     return ((getattr(getattr(asset, 'subject_features', None), 'candidate_count', None) or 0) > 1
             or bool(local.get('selection_pending') and len(local.get('body_candidates', [])) > 1))
 
@@ -16,8 +16,19 @@ def participant_labels(asset, entry, saved_entry, count):
     changed = any(entry.get(k) != saved_entry.get(k) for k in ('selected_faces', 'manual_face', 'selected_bodies', 'hidden'))
     if changed or getattr(asset, 'ai_focus_dirty', False):
         return [f'人物 {i}：待重新扫描' for i in range(1, count + 1)]
-    ai = {} if (getattr(asset, 'ai_focus_stale', False) or getattr(asset, 'focus_stale', False)) else (getattr(asset, 'ai_focus_result', None) or {})
+    from .lightroom_results import current_focus
+    ai = current_focus(asset) or {}
     local = getattr(asset, 'clarity_evidence', None) or {}
+    if ai.get('version') == 'focus-technical-v4':
+        from .crop_settings import face_box_key
+        boxes=entry.get('selected_faces') or ([entry['manual_face']] if entry.get('manual_face') else [])
+        states={'clear':'清晰','severe':'严重模糊','mild':'轻微模糊','uncertain':'待确认'}
+        results=[]
+        for index in range(count):
+            identity='face:'+face_box_key(boxes[index]) if index<len(boxes) else ''
+            state=_protocol_part_state(ai,identity,'face',local)
+            results.append(f"人物 {index+1}：{states.get(state,'待确认')}（AI）")
+        return results
     values = ai.get('participants') if ai.get('participants') else local.get('participants')
     source = 'AI' if ai.get('participants') else '本地'
     if not values and count == 1:
@@ -27,6 +38,18 @@ def participant_labels(asset, entry, saved_entry, count):
     rows = {item.get('participant', 1): item for item in (values or []) if isinstance(item, dict)}
     return [f"人物 {i}：{labels.get(rows.get(i, {}).get('status', rows.get(i, {}).get('state')), '暂无结果')}（{source}）"
             for i in range(1, count + 1)]
+
+
+def _protocol_part_state(ai, identity, part, local):
+    aliases={identity}
+    for person in (local.get('primary_quality') or {}).get('subjects', []):
+        if identity in person.get('region_ids', []):
+            aliases.add(person['id'])
+    for person in ai.get('participants', []):
+        if person.get('subject_id') in aliases:
+            value=next((p for p in person.get('parts', []) if p.get('part')==part), {})
+            return value.get('severity','uncertain')
+    return 'uncertain'
 
 
 def body_participant_labels(asset, entry, saved_entry):
@@ -57,6 +80,11 @@ def body_participant_labels(asset, entry, saved_entry):
     labels = {'clear':'身体细节清晰', 'blur':'身体明显模糊', 'severe_blur':'身体明显模糊', 'uncertain':'身体待复核'}
     rows = []
     for index,box in enumerate(boxes,1):
+        if ai.get('version') == 'focus-technical-v4':
+            state=_protocol_part_state(ai,'body:'+face_box_key(box),'body',local)
+            label={'clear':'身体细节清晰','severe':'身体严重模糊','mild':'身体轻微模糊','uncertain':'身体待复核'}[state]
+            rows.append(f'身体 {index}：{label}（AI；脸部结果单独显示）')
+            continue
         value = matching(ai_bodies,box)
         source = 'AI' if value is not None else '本地'
         value = value if value is not None else (matching(bodies,box) or {})

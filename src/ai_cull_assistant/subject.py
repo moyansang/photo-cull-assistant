@@ -24,7 +24,19 @@ def _remember_manual(key, head, landmarks):
         _manual_details.popitem(last=False)
 
 
-def asset_features(asset, score_threshold=.8, *, require_landmarks=False):
+def asset_features(asset, score_threshold=.8, *, require_landmarks=False, roi_contract=None):
+    if roi_contract is not None:
+        from .roi_features import refresh_asset_roi_features
+        return refresh_asset_roi_features(asset, CropSettings(detection_confidence=score_threshold), resolved=roi_contract)
+    # Grouping ROI primaries deliberately do not guess among competing people.
+    # Technical screening retains its established detector/landmark selection
+    # in a separate cached view; never overwrite persisted grouping descriptors.
+    current = asset.subject_features
+    if getattr(current, 'feature_schema', None) is not None:
+        if asset.preview_path and not Path(asset.preview_path).is_file():
+            from .preview import ensure_preview
+            ensure_preview(asset)
+        return features(Path(asset.preview_path), score_threshold) if asset.preview_path else None
     legacy_face_without_points = bool(
         require_landmarks
         and (getattr(asset.subject_features, 'detection_version', None) != DETECTION_VERSION
@@ -56,6 +68,30 @@ class SubjectFeatures:
     detection_version: str | None = None
     candidate_count: int | None = None
     candidate_confidence: float | None = None
+    # Explicit ROI descriptors are a separate version from legacy face-derived body.
+    feature_schema: str | None = None
+    roi_revision_digest: str | None = None
+    image_digest: str | None = None
+    analysis_faces: tuple[dict, ...] = ()
+    analysis_bodies: tuple[dict, ...] = ()
+    face_hashes: tuple[str, ...] = ()
+    body_hashes: tuple[str, ...] = ()
+    primary_face_index: int | None = None
+    primary_body_index: int | None = None
+    body_box: tuple[float, float, float, float] | None = None
+    roi_primary_selection_required: bool = False
+
+    def __post_init__(self):
+        # JSON/session/worker transport turns tuples into lists. Normalize at
+        # the schema boundary so all deserializers use identical feature types.
+        from copy import deepcopy
+        for name in ('analysis_faces', 'analysis_bodies', 'face_hashes', 'body_hashes'):
+            object.__setattr__(self, name, tuple(deepcopy(getattr(self, name))))
+        for name in ('face', 'head', 'body_box'):
+            if getattr(self, name) is not None:
+                object.__setattr__(self, name, tuple(getattr(self, name)))
+        if self.landmarks is not None:
+            object.__setattr__(self, 'landmarks', tuple(tuple(point) for point in self.landmarks))
 
 
 def image_hash(image: Image.Image) -> str:
@@ -176,7 +212,7 @@ def detail_features(asset, settings, *, require_landmarks=False):
         require_landmarks=require_landmarks,
     )
     override = settings.photos.get(settings.key(asset), {})
-    if override.get('hidden'):
+    if override.get('hidden') or override.get('subjects_disabled'):
         return replace(subject, face=None, head=None) if subject else None
     if 'selected_faces' in override:
         selected = detail_features_list(
@@ -221,6 +257,13 @@ def _manual_detail(asset, settings, subject, box):
         box, settings.detection_confidence,
     )
     base = subject or SubjectFeatures('', '', None, None)
+    # Moving a face cannot retain an old face-anchored body descriptor. The ROI
+    # refresh transaction recomputes the grouping feature after edits are saved.
+    if tuple(base.face or ()) != box:
+        base = replace(base, body=None, feature_schema=None, roi_revision_digest=None,
+                       face_hashes=(), body_hashes=(), analysis_faces=(), analysis_bodies=(),
+                       primary_face_index=None, primary_body_index=None, body_box=None,
+                       roi_primary_selection_required=False)
     cached = _manual_details.get(cache_key)
     if cached is not None:
         return replace(base, face=box, head=cached[0], landmarks=cached[1], head_source='manual')
@@ -285,7 +328,7 @@ def detail_features_list(asset, settings, *, require_landmarks=False, _subject=N
         require_landmarks=require_landmarks,
     )
     override = settings.photos.get(settings.key(asset), {})
-    if override.get('hidden'):
+    if override.get('hidden') or override.get('subjects_disabled'):
         return []
     if 'selected_faces' not in override:
         box = override.get('manual_face')
@@ -322,7 +365,7 @@ def body_candidates(asset, settings=None):
     """
     settings = settings or CropSettings()
     entry = settings.photos.get(settings.key(asset), {})
-    if entry.get('hidden'):
+    if entry.get('hidden') or entry.get('subjects_disabled'):
         return []
     if 'selected_bodies' in entry:
         boxes = entry['selected_bodies']
@@ -332,7 +375,8 @@ def body_candidates(asset, settings=None):
                  'confidence': None, 'evidence_kind': 'body', 'eye_evidence': False}
                 for box in boxes if _valid_normalized_box(box)]
     # An explicitly empty face selection means the user removed all candidates.
-    if 'selected_faces' in entry and not entry['selected_faces']:
+    if ('selected_faces' in entry and not entry['selected_faces']
+            and entry.get('roi_selection_schema', 1) != 2):
         return []
     try:
         from .preview import ensure_preview

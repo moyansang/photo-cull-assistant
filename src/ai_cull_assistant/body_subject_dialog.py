@@ -10,14 +10,52 @@ from .crop_settings import CropSettings
 from .subject import _valid_normalized_box
 
 
-def visible_body_boxes(asset, entry):
-    if entry.get('hidden'):
+def effective_face_boxes(asset, entry, *, face_boxes=None):
+    """Read the effective display faces without invoking detection or editing data.
+
+    A prepared preview may supply fresher faces than the persisted asset. Explicit
+    selections (including []) and manual boxes remain authoritative either way.
+    """
+    if entry.get('hidden') or entry.get('subjects_disabled'):
+        return []
+    if 'selected_faces' in entry:
+        boxes = entry['selected_faces']
+    elif _valid_normalized_box(entry.get('manual_face')):
+        boxes = [entry['manual_face']]
+    elif face_boxes is not None:
+        boxes = face_boxes
+    else:
+        face = getattr(getattr(asset, 'subject_features', None), 'face', None)
+        boxes = [face] if face else []
+    if not isinstance(boxes, (list, tuple)):
+        return []
+    return [tuple(map(float, box)) for box in boxes if _valid_normalized_box(box)]
+
+
+def selected_body_boxes(asset, entry, *, auto_boxes=None):
+    """Retain analysis/edit selection independently of face-first visibility."""
+    if entry.get('hidden') or entry.get('subjects_disabled'):
         return []
     if 'selected_bodies' in entry:
-        boxes = entry.get('selected_bodies', [])
+        boxes = entry['selected_bodies']
+    elif ('selected_faces' in entry and not entry['selected_faces']
+          and entry.get('roi_selection_schema', 1) != 2):
+        return []
+    elif auto_boxes is not None:
+        boxes = auto_boxes
     else:
-        boxes = [item.get('box') for item in (getattr(asset, 'clarity_evidence', None) or {}).get('body_candidates', [])]
+        boxes = [item.get('box') for item in (getattr(asset, 'clarity_evidence', None) or {}).get('body_candidates', [])
+                 if isinstance(item, dict)]
+    if not isinstance(boxes, (list, tuple)):
+        return []
     return [tuple(map(float, box)) for box in boxes if _valid_normalized_box(box)]
+
+
+def visible_body_boxes(asset, entry, *, face_boxes=None):
+    """Display only: hiding body boxes must never erase selected_bodies."""
+    if effective_face_boxes(asset, entry, face_boxes=face_boxes):
+        return []
+    return selected_body_boxes(asset, entry)
 
 
 def toggle_body_box(boxes, box):
@@ -32,7 +70,7 @@ def toggle_body_box(boxes, box):
 
 
 class BodySubjectDialog(tk.Toplevel):
-    def __init__(self, parent, asset, entry, on_apply):
+    def __init__(self, parent, asset, entry, on_apply, *, face_boxes=None):
         super().__init__(parent)
         self.title('人体主体：选择、补框和忽略误检')
         self.transient(parent)
@@ -41,7 +79,9 @@ class BodySubjectDialog(tk.Toplevel):
         self.asset = deepcopy(asset)
         self.entry = deepcopy(entry)
         self.on_apply = on_apply
-        self.selected = visible_body_boxes(asset, entry)
+        self.face_boxes = effective_face_boxes(asset, entry, face_boxes=face_boxes)
+        self._face_first = bool(self.face_boxes)
+        self.selected = selected_body_boxes(asset, entry)
         self.candidates = []
         self.original = None
         self._image_rect = None
@@ -61,9 +101,9 @@ class BodySubjectDialog(tk.Toplevel):
         actions.pack(fill='x', padx=12, pady=10)
         actions.columnconfigure((0,1,2), weight=1)
         for column, (label, command) in enumerate((('全选候选',self.select_all), ('全部忽略',self.clear), ('恢复自动候选',self.restore_auto))):
-            ttk.Button(actions, text=label, command=command).grid(row=0,column=column,sticky='ew',padx=3,pady=3)
+            ttk.Button(actions, text=label, command=command, state='disabled' if self._face_first else 'normal').grid(row=0,column=column,sticky='ew',padx=3,pady=3)
         ttk.Button(actions, text='取消', command=self.destroy).grid(row=1,column=2,sticky='ew',padx=3,pady=3)
-        ttk.Button(actions, text='应用主体', command=self.apply).grid(row=1,column=1,sticky='ew',padx=3,pady=3)
+        ttk.Button(actions, text='应用主体', command=self.apply, state='disabled' if self._face_first else 'normal').grid(row=1,column=1,sticky='ew',padx=3,pady=3)
         self.protocol('WM_DELETE_WINDOW', self.destroy)
         self.bind('<Escape>', lambda event: self.destroy())
         self._future = self._executor.submit(self._prepare)
@@ -103,7 +143,7 @@ class BodySubjectDialog(tk.Toplevel):
             self.status.configure(text=f'预览无法读取：{exc}')
             return
         if 'selected_bodies' not in self.entry and not self.selected:
-            self.selected = list(self.candidates)
+            self.selected = selected_body_boxes(self.asset, self.entry, auto_boxes=self.candidates)
         self.render()
 
     def render(self):
@@ -113,21 +153,24 @@ class BodySubjectDialog(tk.Toplevel):
         self.canvas.delete('all')
         marked = self.original.copy()
         draw = ImageDraw.Draw(marked)
-        for box in self.candidates:
+        for box in ([] if self._face_first else self.candidates):
             if any(same_face_box(box, other) for other in self.selected):
                 continue
             x,y,w,h = box
             draw.rectangle((x*marked.width,y*marked.height,(x+w)*marked.width,(y+h)*marked.height), outline='#3399ff', width=3)
-        for index, (x,y,w,h) in enumerate(self.selected, 1):
+        for index, (x,y,w,h) in enumerate(self.face_boxes if self._face_first else self.selected, 1):
             bounds = (x*marked.width,y*marked.height,(x+w)*marked.width,(y+h)*marked.height)
             draw.rectangle(bounds, outline='#00dd99', width=4)
-            draw.text((bounds[0]+4,bounds[1]+4), f'B{index}', fill='#00dd99')
+            draw.text((bounds[0]+4,bounds[1]+4), str(index) if self._face_first else f'B{index}', fill='#00dd99')
         width, height = max(self.canvas.winfo_width(),1), max(self.canvas.winfo_height(),1)
         self.status.configure(wraplength=max(100,width-10))
         shown = ImageOps.contain(marked, (width,height))
         self.photo = ImageTk.PhotoImage(shown, master=self)
         self.canvas.create_image(width/2,height/2,image=self.photo)
         self._image_rect = ((width-shown.width)/2,(height-shown.height)/2,shown.width,shown.height)
+        if self._face_first:
+            self.status.configure(text='当前照片有人脸，仅显示人脸框；身体选择保留供后台分析。请返回主体页调整人脸。')
+            return
         self.status.configure(text=f'已选 {len(self.selected)} 个身体主体。点框可增减；拖拽补框。身体清晰度不能证明眼睛清晰。应用后返回主体页，再保存并局部重算。')
 
     def _normalized(self, x, y):
@@ -137,6 +180,8 @@ class BodySubjectDialog(tk.Toplevel):
         return max(0,min(1,(x-left)/width)), max(0,min(1,(y-top)/height))
 
     def pointer_down(self, event):
+        if getattr(self, '_face_first', False):
+            return
         if not self._image_rect:
             return
         x,y,w,h = self._image_rect
@@ -144,11 +189,15 @@ class BodySubjectDialog(tk.Toplevel):
             self._drag = (event.x,event.y)
 
     def pointer_move(self, event):
+        if getattr(self, '_face_first', False):
+            return
         if self._drag:
             self.canvas.delete('draft')
             self.canvas.create_rectangle(*self._drag,event.x,event.y,outline='#ffbb33',width=2,tags='draft')
 
     def pointer_up(self, event):
+        if getattr(self, '_face_first', False):
+            return
         if not self._drag:
             return
         ax,ay = self._drag
@@ -165,18 +214,26 @@ class BodySubjectDialog(tk.Toplevel):
         self.render()
 
     def select_all(self):
+        if getattr(self, '_face_first', False):
+            return
         self.selected = list(self.candidates)
         self.render()
 
     def clear(self):
+        if getattr(self, '_face_first', False):
+            return
         self.selected = []
         self.render()
 
     def restore_auto(self):
+        if getattr(self, '_face_first', False):
+            return
         self.on_apply(None)
         self.destroy()
 
     def apply(self):
+        if getattr(self, '_face_first', False):
+            return
         self.on_apply([list(box) for box in self.selected])
         self.destroy()
 

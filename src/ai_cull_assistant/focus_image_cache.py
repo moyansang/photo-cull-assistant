@@ -11,7 +11,7 @@ from .focus_audit import audit_root
 
 
 def cached_focus_images(asset, settings, cache_dir, face, *, subject=None,
-                        include_body=True, decoded_image=None):
+                        include_body=True, decoded_image=None, metadata=None):
     from . import ai_focus
     from .ai_project import atomic_json
     if subject is None and face:
@@ -21,7 +21,7 @@ def cached_focus_images(asset, settings, cache_dir, face, *, subject=None,
     if preview is not None and preview.is_file():
         with Image.open(preview) as image:
             geometry = image.size
-    identity = dict(version=1, source=ai_focus._source_identity(asset, face),
+    identity = dict(version=2, source=ai_focus._source_identity(asset, face),
                     geometry=geometry, preview_version=preview.parent.name if preview else None,
                     landmarks=getattr(subject, 'landmarks', None),
                     crop=settings.photos.get(settings.key(asset), {}),
@@ -32,6 +32,9 @@ def cached_focus_images(asset, settings, cache_dir, face, *, subject=None,
     manifest = directory / 'images.json'
     try:
         data = json.loads(manifest.read_text('utf-8'))
+        size = data['source_size']
+        if not isinstance(size, list) or len(size)!=2 or not all(type(v) is int and v>0 for v in size):
+            raise ValueError('invalid native size')
         paths = []
         for item in data['images']:
             name = item['name']
@@ -42,20 +45,25 @@ def cached_focus_images(asset, settings, cache_dir, face, *, subject=None,
                 raise ValueError('image cache changed')
             paths.append(path)
         if paths:
+            if metadata is not None:
+                metadata['source_size'] = size
             return paths, bool(data['face_found'])
     except (OSError, ValueError, KeyError, TypeError):
         pass
     directory.parent.mkdir(parents=True, exist_ok=True)
     stage = directory.with_name(digest + '.tmp-' + uuid.uuid4().hex)
     try:
+        measured = {}
         paths, found = ai_focus._prepare_focus_images(
             asset, settings, stage, face, subject_override=subject,
-            include_body=include_body, decoded_image=decoded_image)
+            include_body=include_body, decoded_image=decoded_image, metadata=measured)
         entries = [dict(name=p.name, sha256=hashlib.sha256(p.read_bytes()).hexdigest()) for p in paths]
         directory.mkdir(exist_ok=True)
         for path in paths:
             path.replace(directory / path.name)
-        atomic_json(manifest, dict(images=entries, face_found=found))
+        atomic_json(manifest, dict(images=entries, face_found=found, source_size=measured['source_size']))
+        if metadata is not None:
+            metadata.update(measured)
         return [directory / item['name'] for item in entries], found
     finally:
         if stage.resolve().parent != directory.parent.resolve():

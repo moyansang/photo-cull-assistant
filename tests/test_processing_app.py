@@ -194,7 +194,7 @@ def test_saving_face_settings_rescans_only_changed_photos(tmp_path,monkeypatch):
         app._save_crop_settings(settings)
         assert first.ai_focus_dirty and not second.ai_focus_dirty
         assert saved == [True]
-        assert started==[{'mode':'rescan'}]
+        assert started==[{'mode':'rescan','regroup':True}]
         assert not hasattr(app,'regenerate_button')
     finally:
         app.scan_result=None

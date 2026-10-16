@@ -330,7 +330,8 @@ def test_technical_change_preserves_ai_history_but_never_exports_stale_group_sta
     payload = json.loads((project.workspace / 'exports' / 'lightroom_results.json').read_text('utf-8'))
     assert len(payload['photos']) == 2
     assert all('rating' not in row for row in payload['photos'])
-    assert next(row for row in payload['photos'] if row['filename'].casefold().startswith('a.'))['pick_status'] == -1
+    unbound=next(row for row in payload['photos'] if row['filename'].casefold().startswith('a.'))
+    assert 'pick_status' not in unbound and unbound['focus_review'] is True
     assert next(row for row in payload['photos'] if row['filename'].casefold().startswith('b.'))['recommendation'] == 'review'
     assert opened == [project.workspace / 'exports'] and not errors
 
@@ -657,7 +658,8 @@ def test_fresh_all_rejected_project_has_no_task_and_can_export_lr(tk_root,monkey
         dialog._export_ai_ratings()
         payload=json.loads((project.workspace/'exports'/'lightroom_results.json').read_text('utf-8'))
         assert len(payload['photos'])==2
-        assert all(row['pick_status']==-1 and 'rating' not in row for row in payload['photos'])
+        assert all('pick_status' not in row and 'rating' not in row and row['focus_review'] is True
+                   for row in payload['photos'])  # raw old reject flags are history
         assert opened==[project.workspace/'exports'] and not errors
     finally:
         dialog._destroy_now()

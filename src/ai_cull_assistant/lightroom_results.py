@@ -6,8 +6,24 @@ def _value(item, key, default=None):
     return item.get(key, default) if isinstance(item, dict) else getattr(item, key, default)
 
 
+def _live_scope_matches(photo, scope):
+    if isinstance(photo,dict) or getattr(photo,'primary_path',None) is None:
+        return True  # Export rows receive a freshly rebuilt scope in ReviewProject.
+    from .image_decode import asset_source_signature
+    from .focus_protocol import _digest
+    try:
+        return _digest(asset_source_signature(photo)) == scope.get('source_digest')
+    except (OSError, TypeError, ValueError):
+        return False
+
+
 def focus_review_status(asset):
     if _value(asset, 'person_review_pending', False):return True
+    if _value(asset, 'analysis_mode', 'portrait') == 'portrait':
+        focus = current_focus(asset)
+        if focus is not None:
+            return focus['status'] == 'uncertain'
+        return local_recommendation(asset) == 'review'
     rejected=bool(_value(asset,'auto_rejected',_value(asset,'technical_rejected',False)))
     reason=_value(asset,'screening_reason','') or _value(asset,'technical_reason','')
     if rejected or reason in {'subject_not_obviously_blurred', 'ai_focus_clear', 'ai_focus_blur'}:
@@ -105,14 +121,35 @@ def current_focus(photo):
     actual = _value(photo, 'focus_fingerprint', value.get('technical_fingerprint'))
     if expected is not None and actual != expected:
         return None
+    if _value(photo, 'analysis_mode', 'portrait') == 'portrait':
+        from .focus_protocol import result_is_current
+        scope = _value(photo, 'focus_scope')
+        if scope is None or not result_is_current(value, scope):
+            return None
+        if not _live_scope_matches(photo,scope):
+            return None
     return value
 
 
 def local_recommendation(photo):
     """Return a recommendation, never convert technical scores into stars."""
     evidence = _value(photo, 'clarity_evidence') or {}
+    evidence = evidence if isinstance(evidence, dict) else {}
     reason = _value(photo, 'screening_reason', '') or _value(photo, 'technical_reason', '')
     if _value(photo, 'person_review_pending', False):
+        return 'review'
+    if _value(photo, 'analysis_mode', 'portrait') == 'portrait':
+        policy = evidence.get('primary_quality') or {}
+        scope = _value(photo, 'focus_scope') or {}
+        if not isinstance(policy, dict) or not isinstance(scope, dict):
+            return 'review'
+        if (policy.get('version') == 'confirmed-primary-quality-v1'
+                and policy.get('confirmation_digest')
+                and not _value(photo, 'ai_focus_dirty', False)
+                and _live_scope_matches(photo,scope)
+                and policy.get('confirmation_digest') == evidence.get('measurement_confirmation_digest')
+                and policy.get('confirmation_digest') == scope.get('confirmation_digest')):
+            return policy.get('recommendation') if policy.get('recommendation') in {'keep','reject','review'} else 'review'
         return 'review'
     recommendation = evidence.get('recommendation') if isinstance(evidence, dict) else None
     if recommendation in {'keep', 'reject', 'review'}:
@@ -143,6 +180,9 @@ def effective_decision(photo):
     """
     selection = current_selection(photo)
     focus = current_focus(photo)
+    local_quality = local_recommendation(photo)
+    quality = ('reject' if local_quality == 'reject' else
+               focus.get('recommendation') if focus and focus.get('recommendation') else local_quality)
     final = _value(photo, 'final') or {}
     pending = _value(photo, 'focus_review') is True
     if _value(photo,'focus_stale',False) or _value(photo,'ai_focus_stale',False):
@@ -157,6 +197,11 @@ def effective_decision(photo):
         pick = final.get('pick_status')
         recommendation = 'reject' if pick == -1 else 'keep' if pick in (0, 1) else 'review'
         source, reason = 'manual', '人工确认结果'
+    elif quality == 'reject':
+        rating = selection.get('rating') if selection else None
+        recommendation, pick = 'reject', -1
+        source = 'ai' if focus and focus.get('recommendation') == 'reject' else 'local'
+        reason = focus.get('reason', '') if source == 'ai' else _value(photo, 'screening_reason', '') or ''
     elif selection is not None:
         rating = selection.get('rating')
         # An inability to score is a review result, not an implicit keep.
@@ -169,7 +214,7 @@ def effective_decision(photo):
         recommendation = {'blur': 'reject', 'clear': 'keep', 'uncertain': 'review'}[focus['status']]
         # Mixed multi-person evidence is never an automatic whole-photo reject.
         people = focus.get('participants') or []
-        if len(people) > 1 and any(p.get('status') != 'clear' for p in people):
+        if focus.get('version') != 'focus-technical-v4' and len(people) > 1 and any(p.get('status') != 'clear' for p in people):
             recommendation = 'review'
         pick = {'reject': -1, 'keep': 1}.get(recommendation)
         source, reason = 'ai', focus.get('reason', '')
@@ -184,4 +229,4 @@ def effective_decision(photo):
         pick = None
     return dict(source=source, rating=rating, pick_status=pick,
                 recommendation=recommendation, reason=reason,
-                focus_review=pending or (recommendation == 'review' and source != 'manual'))
+                focus_review=False if source=='manual' else pending or quality == 'review' or recommendation == 'review')

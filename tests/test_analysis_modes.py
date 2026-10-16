@@ -59,7 +59,7 @@ def test_body_only_clarity_cannot_become_eye_evidence(tmp_path, monkeypatch):
     monkeypatch.setattr(subject,'body_candidates',lambda *a:[body])
     monkeypatch.setattr(body_focus,'detect_body_candidates',lambda *a:[body])
     result=modes.assess_asset_mode(a)
-    assert result.focus_evidence['recommendation']=='keep'
+    assert result.focus_evidence['recommendation']=='review'  # eyes and primary scope unconfirmed
     assert result.focus_evidence['eyes_unassessed'] is True
     assert result.focus_evidence['eye_evidence'] is False
     assert not result.face_found
@@ -73,7 +73,7 @@ def test_multiple_people_do_not_average_away_one_blur(tmp_path, monkeypatch):
     result=modes.assess_asset_mode(a)
     assert not result.rejected
     assert result.focus_evidence['recommendation']=='review'
-    assert result.focus_evidence['reliability']=='adequate'
+    assert result.focus_evidence['reliability']=='insufficient'  # no current confirmation or measurements
     assert [p['state'] for p in result.focus_evidence['subjects']]==['clear','severe_blur']
 
 
@@ -84,7 +84,7 @@ def test_uncertain_eyes_remain_uncertain_even_when_body_is_clear(tmp_path, monke
     monkeypatch.setattr(subject,'body_candidates',lambda *a:pytest.fail('reliable face takes priority'))
     result=modes.assess_asset_mode(a)
     assert result.focus_evidence['recommendation']=='review'
-    assert result.focus_evidence['reliability']=='adequate'
+    assert result.focus_evidence['reliability']=='insufficient'  # no current confirmation
 
 
 def test_manual_multiple_body_selection_preserves_each_result(tmp_path, monkeypatch):

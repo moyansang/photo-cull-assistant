@@ -6,6 +6,7 @@ from PIL import Image
 import pytest
 
 from ai_cull_assistant.crop_settings import CropSettings
+from quality_cases import confirmed_settings, technical_result
 from ai_cull_assistant.processing_job import SourceChangedError, load_job, start_job
 
 
@@ -28,6 +29,25 @@ def _options(**changes):
     return values
 
 
+def test_changed_source_cannot_disappear_from_focus_queue_or_call_api(tmp_path,monkeypatch):
+    from ai_cull_assistant import ai_focus
+    photos=_photos(tmp_path,1);workspace=tmp_path/'workspace'
+    crops=CropSettings()
+    first=start_job(photos,workspace,_options(),crops,mode='scan').run(_options(),crops,Event(),None)
+    asset=first.assets[0]
+    confirmed_settings(asset,crops)
+    asset.ai_focus_result=technical_result(asset,crops,'clear')
+    Image.new('RGB',(80,100),'red').save(asset.primary_path)
+    monkeypatch.setattr(ai_focus,'review_focus',lambda *a:pytest.fail('stale source must require human confirmation'))
+    job=start_job(photos,workspace,_options(),crops,result=first,mode='focus')
+    assert job._data['work_indices']==[0]
+    assert asset.person_review_pending and asset.focus_scope is None
+    result=job.run(_options(),crops,Event(),None,focus_profile={'id':'synthetic'})
+    assert result.assets[0].person_review_pending
+    assert result.assets[0].ai_focus_result['status']=='clear'  # original history retained
+    assert not result.assets[0].auto_rejected
+
+
 def test_focus_lookahead_overlaps_serial_review(tmp_path, monkeypatch):
     from ai_cull_assistant.focus_prefetch import FocusPrefetch
     import ai_cull_assistant.ai_focus as focus
@@ -35,6 +55,10 @@ def test_focus_lookahead_overlaps_serial_review(tmp_path, monkeypatch):
     workspace = tmp_path / 'workspace'
     first = start_job(photos, workspace, _options(), CropSettings(), mode='scan').run(
         _options(), CropSettings(), Event(), None)
+    crops = CropSettings()
+    # Explicit synthetic human confirmation precedes the technical stage.
+    for confirmed_asset in first.assets:
+        confirmed_settings(confirmed_asset, crops)
     for asset in first.assets:
         asset.screening_reason = 'face_focus_uncertain'
     monkeypatch.setattr('ai_cull_assistant.processing_job._has_reliable_face', lambda *_: True)
@@ -54,10 +78,10 @@ def test_focus_lookahead_overlaps_serial_review(tmp_path, monkeypatch):
             first_returned.set()
         else:
             assert first_returned.is_set()
-        return dict(status='clear', reason='test')
+        return technical_result(asset, crops, 'clear')
     monkeypatch.setattr(focus, 'review_focus', review)
-    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode='focus')
-    result = job.run(_options(), CropSettings(), Event(), None, focus_profile={'model': 'test'})
+    job = start_job(photos, workspace, _options(), crops, result=first, mode='focus')
+    result = job.run(_options(), crops, Event(), None, focus_profile={'model': 'test'})
     assert result is not None and calls == ['P0000', 'P0001']
     assert job._focus_prefetch is None
 
@@ -285,17 +309,24 @@ def test_api_focus_review_is_checkpointed_once_and_never_serialises_profile(tmp_
         "P0001": {"status": "blur", "reason": "主体明显虚焦"},
         "P0002": {"status": "uncertain", "reason": "主体太小"},
     }
+    from ai_cull_assistant.scanner import scan_folder
+    crops=CropSettings()
+    for confirmed_asset in scan_folder(photos):
+        confirmed_settings(confirmed_asset,crops)
+    returned={}
 
     def review(asset, crop_settings, profile, cache_dir):
         calls.append(asset.stem)
-        assert crop_settings == CropSettings()
+        assert crop_settings == crops
         assert profile["id"] == "saved-profile"
         assert cache_dir == workspace / "cache" / "analysis"
-        return answers[asset.stem]
+        value=answers[asset.stem]
+        returned[asset.stem]=technical_result(asset,crops,value['status'],value['reason'])
+        return returned[asset.stem]
 
     monkeypatch.setattr("ai_cull_assistant.processing_job.screen_assets", screen)
     monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
-    job = start_job(photos, workspace, _options(technical_screening=True), CropSettings())
+    job = start_job(photos, workspace, _options(technical_screening=True), crops)
     stop = Event()
 
     def stop_after_first(_percent):
@@ -305,7 +336,7 @@ def test_api_focus_review_is_checkpointed_once_and_never_serialises_profile(tmp_
     profile = {"id": "saved-profile", "name": "测试", "secret": "must-never-persist"}
     logs = []
     assert job.run(
-        _options(technical_screening=True), CropSettings(), stop, stop_after_first,
+        _options(technical_screening=True), crops, stop, stop_after_first,
         focus_profile=profile, on_log=logs.append,
     ) is None
     assert calls == ["P0000"]
@@ -313,7 +344,7 @@ def test_api_focus_review_is_checkpointed_once_and_never_serialises_profile(tmp_
 
     restored = load_job(workspace, photos)
     result = restored.run(
-        _options(technical_screening=True), CropSettings(), Event(), None,
+        _options(technical_screening=True), crops, Event(), None,
         focus_profile=profile, on_log=logs.append,
     )
     assert result is not None
@@ -322,31 +353,33 @@ def test_api_focus_review_is_checkpointed_once_and_never_serialises_profile(tmp_
         "ai_focus_clear", "ai_focus_blur", "ai_focus_uncertain"
     ]
     assert [asset.auto_rejected for asset in result.assets] == [False, True, False]
-    assert result.assets[2].ai_focus_result == answers["P0002"]
+    assert result.assets[2].ai_focus_result == returned["P0002"]
     assert len(logs) == 3 and all("AI 清晰度复核" in line for line in logs)
 
     # Editing face crops and rebuilding sheets must preserve every AI outcome,
     # including uncertain, even after a restart and a profile change.
     crops = CropSettings(1.8, -.2, '1:1', .8)
+    original_returns=list(returned.values())
     rebuilt = start_job(photos, workspace, _options(technical_screening=True), crops, result=result)
     rebuilt = load_job(workspace, photos).run(
         _options(technical_screening=True), crops, Event(), None,
         focus_profile={"id": "different-profile"}, on_log=logs.append,
     )
     assert calls == ["P0000", "P0001", "P0002"]
-    assert [a.ai_focus_result for a in rebuilt.assets] == list(answers.values())
-    assert [a.auto_rejected for a in rebuilt.assets] == [False, True, False]
-    assert [a.screening_reason for a in rebuilt.assets] == [
-        "ai_focus_clear", "ai_focus_blur", "ai_focus_uncertain"]
+    assert [a.ai_focus_result for a in rebuilt.assets] == original_returns
+    assert all(a.ai_focus_stale and not a.auto_rejected for a in rebuilt.assets)
+    assert [a.screening_reason for a in rebuilt.assets] == ['no_reliable_face']*3
+    for confirmed_asset in rebuilt.assets:
+        confirmed_settings(confirmed_asset,crops)
     rebuilt.assets[1].ai_focus_dirty = True
-    reviewed_again = start_job(photos, workspace, _options(technical_screening=True), CropSettings(), result=rebuilt)
+    reviewed_again = start_job(photos, workspace, _options(technical_screening=True), crops, result=rebuilt)
     reviewed_again = load_job(workspace, photos).run(
-        _options(technical_screening=True), CropSettings(), Event(), None,
+        _options(technical_screening=True), crops, Event(), None,
         focus_profile=profile,
     )
     assert calls == ["P0000", "P0001", "P0002", "P0001"]
     assert not any(a.ai_focus_dirty for a in reviewed_again.assets)
-    assert [a.ai_focus_result for a in reviewed_again.assets] == list(answers.values())
+    assert [a.ai_focus_result for a in reviewed_again.assets] == list(returned.values())
 
 
 
@@ -390,7 +423,9 @@ def test_api_failure_keeps_local_analysis_for_resumable_retry(tmp_path, monkeypa
     assert result is not None
     assert local_calls == ["P0000"]
     assert review_calls == ["P0000", "P0000"]
-    assert result.assets[0].screening_reason == "ai_focus_clear"
+    assert result.assets[0].screening_reason == "ai_focus_uncertain"
+    assert result.assets[0].ai_focus_result['legacy_result']=={'status':'clear','reason':'复核清晰'}
+    assert not result.assets[0].auto_rejected
 
 
 def test_staged_scan_only_builds_previews_screens_and_groups(tmp_path, monkeypatch):
@@ -497,12 +532,18 @@ def test_staged_focus_reviews_only_pending_without_repeating_valid_result(tmp_pa
     first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
         _options(), CropSettings(), Event(), None
     )
+    crops = CropSettings()
+    # Explicit synthetic human confirmation precedes the technical stage.
+    for confirmed_asset in first.assets:
+        confirmed_settings(confirmed_asset, crops)
     first.assets[0].screening_reason = "no_reliable_face"
     from ai_cull_assistant.subject import SubjectFeatures
     first.assets[0].subject_checked = True
     first.assets[0].subject_features = SubjectFeatures("", "", None, (.25, .2, .2, .2))
     first.assets[1].screening_reason = "ai_focus_uncertain"
-    first.assets[1].ai_focus_result = {"status": "uncertain", "reason": "already reviewed"}
+    existing = technical_result(first.assets[1], crops, 'uncertain', 'already reviewed')
+    first.assets[1].ai_focus_result = existing
+    first.assets[2].ai_focus_result = technical_result(first.assets[2], crops, 'clear')
     first.assets[2].screening_reason = "subject_not_obviously_blurred"
     stale = workspace / "contact_sheets" / "main" / "stale.jpg"
     stale.parent.mkdir(parents=True)
@@ -511,7 +552,7 @@ def test_staged_focus_reviews_only_pending_without_repeating_valid_result(tmp_pa
 
     def review(asset, *_args):
         calls.append(asset.stem)
-        return {"status": "blur", "reason": "face is blurred"}
+        return technical_result(asset, crops, 'blur')
 
     def forbidden(*_args, **_kwargs):
         raise AssertionError("focus stage must not rerun local analysis")
@@ -519,21 +560,21 @@ def test_staged_focus_reviews_only_pending_without_repeating_valid_result(tmp_pa
     monkeypatch.setattr("ai_cull_assistant.processing_job.screen_assets", forbidden)
     monkeypatch.setattr("ai_cull_assistant.processing_job.build_preview", forbidden)
     monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
-    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode="focus")
+    job = start_job(photos, workspace, _options(), crops, result=first, mode="focus")
     native_cache = workspace / 'focus-evidence' / 'native-cache'
     native_cache.mkdir(parents=True)
     (native_cache / 'pending.png').write_bytes(b'cached detail')
     paused = Event(); paused.set()
-    assert job.run(_options(), CropSettings(), paused, None, focus_profile={'id':'profile'}) is None
+    assert job.run(_options(), crops, paused, None, focus_profile={'id':'profile'}) is None
     assert native_cache.exists()
     result = job.run(
-        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+        _options(), crops, Event(), None, focus_profile={"id": "profile"}
     )
 
     assert not native_cache.exists()
     assert calls == ["P0000"]
     assert result.assets[0].auto_rejected is True
-    assert result.assets[1].ai_focus_result == {"status": "uncertain", "reason": "already reviewed"}
+    assert result.assets[1].ai_focus_result == existing
     assert result.main_pages == [] and result.rejected_pages == []
     assert not (workspace / "contact_sheets").exists()
     assert (workspace / "scan-session.json").is_file()
@@ -587,6 +628,10 @@ def test_staged_focus_stop_resume_keeps_completed_api_result(tmp_path, monkeypat
     first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
         _options(), CropSettings(), Event(), None
     )
+    crops = CropSettings()
+    # Explicit synthetic human confirmation precedes the technical stage.
+    for confirmed_asset in first.assets:
+        confirmed_settings(confirmed_asset, crops)
     for asset in first.assets:
         asset.screening_reason = "face_focus_uncertain"
         asset.subject_checked = True
@@ -595,10 +640,10 @@ def test_staged_focus_stop_resume_keeps_completed_api_result(tmp_path, monkeypat
 
     def review(asset, *_args):
         calls.append(asset.stem)
-        return {"status": "clear", "reason": "face clear"}
+        return technical_result(asset, crops, 'clear')
 
     monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
-    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode="focus")
+    job = start_job(photos, workspace, _options(), crops, result=first, mode="focus")
     stop = Event()
 
     def stop_after_first(_percent):
@@ -606,13 +651,13 @@ def test_staged_focus_stop_resume_keeps_completed_api_result(tmp_path, monkeypat
             stop.set()
 
     assert job.run(
-        _options(), CropSettings(), stop, stop_after_first, focus_profile={"id": "profile"}
+        _options(), crops, stop, stop_after_first, focus_profile={"id": "profile"}
     ) is None
     assert calls == ["P0000"]
     restored = load_job(workspace, photos)
     assert restored is not None and restored.mode == "focus"
     result = restored.run(
-        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+        _options(), crops, Event(), None, focus_profile={"id": "profile"}
     )
     assert result is not None
     assert calls == ["P0000", "P0001"]
@@ -629,6 +674,10 @@ def test_staged_focus_collects_errors_then_retries_only_failed_photos(tmp_path, 
     first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
         _options(), CropSettings(), Event(), None
     )
+    crops = CropSettings()
+    # Explicit synthetic human confirmation precedes the technical stage.
+    for confirmed_asset in first.assets:
+        confirmed_settings(confirmed_asset, crops)
     for asset in first.assets:
         asset.screening_reason = "face_focus_uncertain"
         asset.subject_checked = True
@@ -641,13 +690,13 @@ def test_staged_focus_collects_errors_then_retries_only_failed_photos(tmp_path, 
         if asset.stem == "P0001" and calls.count("P0001") == 1:
             raise ValueError("返回的不是严格 JSON")
         status = "blur" if asset.stem == "P0002" else "clear"
-        return {"status": status, "reason": f"{asset.stem} verdict"}
+        return technical_result(asset, crops, status, f"{asset.stem} verdict")
 
     monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
     logs = []
-    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode="focus")
+    job = start_job(photos, workspace, _options(), crops, result=first, mode="focus")
     assert job.run(
-        _options(), CropSettings(), Event(), None,
+        _options(), crops, Event(), None,
         focus_profile={"id": "profile"}, on_log=logs.append,
     ) is None
 
@@ -669,13 +718,13 @@ def test_staged_focus_collects_errors_then_retries_only_failed_photos(tmp_path, 
     assert restored is not None and restored.awaiting_focus_error_decision
     # Resume without a UI decision waits and never spends another API request.
     assert restored.run(
-        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+        _options(), crops, Event(), None, focus_profile={"id": "profile"}
     ) is None
     assert calls == ["P0000", "P0001", "P0002"]
 
     restored.retry_failed()
     result = restored.run(
-        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+        _options(), crops, Event(), None, focus_profile={"id": "profile"}
     )
     assert result is not None
     assert calls == ["P0000", "P0001", "P0002", "P0001"]
@@ -699,10 +748,14 @@ def test_migrated_compacted_focus_rebuilds_preview_and_checkpoints_current_path(
     first = start_job(photos, old_workspace, _options(), CropSettings(), mode='scan').run(
         _options(), CropSettings(), Event(), None
     )
+    crops = CropSettings()
+    # Explicit synthetic human confirmation precedes the technical stage.
+    for confirmed_asset in first.assets:
+        confirmed_settings(confirmed_asset, crops)
     asset = first.assets[0]
     asset.screening_reason = 'face_focus_uncertain'
     asset.subject_checked = True
-    asset.subject_confidence = CropSettings().detection_confidence
+    asset.subject_confidence = crops.detection_confidence
     asset.subject_features = SubjectFeatures('', '', None, (.2, .2, .4, .4))
     save_session(first, fresh=True)
 
@@ -722,9 +775,9 @@ def test_migrated_compacted_focus_rebuilds_preview_and_checkpoints_current_path(
         raise ValueError('forced API failure')
 
     monkeypatch.setitem(sys.modules, 'ai_cull_assistant.ai_focus', SimpleNamespace(review_focus=fail_after_preview))
-    job = start_job(photos, workspace, _options(), CropSettings(), result=restored, mode='focus')
+    job = start_job(photos, workspace, _options(), crops, result=restored, mode='focus')
     assert job.run(
-        _options(), CropSettings(), Event(), None, focus_profile={'id': 'profile'}
+        _options(), crops, Event(), None, focus_profile={'id': 'profile'}
     ) is None
 
     checkpoint = load_job(workspace, photos)
@@ -746,6 +799,10 @@ def test_staged_focus_can_skip_failed_photos_and_keep_them_pending(tmp_path, mon
     first = start_job(photos, workspace, _options(), CropSettings(), mode="scan").run(
         _options(), CropSettings(), Event(), None
     )
+    crops = CropSettings()
+    # Explicit synthetic human confirmation precedes the technical stage.
+    for confirmed_asset in first.assets:
+        confirmed_settings(confirmed_asset, crops)
     for asset in first.assets:
         asset.screening_reason = "face_focus_uncertain"
         asset.subject_checked = True
@@ -757,12 +814,12 @@ def test_staged_focus_can_skip_failed_photos_and_keep_them_pending(tmp_path, mon
         calls.append(asset.stem)
         if asset.stem == "P0000":
             raise RuntimeError("service unavailable")
-        return {"status": "clear", "reason": "清晰"}
+        return technical_result(asset, crops, 'clear')
 
     monkeypatch.setitem(sys.modules, "ai_cull_assistant.ai_focus", SimpleNamespace(review_focus=review))
-    job = start_job(photos, workspace, _options(), CropSettings(), result=first, mode="focus")
+    job = start_job(photos, workspace, _options(), crops, result=first, mode="focus")
     assert job.run(
-        _options(), CropSettings(), Event(), None, focus_profile={"id": "profile"}
+        _options(), crops, Event(), None, focus_profile={"id": "profile"}
     ) is None
     assert calls == ["P0000", "P0001"]
 
@@ -770,7 +827,7 @@ def test_staged_focus_can_skip_failed_photos_and_keep_them_pending(tmp_path, mon
     assert restored.assets[0].ai_focus_attempt == "failed"
     restored.skip_failed()
     result = restored.run(
-        _options(), CropSettings(), Event(), None, focus_profile=None
+        _options(), crops, Event(), None, focus_profile=None
     )
     assert result is not None
     assert calls == ["P0000", "P0001"]

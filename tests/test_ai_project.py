@@ -143,7 +143,8 @@ def test_selection_accepts_local_recommendations_in_all_scopes(tmp_path):
     for kind,scope in [('initial',None),('initial',ids),('refine',ids)]:
         task=project.create_task(assets,CropSettings(),{},kind=kind,photo_ids=scope)
         assert [pid for batch in task['batches'] for pid in batch['photo_ids']]==ids
-        assert 'severe_subject_blur' in task['batches'][0]['prompt']
+        assert 'severe_subject_blur' not in task['batches'][0]['prompt']
+        assert '不实施清晰度质量判定' in task['batches'][0]['prompt']
     task=project.create_task(assets,CropSettings(),{},photo_ids=[ids[1]])
     assert task['batches'][0]['photo_ids']==[ids[1]]
 
@@ -269,7 +270,8 @@ def test_all_local_rejects_can_request_selection_without_losing_human_result(tmp
     assert project.data['photos'][photo_id(assets[0])]['final']['confirmed']
     rows=json.loads(project.export_final().read_text(encoding='utf-8'))['photos']
     assert rows[0]['rating']==5 and rows[0]['pick_status']==1
-    assert rows[1]['pick_status']==-1 and 'rating' not in rows[1]
+    assert 'pick_status' not in rows[1] and 'rating' not in rows[1]
+    assert rows[1]['focus_review'] is True  # unbound old reject is not current severe evidence
 
 
 def setup_merged_web_submission(tmp_path):
@@ -514,7 +516,7 @@ def test_focus_review_keyword_only_export_and_clearing(tmp_path):
     assets[0].screening_reason='subject_not_obviously_blurred'
     project.refresh(assets, project._crops)
     data=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))
-    assert data['photos'][0]['focus_review'] is False
+    assert data['photos'][0]['focus_review'] is True  # changing a reason code is not confirmation
 
 
 def _web_focus_setup(tmp_path,monkeypatch):
@@ -549,7 +551,7 @@ def test_web_selection_does_not_force_a_technical_review(tmp_path,monkeypatch):
     project,assets,task,submission=_web_focus_setup(tmp_path,monkeypatch)
     assert submission['focus_photo_ids']==[] and submission['focus_image_map']=={}
     assert all('focus_' not in path.name for path in project.web_images(task,submission))
-    assert '完整画面' in submission['prompt'] and 'face_focus_uncertain' in submission['prompt']
+    assert '完整画面' in submission['prompt'] and 'face_focus_uncertain' not in submission['prompt']
 
 
 @pytest.mark.parametrize(('status','focus_review'),[('clear',False),('blur',False),('uncertain',True)])
@@ -559,7 +561,7 @@ def test_web_selection_concern_never_replaces_manual_or_technical_result(tmp_pat
     assert project.ingest_web(task,submission,_web_focus_answer(task,submission,status))==[]
     photo=project.data['photos'][pid]
     assert 'ai_focus_result' not in photo
-    if status in {'blur','uncertain'}:assert photo['selection_focus_concern']['status']==status
+    assert 'selection_focus_concern' not in photo
     project.refresh(assets,project._crops)
     row=next(row for row in json.loads(project.export_final().read_text(encoding='utf-8'))['photos'] if row['filename']=='A.jpg')
     assert row['rating']==5 and row['pick_status']==1
@@ -597,8 +599,10 @@ def test_web_reuses_existing_api_focus_result_without_new_supplements(tmp_path,m
     submission=project.create_web_submission(task,[task['batches'][0]['id']])
     pid=photo_id(assets[0])
     assert submission['focus_photo_ids']==[]
-    assert submission['known_focus_results'][pid]['status']=='uncertain'
-    assert f'{pid} | uncertain | 接口复查仍无法确定' in submission['prompt']
+    assert submission['known_focus_results']=={}
+    assert '接口复查仍无法确定' not in submission['prompt']
+    assert project.data['photos'][pid]['ai_focus_result']['reason']=='接口复查仍无法确定'
+    assert project.data['photos'][pid]['focus_stale'] is True
 
 
 def test_export_ai_metadata_tracks_current_photo_reply_and_focus(tmp_path):
@@ -612,8 +616,10 @@ def test_export_ai_metadata_tracks_current_photo_reply_and_focus(tmp_path):
     assert project.ingest(task,batch,json.dumps(response))==[]
     rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
     by_name={r['filename']:r for r in rows}
-    assert by_name['A.jpg']['ai_metadata']==dict(selection_reason='表情自然',
-        review_items='检查双眼\n检查拖影',clarity_status='清晰度待确认',clarity_reason='眼部细节不足')
+    assert by_name['A.jpg']['ai_metadata']['selection_reason']=='表情自然'
+    assert by_name['A.jpg']['ai_metadata']['review_items']=='检查双眼\n检查拖影'
+    assert by_name['A.jpg']['ai_metadata']['clarity_status']=='清晰度待确认'
+    assert project.data['photos'][photo_id(assets[0])]['ai_focus_result']['reason']=='眼部细节不足'
     assert by_name['B.jpg']['ai_metadata']['selection_reason']=='表情自然'
     assert 'rating' not in by_name['B.jpg']
     # Stale selection text must not be attached to a current local discard.
@@ -705,7 +711,7 @@ def test_selection_clarity_concern_becomes_pending_without_erasing_valid_star(tm
         assert project.ingest_web(task,submission,json.dumps(payload,ensure_ascii=False))==[]
     photo=project.data['photos'][target]
     assert photo['focus_review'] is True
-    assert photo['selection_focus_concern']['reason']
+    assert 'selection_focus_concern' not in photo  # aesthetic answers cannot change technical state
     rows=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos']
     row=next(row for row in rows if row['filename']=='A.jpg')
     assert row['focus_review'] is True

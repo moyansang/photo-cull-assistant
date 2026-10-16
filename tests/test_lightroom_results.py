@@ -59,7 +59,7 @@ def test_api_focus_status_uses_existing_lightroom_keyword(tmp_path):
     photo.screening_reason = "ai_focus_uncertain"
     assert focus_review_status(photo) is True
     photo.screening_reason = "ai_focus_clear"
-    assert focus_review_status(photo) is False
+    assert focus_review_status(photo) is True  # a legacy reason is not current confirmation
     photo.screening_reason = "ai_focus_blur"
     photo.auto_rejected = True
     photo.ai_focus_result = {
@@ -71,21 +71,23 @@ def test_api_focus_status_uses_existing_lightroom_keyword(tmp_path):
 
     row = json.loads(project.export_final(ai_ratings=True).read_text("utf-8"))["photos"][0]
 
-    assert row["pick_status"] == -1
-    assert row["focus_review"] is False
-    assert row["ai_metadata"] == {
-        "selection_reason": "",
-        "review_items": "",
-        "clarity_status": "模糊",
-        "clarity_reason": "双眼存在运动拖影",
-    }
+    assert 'pick_status' not in row and row['focus_review'] is True
+    assert row['ai_metadata']['clarity_status']=='清晰度待确认'
+    assert project.data['photos'][photo_id(photo)]['ai_focus_result']['reason']=='双眼存在运动拖影'
+    from quality_cases import technical_result
+    crops=CropSettings()
+    photo.ai_focus_result=technical_result(photo,crops,'blur','受控的充分严重证据')
+    project.refresh([photo],crops)
+    row=json.loads(project.export_final(ai_ratings=True).read_text('utf-8'))['photos'][0]
+    assert row['pick_status']==-1 and row['focus_review'] is False
+    assert row['ai_metadata']['clarity_status']=='模糊'
     assert not list(photo.primary_path.parent.glob("*.xmp"))
 
 
 def test_screening_disabled_is_pending_only_under_new_clarity_policy(tmp_path):
     photo = asset(tmp_path / "photos")
     photo.screening_reason = "screening_disabled"
-    assert focus_review_status(photo) is None
+    assert focus_review_status(photo) is True  # old unassessed portrait remains unknown
     photo.clarity_version = "clarity-v2"
     photo.clarity_evidence = {"state": "uncertain", "reasons": ["screening_disabled"]}
     assert focus_review_status(photo) is True

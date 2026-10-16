@@ -15,7 +15,7 @@ from PIL import Image, ImageOps
 from .models import PhotoAsset, RAW_EXTENSIONS, source_identity_path
 
 # Stored for diagnostics, not used to invalidate or silently regroup old sessions.
-GROUPING_VERSION = "workspace-dhash64-block-ssim-crop-v2"
+GROUPING_VERSION = "workspace-dhash64-block-ssim-crop-connected-experimental-v1"
 GRAY_SIZE = 64
 BLOCK_SIZE = 8
 # One-sided central alignment only; at least 81% of the source area remains.
@@ -428,7 +428,7 @@ def _asset_order(asset: PhotoAsset) -> tuple[str, str, str]:
     return identity.casefold(), identity, asset.stem
 
 
-def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
+def _assign_groups_fixed_legacy(assets: list[PhotoAsset], preset: str = "standard", *,
                   preserve_existing: bool = True,
                   protected_group_ids: Collection[int] = (),
                   stats: GroupingStats | None = None) -> list[PhotoAsset]:
@@ -520,6 +520,132 @@ def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
         asset.group_id = chosen
         asset.grouping_anchor_id = anchor_id
     stats.representatives = len(representatives)
+    return assets
+
+
+class GroupingCancelled(RuntimeError):
+    """Optional caller cancellation; no group/anchor changes have been committed."""
+
+
+def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
+                  preserve_existing: bool = True,
+                  protected_group_ids: Collection[int] = (),
+                  stats: GroupingStats | None = None,
+                  cancel_check=None) -> list[PhotoAsset]:
+    """Experimental connected grouping for fresh scans or explicit regrouping.
+
+    Pair thresholds, subject gates and one-sided crop rules are unchanged.
+    Existing sessions retain the legacy fixed-anchor path unless the caller
+    explicitly sets preserve_existing=False. Protected positive groups are
+    excluded from the graph, never used as bridges, and their IDs are reserved.
+    Group and anchor fields are committed only after successful computation.
+    cancel_check, when supplied, is a zero-argument callable returning True
+    to cancel; UI integration of this optional hook is outside this module.
+    """
+    cfg = PRESETS[preset]  # Validate before touching any asset fields.
+    protected = set(protected_group_ids)
+
+    def check_cancel():
+        if cancel_check is not None and cancel_check():
+            raise GroupingCancelled("Grouping cancelled before commit")
+
+    check_cancel()
+    # Explicit ROI descriptors and legacy face-derived body hashes have different
+    # meanings. Refuse a partial migration rather than compare unlike evidence.
+    schemas = {getattr(asset.subject_features, "feature_schema", None)
+               for asset in assets
+               if asset.subject_features is not None
+               and not (asset.group_id > 0 and asset.group_id in protected)}
+    if len(schemas) > 1:
+        raise ValueError("Grouping subject feature schemas differ; refresh all automatic assets first")
+    if preserve_existing and any(asset.group_id > 0 for asset in assets):
+        # The old algorithm mutates its input. Run it on shallow asset copies
+        # so a decode/error/cancel does not partly alter the live session.
+        staged = [replace(asset) for asset in assets]
+        _assign_groups_fixed_legacy(staged, preset, preserve_existing=True,
+                                    protected_group_ids=protected, stats=stats)
+        check_cancel()
+        for asset, result in zip(assets, staged):
+            asset.group_id = result.group_id
+            asset.grouping_anchor_id = result.grouping_anchor_id
+        return assets
+
+    stats = stats if stats is not None else GroupingStats()
+    stats.photos = len(assets)
+    stats.representatives = stats.hash_candidates = stats.structure_comparisons = stats.missing_visuals = 0
+    stats.crop_candidates = stats.crop_matches = 0
+    ordered = sorted(assets, key=_asset_order)
+    pending = [asset for asset in ordered
+               if not (asset.group_id > 0 and asset.group_id in protected)]
+    visuals = []
+    index, crop_index = _HashIndex(), _HashIndex()
+    for position, asset in enumerate(pending):
+        check_cancel()
+        visual = visual_features(asset)
+        visuals.append(visual)
+        if visual is None:
+            stats.missing_visuals += 1
+            continue
+        index.add(visual.whole, position)
+        for view in visual.crop_variants:
+            crop_index.add(view.whole, position)
+
+    parent = list(range(len(pending)))
+
+    def find(position):
+        while parent[position] != position:
+            parent[position] = parent[parent[position]]
+            position = parent[position]
+        return position
+
+    def union(left, right):
+        left, right = find(left), find(right)
+        if left != right:
+            parent[max(left, right)] = min(left, right)
+
+    for left_position, (asset, visual) in enumerate(zip(pending, visuals)):
+        check_cancel()
+        if visual is None:
+            continue
+        whole_candidates = [(d, p) for d, p in index.find(
+            visual.whole, cfg.hash_distance_threshold) if p > left_position]
+        crop_candidates = [(d, p) for d, p in _crop_candidate_positions(
+            visual, index, crop_index, cfg) if p > left_position]
+        stats.hash_candidates += len(whole_candidates)
+        stats.crop_candidates += len(crop_candidates)
+        # Candidate enumeration is indexed, exact and untruncated. Do not cap
+        # edges: omitting a valid bridge changes connected-component semantics.
+        candidates = sorted({p for _, p in whole_candidates + crop_candidates})
+        for right_position in candidates:
+            check_cancel()
+            # An internal edge cannot change a component partition. Avoid its
+            # expensive SSIM once a previously accepted path already connects it.
+            # Candidate enumeration still has a quadratic dense worst case.
+            if find(left_position) == find(right_position):
+                continue
+            other, right = pending[right_position], visuals[right_position]
+            if _similar(asset, other, visual, right, cfg, stats):
+                union(left_position, right_position)
+            elif _crop_aligned_similar(asset, other, visual, right, cfg, stats):
+                stats.crop_matches += 1
+                union(left_position, right_position)
+
+    components = {}
+    for position in range(len(pending)):
+        components.setdefault(find(position), []).append(position)
+    # Reserve even absent protected IDs, as the original API does.
+    next_id = max((0, *protected)) + 1
+    staged = []
+    for positions in components.values():
+        anchor_id = source_photo_id(pending[positions[0]])
+        for position in positions:
+            staged.append((pending[position], next_id, anchor_id))
+        next_id += 1
+    stats.representatives = len(components)
+    check_cancel()
+    for asset, group_id, anchor_id in staged:
+        asset.group_id = group_id
+        asset.grouping_anchor_id = anchor_id
     return assets
 
 

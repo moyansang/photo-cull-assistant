@@ -122,6 +122,7 @@ def _portrait_result(face_result, *, bodies=(), include_face=True):
         for index, participant in enumerate(participants, 1):
             item = dict(participant, participant=index, evidence_kind='face',
                         eye_evidence=bool(participant.get('landmarks_used')))
+            item['face_measurement_state'] = participant.get('face_state', participant.get('state'))
             legacy_box = item.get('face_box') or (face_result.face_box if len(participants)==1 else None)
             if not item.get('normalized_box') and legacy_box and face_result.source_size:
                 px,py,pw,ph=legacy_box
@@ -131,6 +132,8 @@ def _portrait_result(face_result, *, bodies=(), include_face=True):
             body = evidence.get('body') or {}
             body_people = body.get('participants') or [body]
             own_body = body_people[index-1] if index <= len(body_people) else {}
+            if own_body:
+                item['body'] = own_body
             if own_body and own_body.get('state') != 'clear':
                 item['face_state'] = item.get('state')
                 item['body'] = own_body
@@ -264,7 +267,7 @@ def landscape_evidence(image: Image.Image) -> dict[str, Any]:
             'supported_clear_regions':len(supported_clear)}
 
 
-def assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=None, body_check=False):
+def _assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=None, body_check=False):
     mode = normalize_mode(mode)
     settings = crop_settings or CropSettings()
     from .shared_decode import full_image
@@ -338,6 +341,39 @@ def assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=N
     elif 'selected_bodies' in entry:
         asset.person_review_pending = False
     return result
+
+
+def assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=None, body_check=False):
+    """Apply the confirmed-primary policy to fresh portrait measurements only."""
+    from .primary_quality import confirmed_selection, evaluate_local_evidence
+    settings = crop_settings or CropSettings()
+    before = confirmed_selection(asset, settings) if normalize_mode(mode) == 'portrait' else None
+    result = _assess_asset_mode(asset, mode=mode, crop_settings=settings,
+                                cache_dir=cache_dir, body_check=body_check)
+    if normalize_mode(mode) == 'landscape':
+        return result
+    evidence = result.focus_evidence or {}
+    after = confirmed_selection(asset, settings)
+    # Never assign the current confirmation to historical evidence.
+    if before is not None and after is not None and before['digest'] == after['digest']:
+        evidence['measurement_confirmation_digest'] = before['digest']
+    policy = evaluate_local_evidence(asset, settings, evidence)
+    evidence['primary_quality'] = policy
+    evidence.update(state=policy['state'], recommendation=policy['recommendation'],
+                    reliability='adequate' if policy['recommendation'] != 'review' else 'insufficient')
+    from copy import copy
+    from .focus_protocol import make_scope, FocusProtocolError
+    scoped = copy(asset)
+    scoped.clarity_evidence = evidence
+    try:
+        asset.focus_scope = make_scope(scoped, settings)
+    except (FocusProtocolError, OSError, TypeError, ValueError):
+        asset.focus_scope = None
+    asset.person_review_pending = after is None
+    reason = ('primary_selection_unconfirmed' if after is None else
+              {'reject':'confirmed_primary_severe_blur', 'keep':'confirmed_primary_clear',
+               'review':'confirmed_primary_quality_uncertain'}[policy['recommendation']])
+    return replace(result, focus_evidence=evidence, rejected=policy['recommendation']=='reject', reason=reason)
 
 
 def recommend_group(assets) -> dict[str, dict[str, Any]]:

@@ -1,7 +1,7 @@
 """Read-only restoration summary; never creates tasks or changes saved results."""
 import json
 
-from .lightroom_results import focus_review_status
+from .lightroom_results import focus_review_status, current_focus
 
 
 def restoration_summary(workspace, assets, settings, sheets_ready, job=None):
@@ -34,7 +34,9 @@ def restoration_summary(workspace, assets, settings, sheets_ready, job=None):
     else:
         lines.append('AI 清晰度复核：未发现有效 AI 复核记录；当前没有检测到待复核照片。')
     if uncertain:
-        lines.append(f'复核后仍为“清晰度待确认”：{uncertain} 张，不进入 AI 选片。')
+        lines.append(f'复核后仍为“清晰度待确认”：{uncertain} 张；摄影表现选片可独立进行。')
+    if counts['historical']:
+        lines.append(f"历史技术记录：{counts['historical']} 张，未作为当前有效结论；当前按“清晰度待确认”处理。")
     lines.append('联系表：' + ('已生成。' if sheets_ready else '未生成或需要重新生成。'))
     path = workspace / 'ai_project.json'
     if not path.exists():
@@ -68,17 +70,18 @@ def restoration_summary(workspace, assets, settings, sheets_ready, job=None):
 
 
 def focus_counts(assets):
-    counts = dict(reviewed=0, pending=0, uncertain=0, dirty=0, failed=0, skipped=0)
+    counts = dict(reviewed=0, pending=0, uncertain=0, dirty=0, failed=0, skipped=0, historical=0)
     for asset in assets or []:
         if getattr(asset, 'ai_focus_dirty', False):
             counts['dirty'] += 1
             continue
-        value = getattr(asset, 'ai_focus_result', None)
-        if (isinstance(value, dict) and value.get('status') in {'clear', 'blur', 'uncertain'}
-                and isinstance(value.get('reason'), str) and value['reason'].strip()):
+        value = current_focus(asset)
+        if value is not None:
             counts['reviewed'] += 1
             counts['uncertain'] += value['status'] == 'uncertain'
         elif focus_review_status(asset) is True:
+            if isinstance(getattr(asset,'ai_focus_result',None),dict):
+                counts['historical'] += 1
             state = getattr(asset, 'ai_focus_attempt', None)
             counts[state if state in {'failed', 'skipped'} else 'pending'] += 1
     return counts

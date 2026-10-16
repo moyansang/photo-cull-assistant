@@ -16,7 +16,8 @@ def test_saved_settings_and_new_workspace(tmp_path):
 def test_scan_only_and_partial_review(tmp_path):
     assets=[NS(screening_reason='face_focus_uncertain'),NS(ai_focus_result={'status':'uncertain','reason':'细节不足'}),NS(ai_focus_dirty=True)]
     text=summary(tmp_path,assets)
-    assert '已复核 1 张' in text and '有效结论 1 张' in text and '重新处理 1 张' in text
+    assert '已复核 0 张' in text and '有效结论 2 张' in text and '重新处理 1 张' in text
+    assert '历史技术记录：1 张' in text
     assert '清晰度待确认' in text and '尚未创建任务' in text
 
 def test_completed_culling_and_export_read_only(tmp_path):
@@ -39,7 +40,7 @@ def test_broken_project_not_claim_complete(tmp_path):
 
 def test_local_clear_is_not_ai_reviewed(tmp_path):
     text=summary(tmp_path,[NS(screening_reason='subject_not_obviously_blurred')])
-    assert '未发现有效 AI 复核记录' in text
+    assert '已复核 0 张' in text and '尚未取得有效结论 1 张' in text
 
 def test_app_restore_hooks_and_log_summary(tmp_path):
     import inspect
@@ -61,7 +62,9 @@ def test_app_restore_hooks_and_log_summary(tmp_path):
 
 def test_recommendations_and_reason_counts(tmp_path):
     from ai_cull_assistant.workspace_summary import recommended_next_step as next_step, focus_counts
-    clear=NS(screening_reason='subject_not_obviously_blurred')
+    # Scene summaries have no portrait-confirmation requirement. Unconfirmed
+    # portrait records are explicitly covered by the tests above.
+    clear=NS(screening_reason='subject_not_obviously_blurred',analysis_mode='landscape')
     pending=NS(screening_reason='face_focus_uncertain')
     failed=NS(screening_reason='face_focus_uncertain',ai_focus_attempt='failed')
     skipped=NS(screening_reason='face_focus_uncertain',ai_focus_attempt='skipped')

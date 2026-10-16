@@ -65,6 +65,7 @@ def run(report_path: str) -> None:
             result = run_scan(photos, root / "workspace")
             assert len(result.assets) == 1
             assert result.main_pages and all(p.exists() for p in result.main_pages)
+            _primary_quality_protocol_check(report, result.assets[0])
             from .crop_dialog import CropDialog
             from .crop_settings import CropSettings
             from .subject import SubjectFeatures
@@ -119,15 +120,11 @@ def run(report_path: str) -> None:
             ui_app = App(settings_dir=root)
             ui_app.withdraw()
             project = ReviewProject(root / 'workspace')
-            # Unknown/local recommendations do not require a technical-AI
-            # purchase. Unconfirmed portrait subjects remain an admission gate.
+            # Aesthetic selection remains available while technical quality is
+            # pending. Technical review still requires confirmed primary people.
             assert ReviewProject._asset_is_admitted(result.assets[0])
             result.assets[0].person_review_pending = True
-            assert not ReviewProject._asset_is_admitted(result.assets[0])
-            result.assets[0].person_review_pending = False
-            result.assets[0].clarity_version = 'clarity-v2'
-            result.assets[0].clarity_evidence = {'state': 'clear'}
-            result.assets[0].screening_reason = 'subject_not_obviously_blurred'
+            assert ReviewProject._asset_is_admitted(result.assets[0])
             result.assets[0].ai_focus_result = None
             task = project.create_task(result.assets, ui_app.crop_settings, {'intensity':'均衡保留'})
             batch = task['batches'][0]
@@ -184,8 +181,9 @@ def run(report_path: str) -> None:
             report['api_preset_dialog'] = True
             assert not (photos / "TEST001.xmp").exists()
             payload = json.loads(export.read_text(encoding="utf-8"))
-            assert any(p.get("rating") == 5 for p in payload["photos"])
+            assert any(p.get("rating") == 5 and p.get("focus_review") is True for p in payload["photos"])
             report["lightroom_export_without_xmp"] = True
+            report['aesthetic_rating_preserved_with_quality_pending'] = True
             from .processing_job import start_job, load_job
             from threading import Event
             options = dict(grouping_preset='standard', photos_per_page=8, columns=2, technical_screening=False)
@@ -241,6 +239,51 @@ def run(report_path: str) -> None:
     Path(report_path).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if not report["ok"]:
         raise SystemExit(1)
+
+
+def _primary_quality_protocol_check(report, asset):
+    """Controlled data contracts only; no model calls or accuracy claims."""
+    from . import focus_protocol as protocol
+    from .crop_settings import CropSettings
+    from .primary_quality import CONFIRMATION_KEY, confirm_selection, confirmed_selection
+    from .lightroom_results import effective_decision
+    settings = CropSettings(photos={CropSettings().key(asset): {
+        'selected_faces': [[.1, .1, .2, .2], [.6, .1, .2, .2]]}})
+    entry = settings.photos[settings.key(asset)]
+    assert confirmed_selection(asset, settings) is None
+    entry[CONFIRMATION_KEY] = confirm_selection(asset, settings)
+    scope = protocol.make_scope(asset, settings)
+    assert len(scope['subjects']) == 2
+    items = []
+    for index, subject in enumerate(scope['subjects']):
+        context = protocol.make_context(scope, subject['id'], evidence_parts=('face', 'body'))
+        response = protocol.response_template(context)
+        if index == 0:
+            response['parts'][0].update(visibility='visible', severity='severe',
+                evidence_sufficient=True, location='face', reason='Controlled severe edge evidence')
+        items.append(protocol.parse_response(json.dumps(response), context))
+    result = protocol.assemble_result(scope, items)
+    assert result['recommendation'] == 'reject'
+    assert result['participants'][1]['parts'][0]['severity'] == 'uncertain'
+    assert protocol.current_result(result, asset, settings) == result
+    assert protocol.current_result({'status': 'blur', 'reason': 'legacy ordinary blur'}, asset, settings) is None
+    photo = dict(analysis_mode='portrait', focus_scope=scope, ai_focus_result=result,
+        ai={'fingerprint': 'controlled-selection', 'rating': 5, 'reason': 'controlled pose'},
+        fingerprint='controlled-selection', technical_fingerprint='controlled-technical',
+        focus_fingerprint='controlled-technical')
+    decision = effective_decision(photo)
+    assert decision['recommendation'] == 'reject' and decision['rating'] == 5
+    photo['final'] = {'confirmed': True, 'rating': 4, 'pick_status': 1}
+    decision = effective_decision(photo)
+    assert decision['recommendation'] == 'keep' and decision['source'] == 'manual'
+    entry['selected_faces'][0][0] = .2
+    assert confirmed_selection(asset, settings) is None
+    assert protocol.current_result(result, asset, settings) is None
+    report['controlled_primary_quality_protocol'] = dict(
+        unconfirmed_pending=True, severe_plus_unknown_rejects=True,
+        legacy_blur_not_promoted=True, selection_star_retained=True,
+        manual_decision_priority=True, roi_change_invalidates=True,
+        modelCalls=0, realPhotoAccuracyClaim=False)
 
 
 def _optional_codec_check(report):

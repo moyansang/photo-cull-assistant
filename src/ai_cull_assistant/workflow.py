@@ -56,6 +56,9 @@ def run_scan(
     collection_key = str(input_path)
     groups_loaded = load_groups(assets, group_store_path, collection_key=collection_key, allow_partial=True)
     if not groups_loaded or any(a.group_id <= 0 for a in assets):
+        from .roi_features import refresh_asset_roi_features
+        for asset in assets:
+            refresh_asset_roi_features(asset, crop_settings)
         protected = manual_group_ids(group_store_path, collection_key=collection_key)
         assign_groups(assets, grouping_preset, protected_group_ids=protected)
         save_groups(assets, group_store_path, source="auto", collection_key=collection_key)

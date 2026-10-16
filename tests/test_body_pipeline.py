@@ -65,8 +65,8 @@ def test_valid_ai_precedes_local_body_warning_without_erasing_evidence(tmp_path,
     if body_observation is not None:
         response['observations']['body_motion'] = body_observation
     _apply_focus_review(asset, screened, response)
-    assert asset.ai_focus_result['status'] == 'clear'
-    assert bool(asset.ai_focus_result.get('local_conflict')) == (expected == 'uncertain')
+    assert asset.ai_focus_result['status'] == 'uncertain'
+    assert asset.ai_focus_result['legacy_result'] == response
     assert screened.focus_evidence == evidence
     assert not asset.auto_rejected
 
@@ -74,7 +74,13 @@ def test_valid_ai_precedes_local_body_warning_without_erasing_evidence(tmp_path,
 def test_api_body_blur_is_rejected(tmp_path):
     asset = asset_at(tmp_path)
     screened = ScreeningResult(False, 'body_focus_uncertain', True)
-    _apply_focus_review(asset, screened, dict(status='blur', reason='手臂存在明确重影'))
+    from quality_cases import technical_result
+    from ai_cull_assistant import focus_protocol
+    crops=CropSettings()
+    response=technical_result(asset,crops,'blur','主要手臂有充分严重拖影证据')
+    response['participants'][0]['parts'][0]['severity']='clear'
+    response=focus_protocol.assemble_result(response['scope'],response['participants'])
+    _apply_focus_review(asset, screened, response, crops)
     assert asset.auto_rejected
     assert screened.reason == 'ai_focus_blur'
 

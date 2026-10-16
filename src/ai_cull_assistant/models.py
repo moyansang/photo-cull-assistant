@@ -46,6 +46,9 @@ class PhotoAsset:
 
     # Preserve existing AI IDs/cache signatures when a source root is relocated.
     source_identity_paths: dict[str, str] = field(default_factory=dict)
+    # Current technical scope is recomputed on refresh; old checkpoints may
+    # omit it and must remain readable without granting a new confirmation.
+    focus_scope: dict | None = None
 
     @property
     def rating_target_paths(self) -> list[Path]:

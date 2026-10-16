@@ -132,7 +132,9 @@ def _source_identity(asset: Any, face: tuple[float, float, float, float] | None)
             stat=source.stat();paths.append((source_identity_path(asset,source),stat.st_size,stat.st_mtime_ns))
         except OSError:
             paths.append((source_identity_path(asset,source),None,None))
-    return {'paths':paths, 'face':list(face) if face else None, 'mode':_mode(asset)}
+    from .image_decode import asset_source_signature
+    return {'paths':paths, 'face':list(face) if face else None, 'mode':_mode(asset),
+            'source_signature':asset_source_signature(asset)}
 
 
 
@@ -220,6 +222,7 @@ def _prepare_focus_images(
     subject_override: Any = None,
     include_body: bool = True,
     decoded_image=None,
+    metadata=None,
 ) -> tuple[list[Path], bool]:
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
@@ -228,6 +231,8 @@ def _prepare_focus_images(
     with (nullcontext(decoded_image) if decoded_image is not None else load_full_image(asset)) as decoded:
         image = decoded if decoded.mode == "RGB" else decoded.convert("RGB")
         width, height = image.size
+        if metadata is not None:
+            metadata['source_size'] = [width, height]
         if width <= 0 or height <= 0:
             raise ValueError("源照片尺寸无效。")
 
@@ -314,7 +319,7 @@ def _prompt(photo_identity: str, face_found: bool, body_images: int = 0, *, mode
     elif body_only:
         target = "没有可靠人脸，但已可靠定位所选人体。仅判断人体躯干与主要肢体的边缘、失焦和运动拖影；不能用身体清晰替代眼区证据，理由中明确眼部未核验。背景和未选中人物不参与判断。"
     if body_images:
-        target += f" 最后 {body_images} 张是与所选人脸对应的主体身体细节。检查躯干及手臂、腿等主要部位的明显运动拖影；忽略仅指尖、发梢、衣摆轻微运动及背景景深虚化。observations 还须加入 body_motion 字段（present|absent|uncertain）。任何主体部位明确模糊则 blur，身体不确定不能仅因脸清楚而 clear。"
+        target += f" 附带的 {body_images} 张是与所选人脸对应的主体身体细节。检查躯干及手臂、腿等主要部位的严重模糊；忽略仅指尖、发梢、衣摆轻微运动及背景景深虚化。observations 还须加入 body_motion 字段（present|absent|uncertain）。主要部位明确严重模糊才可使用 blur，身体不确定不能仅因脸清楚而 clear。"
     body_field = ',"body_motion":"present|absent|uncertain"' if body_images else ''
     return f"""你正在审核单张照片的主体对焦清晰度。第一张图是总览，后续图片是从原始文件直接裁切的原生像素细节，未放大、未锐化。{target}
 
@@ -404,7 +409,149 @@ def _write_cache(path: Path, result: dict[str, Any]) -> None:
             pass
 
 
-def review_focus(
+def review_focus(asset, crop_settings, profile, cache_dir):
+    """Review the complete current confirmed range using the strict protocol."""
+    if _mode(asset) == 'landscape':
+        return _legacy_review_focus(asset, crop_settings, profile, cache_dir)
+    from . import focus_protocol as protocol
+    from .primary_quality import confirmed_selection
+    settings = crop_settings or CropSettings()
+    scope = protocol.make_scope(asset, settings)
+    confirmation = confirmed_selection(asset, settings)
+    regions = {item['id']:item for item in confirmation['regions']}
+    results = [_review_primary_target(asset, settings, profile, Path(cache_dir), scope,
+                                      regions[item['id']]) for item in scope['subjects']]
+    result = protocol.assemble_result(scope, results)
+    protocol.validate_result(result, scope=protocol.make_scope(asset, settings))
+    return _bind_result(dict(result, source='api'), asset, settings)
+
+
+@guard_focus_review
+def _review_primary_target(asset, settings, profile, root, scope, region):
+    from copy import copy
+    from . import focus_protocol as protocol
+    from .focus_image_cache import cached_focus_images
+    from .focus_audit import record_inputs, record_response
+    entry = settings.photos.get(settings.key(asset), {})
+    face = tuple(region['box']) if region['kind']=='face' else None
+    values = dict(entry, selected_faces=[list(face)] if face else [],
+                  selected_bodies=[] if face else [region['box']])
+    values.pop('manual_face', None)
+    per_settings = replace(settings, photos={**settings.photos, settings.key(asset):values})
+    evidence = getattr(asset, 'clarity_evidence', None) or {}
+    policy = evidence.get('primary_quality') or {}
+    if not (policy.get('version') == 'confirmed-primary-quality-v1'
+            and policy.get('confirmation_digest') == scope['confirmation_digest']
+            and evidence.get('measurement_confirmation_digest') == scope['confirmation_digest']):
+        policy = {}
+    people=policy.get('subjects')
+    people=people if isinstance(people,list) else []
+    person = next((item for item in people if isinstance(item,dict) and item.get('id')==region['id']), {})
+    # Supply only body evidence already linked to this particular selected face.
+    original = person.get('original_evidence') or {}
+    linked = person.get('original_body_evidence') or []
+    body = (linked[0] if len(linked)==1 and linked[0].get('association')=='pose_head_overlap'
+            and type(linked[0].get('associated_face')) is int else original.get('body', {}))
+    if isinstance(body,dict) and ((body.get('diagnostics') or {}).get('ambiguous') is True
+            or body.get('association') in ('ambiguous','unverified','reverse_conflict')):
+        body = {}
+    image_asset = copy(asset)
+    image_asset.clarity_evidence = dict(evidence, body=body if face else {})
+    image_metadata = {}
+    images, face_found = cached_focus_images(image_asset, per_settings, root, face,
+                                              include_body=bool(face and body), metadata=image_metadata)
+    # Native body inputs for a uniquely linked person do not depend on the
+    # legacy motion-only image gate. Never invent a motion diagnosis to get
+    # an image through that gate.
+    extra_boxes = []
+    if face:
+        from .primary_quality import confirmed_selection
+        current = confirmed_selection(asset, settings)
+        for item in current['regions']:
+            if item['kind']=='body' and item['id'] in person.get('region_ids', []):
+                extra_boxes.append(('normalized', item['box']))
+        if not extra_boxes and isinstance(body, dict):
+            for item in body.get('regions', []):
+                if isinstance(item, dict):
+                    extra_boxes.append(('pixels', item.get('box')))
+    width, height = image_metadata['source_size']
+    from contextlib import nullcontext
+    with (load_full_image(asset) if extra_boxes else nullcontext(None)) as native:
+        native_identity = hashlib.sha256(json.dumps(dict(source=_source_identity(asset, face),
+            boxes=extra_boxes, scope=scope['digest']), sort_keys=True, allow_nan=False).encode()).hexdigest()
+        directory = root / protocol.PROMPT_VERSION / 'native' / native_identity
+        for index, (kind, box) in enumerate(extra_boxes[:MAX_DETAIL_IMAGES], 1):
+            if not isinstance(box, (list, tuple)) or len(box)!=4 or not all(
+                    isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in box):
+                continue
+            if kind=='normalized':
+                x,y,w,h=box
+                bounds=(round(x*width),round(y*height),round((x+w)*width),round((y+h)*height))
+            else:
+                bounds=tuple(round(v) for v in box)
+            left,top,right,bottom=bounds
+            if not (0<=left<right<=width and 0<=top<bottom<=height):
+                continue
+            # Keep existing native tiling and image-size limits.
+            for tile in _tile_boxes(bounds):
+                if len(images)>=MAX_DETAIL_IMAGES+1:
+                    break
+                directory.mkdir(parents=True, exist_ok=True)
+                path=directory/f'body_native_associated_{index:02d}_{len(images):02d}.png'
+                with native.crop(tile) as cropped:
+                    cropped.save(path, format='PNG')
+                images.append(path)
+    available = []
+    if face_found and region['box'][2]*width >= 96 and region['box'][3]*height >= 96:
+        if any(path.name.startswith('face_native_') for path in images):
+            available.append('face')
+    if any(path.name.startswith(('body_native_', 'body_region_native')) for path in images):
+        if face or min(region['box'][2]*width, region['box'][3]*height) >= 96:
+            available.append('body')
+    invisible = ['body'] if any(part.get('part')=='body' and part.get('state')=='not_visible'
+                               for part in person.get('parts', [])) else []
+    context = protocol.make_context(scope, region['id'], evidence_parts=available,
+                                     not_visible_parts=invisible)
+    digest = hashlib.sha256((_cache_digest(asset, face, profile, per_settings)
+                             + scope['digest'] + context['digest']).encode()).hexdigest()
+    cache_path = root / protocol.PROMPT_VERSION / (digest+'.json')
+    if not getattr(asset, 'ai_focus_dirty', False):
+        try:
+            cached = json.loads(cache_path.read_text(encoding='utf-8'))
+            if cached.get('context') == context:
+                return protocol._validated_item(cached, scope)
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+    if not available:
+        return protocol.unavailable_result(context, '当前主体没有足够的原生细节，需人工检查。')
+    prompt = ('本任务只做原图技术复核，不给星级。第一张为总览，其余为所选主体原生像素裁切；'
+              '仅检查当前所选框内主体，忽略总览中的其他人。') + protocol.prompt_contract(context)
+    audit = record_inputs(root, digest, images, prompt, profile, protocol.PROMPT_VERSION,
+                           source_paths=asset.rating_target_paths)
+    response = call_model(profile, prompt, images)
+    if not isinstance(response, Mapping):
+        raise ApiError('AI 技术复核返回了无效响应。')
+    raw = response.get('text')
+    record_response(root, digest, dict(raw_response=raw, usage=response.get('usage', {}), audit=audit))
+    try:
+        result = protocol.parse_response(raw, context)
+    except protocol.FocusProtocolError as exc:
+        # Older model integrations may still answer the old schema. Preserve
+        # the raw audit and leave quality unknown; never upgrade legacy blur.
+        try:
+            legacy = json.loads(raw)
+        except (TypeError, ValueError):
+            raise ApiError(str(exc)) from exc
+        if isinstance(legacy, dict) and 'version' not in legacy and legacy.get('status') in _STATUSES:
+            result = protocol.unavailable_result(context, '回答缺少新协议的严重程度和部位证据，需人工复核。')
+        else:
+            raise ApiError(str(exc)) from exc
+    protocol._validate_context(context, protocol.make_scope(asset, settings))
+    _write_cache(cache_path, result)
+    return result
+
+
+def _legacy_review_focus(
     asset: Any,
     crop_settings: CropSettings,
     profile: Mapping[str, object],
