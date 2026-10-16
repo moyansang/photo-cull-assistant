@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-VERSION = 'scene-burst-camera-cohort-v9-candidate'
+VERSION = 'scene-burst-camera-cohort-v10-presets'
 
 @dataclass(frozen=True)
 class BurstConfig:
@@ -32,6 +32,11 @@ class BurstConfig:
     background_framing_ratio: float = 1.25
 
 CONFIG = BurstConfig()
+PRESET_CONFIGS = {
+    'strict': replace(CONFIG, gap_seconds=8., span_seconds=60.),
+    'standard': CONFIG,
+    'loose': replace(CONFIG, gap_seconds=18., span_seconds=120.),
+}
 
 def _capture_seconds(value):
     if value.tzinfo is None:return (value-datetime(1970,1,1)).total_seconds()
@@ -147,12 +152,17 @@ def _paint(mask,box,value):
     h,w=mask.shape;x,y,bw,bh=box
     mask[max(0,int(y*h)):min(h,math.ceil((y+bh)*h)),max(0,int(x*w)):min(w,math.ceil((x+bw)*w))]=value
 
-def _hist(rgb,mask=None):
+def _hist_bins(rgb):
     hsv=cv2.cvtColor(rgb,cv2.COLOR_RGB2HSV)
     # Hue/chroma plus a neutral category; no sharpness or luminance threshold.
-    hue=hsv[:,:,0].astype(int)//12
-    sat=hsv[:,:,1].astype(int)
-    bins=np.where(sat<35,30+np.minimum(3,hsv[:,:,2].astype(int)//64),hue*2+(sat>=128))
+    # All values fit in uint8 (0..33). Keep exact integer bins while avoiding
+    # three full-frame int64 copies, and share one conversion across regions.
+    hue=hsv[:,:,0]//12
+    sat=hsv[:,:,1]
+    return np.where(sat<35,30+hsv[:,:,2]//64,hue*2+(sat>=128))
+
+def _hist(rgb,mask=None,bins=None):
+    if bins is None:bins=_hist_bins(rgb)
     selected=bins[mask>0] if mask is not None else bins.ravel()
     hist=np.bincount(selected,minlength=34).astype(np.float32)
     return hist/max(1.,float(hist.sum()))
@@ -217,6 +227,7 @@ def build_context(asset,identity=None):
     orb=cv2.ORB_create(nfeatures=900,fastThreshold=9,edgeThreshold=15)
     points,descriptors=orb.detectAndCompute(grey,background)
     xy=np.array([k.pt for k in points],np.float32).reshape(-1,2)
+    bins=_hist_bins(rgb)
     people=[]
     for x,y,bw,bh in faces:
         region=np.zeros((h,w),np.uint8)
@@ -225,7 +236,7 @@ def build_context(asset,identity=None):
             _paint(region,box,255)
             vector=next((f.vector for f in detected if f.box==(x,y,bw,bh)),None)
             garment=_box((x-.7*bw,y+1.1*bh,2.4*bw,3.2*bh))
-            people.append(PersonAppearance(_hist(rgb,region),vector,_pattern(rgb,garment) if garment else None,
+            people.append(PersonAppearance(_hist(rgb,region,bins),vector,_pattern(rgb,garment) if garment else None,
                                            (x,y,bw,bh) if vector is not None else None))
     small=cv2.resize(grey,(9,8),interpolation=cv2.INTER_AREA)
     value=0
@@ -233,7 +244,7 @@ def build_context(asset,identity=None):
     gradient=cv2.magnitude(cv2.Sobel(grey,cv2.CV_32F,1,0),cv2.Sobel(grey,cv2.CV_32F,0,1))
     texture=float(np.median(gradient[background>0])) if background.any() else 0.
     return BurstContext(time,w/h,xy,descriptors,(w,h),cv2.resize(grey,(96,96)),
-        cv2.resize(background,(96,96),interpolation=cv2.INTER_NEAREST),_hist(rgb,foreground),tuple(people),value,texture)
+        cv2.resize(background,(96,96),interpolation=cv2.INTER_NEAREST),_hist(rgb,foreground,bins),tuple(people),value,texture)
 
 def camera_evidence(left,right,cfg=CONFIG):
     """Return same / different / unknown, with an anchored camera transform."""
@@ -318,11 +329,15 @@ def pair_evidence(anchor,candidate,cfg=CONFIG):
     return bool(accepted),dict(camera=camera,geometry=geometry,framing=framing,background_layout=layout,
                               cohort_overlap=appearance,people_coverage=coverage)
 
-def assign_bursts(assets,protected,source_id,check_cancel,stats,cfg=CONFIG,*,preserve_existing=False):
+def assign_bursts(assets,protected,source_id,check_cancel,stats,cfg=CONFIG,*,preserve_existing=False,context_cache=None):
     from .face_identity import IdentityEngine,IdentityUnavailable
     try:identity=IdentityEngine() if any(_regions(a)[0] for a in assets) else None
     except IdentityUnavailable:identity=None
-    def context(asset):return build_context(asset,identity)
+    def context(asset):
+        if context_cache is None:return build_context(asset,identity)
+        key=id(asset)
+        if key not in context_cache:context_cache[key]=build_context(asset,identity)
+        return context_cache[key]
     ordered=sorted(assets,key=lambda a:(_capture_seconds(a.captured_at),a.stem.casefold(),source_id(a)))
     pending=[];existing={};groups=[];staged=[]
     for asset in ordered:
@@ -394,3 +409,119 @@ def assign_bursts(assets,protected,source_id,check_cancel,stats,cfg=CONFIG,*,pre
     if identity is not None:identity.clear()
     stats.photos=len(assets);stats.representatives=len(groups)
     return assets
+
+
+def _time_compatible(left,right,cfg):
+    a=[_capture_seconds(x.captured_at) for x in left]
+    b=[_capture_seconds(x.captured_at) for x in right]
+    gap=max(0.,min(a)-max(b),min(b)-max(a))
+    span=max(*a,*b)-min(*a,*b)
+    return gap<=cfg.gap_seconds and span<=cfg.span_seconds
+
+
+def assign_preset_bursts(assets,protected,source_id,check_cancel,stats,cfg=CONFIG,*,preserve_existing=False):
+    """Refine fixed standard groups without letting time windows steal members.
+
+    Strict only splits standard groups. Loose treats each standard group as an
+    atomic unit and requires every cross-member pair in both directions. Saved
+    groups keep their IDs/anchors and cannot merge with another saved group.
+    Contexts for loose checks exist only during this call, never on disk.
+    """
+    if cfg is CONFIG:
+        return assign_bursts(assets,protected,source_id,check_cancel,stats,cfg,preserve_existing=preserve_existing)
+    staged=[replace(a) for a in assets]
+    saved={id(b) for a,b in zip(assets,staged) if preserve_existing and a.group_id>0}
+    cache={} if cfg.gap_seconds>CONFIG.gap_seconds else None
+    identity=None;identity_checked=False
+    try:
+        assign_bursts(staged,protected,source_id,check_cancel,stats,CONFIG,
+                      preserve_existing=preserve_existing,context_cache=cache)
+        canonical={}
+        for a in staged:
+            if a.group_id not in protected:canonical.setdefault(a.group_id,[]).append(a)
+        next_id=max((0,*protected,*(a.group_id for a in staged)))+1
+        def ordered(items):return sorted(items,key=lambda a:(_capture_seconds(a.captured_at),a.stem.casefold(),source_id(a)))
+        if cache is None:
+            count=0
+            for gid,members in sorted(canonical.items()):
+                check_cancel();old=[a for a in members if id(a) in saved]
+                pieces=[old] if old else []
+                for asset in ordered([a for a in members if id(a) not in saved]):
+                    check_cancel()
+                    target=next((piece for piece in pieces if _time_compatible(piece,[asset],cfg)),None)
+                    if target is None:pieces.append([asset])
+                    else:target.append(asset)
+                for i,piece in enumerate(pieces):
+                    piece_id=gid if i==0 else next_id
+                    if i>0:next_id+=1
+                    anchor=(next((a.grouping_anchor_id for a in old if a.grouping_anchor_id),source_id(ordered(old)[0]))
+                            if i==0 and old else source_id(ordered(piece)[0]))
+                    for asset in piece:
+                        if id(asset) not in saved:asset.group_id=piece_id;asset.grouping_anchor_id=anchor
+                count+=len(pieces)
+        else:
+            merged=[]
+            def context(asset):
+                nonlocal identity,identity_checked
+                key=id(asset)
+                if key not in cache:
+                    if not identity_checked:
+                        from .face_identity import IdentityEngine,IdentityUnavailable
+                        try:identity=IdentityEngine() if any(_regions(a)[0] for a in staged) else None
+                        except IdentityUnavailable:identity=None
+                        identity_checked=True
+                    cache[key]=build_context(asset,identity)
+                return cache[key]
+            def compatible(left,right):
+                for a in left:
+                    for b in right:
+                        check_cancel();ca=context(a);cb=context(b)
+                        if ca is None or cb is None:return False
+                        stats.pose_candidates+=1
+                        if not pair_evidence(ca,cb,cfg)[0]:stats.pose_component_rejections+=1;return False
+                        stats.pose_candidates+=1
+                        if not pair_evidence(cb,ca,cfg)[0]:stats.pose_component_rejections+=1;return False
+                return True
+            rows=sorted(canonical.items(),key=lambda item:(not any(id(a) in saved for a in item[1]),
+                min(_capture_seconds(a.captured_at) for a in item[1]),item[0]))
+            for gid,members in rows:
+                check_cancel();has_saved=any(id(a) in saved for a in members)
+                anchors={a.grouping_anchor_id for a in members if id(a) in saved and a.grouping_anchor_id}
+                sealed=bool(anchors and (len(anchors)!=1 or not any(source_id(a) in anchors for a in members)))
+                anchor=(next(iter(anchors)) if len(anchors)==1 else source_id(ordered(members)[0]))
+                target=None
+                for other in merged:
+                    if sealed or other['sealed']:continue
+                    if has_saved and other['saved']:continue
+                    # An overlapping standard-time split is a scene/reference
+                    # decision, not a pause that the loose preset may bridge.
+                    if _time_compatible(other['members'],members,CONFIG):continue
+                    if _time_compatible(other['members'],members,cfg) and compatible(other['members'],members):
+                        target=other;break
+                if target is None:
+                    merged.append(dict(members=list(members),gid=gid,anchor=anchor,saved=has_saved,sealed=sealed))
+                else:
+                    for asset in members:
+                        asset.group_id=target['gid'];asset.grouping_anchor_id=target['anchor']
+                    target['members'].extend(members)
+                    stats.pose_matches+=len(members)
+            count=len(merged);stats.portrait_contexts=len(cache)
+        # Keep chronological IDs for fresh groups while reserving every saved
+        # and protected ID. Existing memberships are never renumbered.
+        fixed=set(protected)|{a.group_id for a in assets if preserve_existing and a.group_id>0}
+        fresh={}
+        for asset in staged:
+            if asset.group_id not in fixed:fresh.setdefault(asset.group_id,[]).append(asset)
+        next_id=max((0,*fixed))+1
+        for members in sorted(fresh.values(),key=lambda items:(_capture_seconds(ordered(items)[0].captured_at),
+                                                                source_id(ordered(items)[0]))):
+            for asset in members:asset.group_id=next_id
+            next_id+=1
+        check_cancel()
+        for original,result in zip(assets,staged):
+            original.group_id=result.group_id;original.grouping_anchor_id=result.grouping_anchor_id
+        stats.representatives=count
+        return assets
+    finally:
+        if cache is not None:cache.clear()
+        if identity is not None:identity.clear()

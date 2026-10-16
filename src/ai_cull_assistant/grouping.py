@@ -15,7 +15,7 @@ from PIL import Image, ImageOps
 from .models import PhotoAsset, RAW_EXTENSIONS, source_identity_path
 
 # Stored for diagnostics, not used to invalidate or silently regroup old sessions.
-GROUPING_VERSION = "scene-burst-camera-cohort-v9-isolated-candidate"
+GROUPING_VERSION = "scene-burst-camera-cohort-v10-presets"
 GRAY_SIZE = 64
 BLOCK_SIZE = 8
 # One-sided central alignment only; at least 81% of the source area remains.
@@ -733,9 +733,10 @@ def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
             raise GroupingCancelled("Grouping cancelled before commit")
     check_cancel()
     if assets and all(getattr(a,'analysis_mode','portrait')=='portrait' for a in assets):
-        from .scene_burst_grouping import assign_bursts
-        return assign_bursts(assets,set(protected_group_ids),source_photo_id,check_cancel,
-                             stats if stats is not None else GroupingStats(),preserve_existing=preserve_existing)
+        from .scene_burst_grouping import assign_preset_bursts, PRESET_CONFIGS
+        return assign_preset_bursts(assets,set(protected_group_ids),source_photo_id,check_cancel,
+                             stats if stats is not None else GroupingStats(),PRESET_CONFIGS[preset],
+                             preserve_existing=preserve_existing)
     return _assign_groups_build15_compat(assets,preset,preserve_existing=preserve_existing,
         protected_group_ids=protected_group_ids,stats=stats,cancel_check=cancel_check)
 
