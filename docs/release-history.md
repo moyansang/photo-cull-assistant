@@ -2,6 +2,8 @@
 
 以下为 v1.5 发布前从本仓库 GitHub Releases 整理的历史记录。按钮与行为描述属于当时版本，当前操作以 [首页](../README.md) 和 [使用指南](user-guide.md) 为准。
 
+0.3、0.4、0.5、1.1、1.2、1.3 系列的旧 Release 及其上传附件已下线，历史说明合并至各系列最终版页面，源码标签仍保留。下文保留原版功能、验证结果和当时的安装说明；标为“系列汇总”的链接提供该系列历史记录及最终版下载，原文中的旧附件名称不代表仍可下载。
+
 ## v1.4 · v1.4
 
 发布于 2026-09-15 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.4)
@@ -33,7 +35,7 @@
 
 ## v1.3 · AI选片助手 v1.3
 
-发布于 2026-09-14 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.3)
+发布于 2026-09-14 · [系列汇总（最终版 v1.3.1）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.3.1)
 
 # v1.3
 
@@ -70,7 +72,7 @@ LR 插件位于包内 lightroom/PhotoCullAssistant.lrplugin，需要在 Lightroo
 
 ## v1.2.2 · v1.2.2 清晰度改进与身体检查实验开关
 
-发布于 2026-09-13 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.2.2)
+发布于 2026-09-13 · [系列汇总（最终版 v1.2.3）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.2.3)
 
 本版改进清晰度判断，并增加可选的身体清晰度实验检查。
 
@@ -88,7 +90,7 @@ LR 插件位于包内 lightroom/PhotoCullAssistant.lrplugin，需要在 Lightroo
 
 ## v1.2.1 · v1.2.1 性能优化与裁切交互改进
 
-发布于 2026-09-12 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.2.1)
+发布于 2026-09-12 · [系列汇总（最终版 v1.2.3）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.2.3)
 
 优化大量分组和 AI 批次的操作响应，并改进裁切和清晰度复核流程。
 
@@ -114,7 +116,7 @@ LR 插件位于包内 lightroom/PhotoCullAssistant.lrplugin，需要在 Lightroo
 
 ## v1.2.0 · v1.2 分阶段选片与工作区整理
 
-发布于 2026-09-12 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.2.0)
+发布于 2026-09-12 · [系列汇总（最终版 v1.2.3）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.2.3)
 
 ## v1.2.0 Windows 便携版
 
@@ -152,7 +154,7 @@ v1.1.1 Windows x64 便携版
 
 ## v1.1.0 · v1.1.0 API配置修复与LR判断理由
 
-发布于 2026-09-12 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.1.0)
+发布于 2026-09-12 · [系列汇总（最终版 v1.1.1）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v1.1.1)
 
 AI选片助手 v1.1.0
 
@@ -230,7 +232,7 @@ AI选片助手 v1.0
 
 ## v0.5.10 · v0.5.10 人脸模糊漏检修正
 
-发布于 2026-09-11 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.10)
+发布于 2026-09-11 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 修正部分人脸模糊照片被保留为“不确定”的问题：采用细节量与边缘锐利程度的联合证据，不再让高对比度软边缘阻止模糊弃置。低分辨率、低对比度和噪声保护保持启用。
 
@@ -248,7 +250,7 @@ AI选片助手 v1.0
 
 ## v0.5.9 · v0.5.9 保留已有AI选片任务
 
-发布于 2026-09-11 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.9)
+发布于 2026-09-11 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 修正 AI 任务恢复逻辑：只有首次使用或主页联系表内容发生变化后，进入 AI 选片才自动新建全量初选。联系表没变时保留原任务、AI 回复、星级、弃置建议和已完成批次。
 
@@ -262,7 +264,7 @@ AI选片助手 v1.0
 
 ## v0.5.8 · v0.5.8 页面布局与清理修正
 
-发布于 2026-09-11 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.8)
+发布于 2026-09-11 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 - 修复选片结果切回 API 页时排版变化，保持偏好区和预览区域尺寸稳定。
 
@@ -274,7 +276,7 @@ AI选片助手 v1.0
 
 ## v0.5.7 · v0.5.7 选片流程与界面优化
 
-发布于 2026-09-11 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.7)
+发布于 2026-09-11 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 - 进入 AI 选片自动准备本轮全量任务，移除任务历史与新建按钮；API 增加重新提交，按当前偏好重新选片。
 
@@ -292,7 +294,7 @@ AI选片助手 v1.0
 
 ## v0.5.6 · v0.5.6 人脸清晰度筛查改进
 
-发布于 2026-09-11 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.6)
+发布于 2026-09-11 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 改进人脸模糊筛查：使用完整 RAW 人脸细节，统一联系表与技术筛查的人脸位置，支持手动框。低分辨率、低对比度、噪声及边界情况不自动弃置。
 
@@ -310,7 +312,7 @@ AI选片助手 v1.0
 
 ## v0.5.5 · v0.5.5 处理进度与停止续做
 
-发布于 2026-09-11 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.5)
+发布于 2026-09-11 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 ## 进度、停止与继续处理
 
@@ -334,7 +336,7 @@ AI选片助手 v1.0
 
 ## v0.5.4 · v0.5.4 导出 AI 评分到 Lightroom
 
-发布于 2026-09-11 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.4)
+发布于 2026-09-11 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 ## AI 选片后直接在 Lightroom 复核
 
@@ -358,7 +360,7 @@ AI选片助手 v1.0
 
 ## v0.5.3 · v0.5.3 恢复分析与日志
 
-发布于 2026-09-11 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.3)
+发布于 2026-09-11 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 ## 关闭后恢复分析与日志
 
@@ -380,7 +382,7 @@ AI选片助手 v1.0
 
 ## v0.5.2 · v0.5.2 网页合并提交
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.2)
+发布于 2026-09-10 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 ## 网页合并提交
 
@@ -401,7 +403,7 @@ AI选片助手 v1.0
 
 ## v0.5.1 · v0.5.1 API 预设与配置记忆
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.1)
+发布于 2026-09-10 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 ## API 模型预设
 
@@ -425,7 +427,7 @@ AI选片助手 v1.0
 
 ## v0.5.0 · v0.5.0 · AI选片与人工复核
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.0)
+发布于 2026-09-10 · [系列汇总（最终版 v0.5.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.5.11)
 
 ## AI 选片、人工复核与 Lightroom 闭环
 
@@ -461,7 +463,7 @@ v0.4.11 修复 GitHub 更新检查限流
 
 ## v0.4.10 · v0.4.10 照片保留原目录
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.10)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 v0.4.10 所有照片保留原目录
 
@@ -474,7 +476,7 @@ v0.4.10 所有照片保留原目录
 
 ## v0.4.9 · v0.4.9 自动检查与安全更新
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.9)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 v0.4.9 自动更新
 
@@ -488,7 +490,7 @@ v0.4.8 及更早版本没有自动更新器，本次仍需手动下载升级到 
 
 ## v0.4.8 · v0.4.8 Lightroom 目录插件对接
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.8)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 v0.4.8：Lightroom Classic Catalog 对接
 
@@ -506,7 +508,7 @@ v0.4.8：Lightroom Classic Catalog 对接
 
 ## v0.4.7 · v0.4.7 快速查找未标记人脸
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.7)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 人脸细节设置新增“下一张未标记”按钮。
 
@@ -518,7 +520,7 @@ v0.4.8：Lightroom Classic Catalog 对接
 
 ## v0.4.6 · v0.4.6 逐张人脸编辑与设置记忆
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.6)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 新增逐张人脸细节编辑与全部主界面选项记忆。
 
@@ -532,7 +534,7 @@ v0.4.8：Lightroom Classic Catalog 对接
 
 ## v0.4.5 · AI 选片助手 v0.4.5 — 可调检测置信度
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.5)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 “人脸细节设置”新增检测置信度滑块，范围 0.70～0.95，默认 0.80。
 
@@ -546,7 +548,7 @@ v0.4.8：Lightroom Classic Catalog 对接
 
 ## v0.4.4 · AI 选片助手 v0.4.4 — 中文分组档位
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.4)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 分组灵敏度改为中文：严格 / 标准 / 宽松，分别对应 Strict / Standard / Loose。
 内部算法参数保持不变；人脸检测门槛仍为 0.90，此版本未修改检测行为。
@@ -555,7 +557,7 @@ v0.4.8：Lightroom Classic Catalog 对接
 
 ## v0.4.3 · AI 选片助手 v0.4.3 — 默认使用程序目录
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.3)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 工作区和精选导出目录的首次默认位置均改为 AI选片助手.exe 所在文件夹本身，不再使用工作区/精选子文件夹。
 
@@ -565,7 +567,7 @@ v0.4.8：Lightroom Classic Catalog 对接
 
 ## v0.4.2 · AI 选片助手 v0.4.2 — 人脸裁切设置
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.2)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 新增“人脸细节设置”弹窗：
 - 裁切范围 0.6～2.0，默认 1.0。
@@ -581,7 +583,7 @@ v0.4.8：Lightroom Classic Catalog 对接
 
 ## v0.4.1 · AI 选片助手 v0.4.1 — YuNet 人脸细节
 
-发布于 2026-09-10 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.1)
+发布于 2026-09-10 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 人脸细节框改用离线 YuNet，保持原小窗大小。
 
@@ -597,7 +599,7 @@ v0.4.8：Lightroom Classic Catalog 对接
 
 ## v0.4.0 · AI 选片助手 v0.4.0 — 人物分组与人脸放大
 
-发布于 2026-09-08 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.0)
+发布于 2026-09-08 · [系列汇总（最终版 v0.4.11）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.4.11)
 
 ## 自动分组与人脸放大
 - Strict：0.5/1.5 秒；Standard：0.8/2.5 秒；Loose：1.2/4 秒。短间隔也检查视觉变化。
@@ -629,7 +631,7 @@ v0.4.8：Lightroom Classic Catalog 对接
 
 ## v0.3.0 · AI 选片助手 v0.3 — Windows 便携版
 
-发布于 2026-09-08 · [原 Release](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.3.0)
+发布于 2026-09-08 · [系列汇总（最终版 v0.3.1）](https://github.com/moyansang/photo-cull-assistant/releases/tag/v0.3.1)
 
 Windows x64 便携版：下载 AI-Photo-Cull-v0.3-Windows-x64-portable.zip，完整解压后双击 AI选片助手.exe。无需安装 Python，保留 _internal 文件夹。
 
