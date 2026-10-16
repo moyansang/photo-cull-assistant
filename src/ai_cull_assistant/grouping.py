@@ -15,7 +15,7 @@ from PIL import Image, ImageOps
 from .models import PhotoAsset, RAW_EXTENSIONS, source_identity_path
 
 # Stored for diagnostics, not used to invalidate or silently regroup old sessions.
-GROUPING_VERSION = "workspace-dhash64-scene-pose-guarded-v1"
+GROUPING_VERSION = "scene-burst-camera-cohort-v9-isolated-candidate"
 GRAY_SIZE = 64
 BLOCK_SIZE = 8
 # One-sided central alignment only; at least 81% of the source area remains.
@@ -591,7 +591,7 @@ def _merge_portrait_components(pending, parent, preset, stats, check_cancel):
             stats.pose_matches += 1
 
 
-def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
+def _assign_groups_build15_compat(assets: list[PhotoAsset], preset: str = "standard", *,
                   preserve_existing: bool = True,
                   protected_group_ids: Collection[int] = (),
                   stats: GroupingStats | None = None,
@@ -716,6 +716,29 @@ def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
         asset.group_id = group_id
         asset.grouping_anchor_id = anchor_id
     return assets
+
+def assign_groups(assets: list[PhotoAsset], preset: str = "standard", *,
+                  preserve_existing: bool = True,
+                  protected_group_ids: Collection[int] = (),
+                  stats: GroupingStats | None = None, cancel_check=None) -> list[PhotoAsset]:
+    """Use independent scene/burst/cohort evidence for portrait grouping.
+
+    Quality and rejection state never enter this policy. Existing memberships
+    remain stable on incremental import; saved manual groups cannot be joined.
+    The original build15 engine remains explicit for landscape/compatibility.
+    """
+    PRESETS[preset]
+    def check_cancel():
+        if cancel_check is not None and cancel_check():
+            raise GroupingCancelled("Grouping cancelled before commit")
+    check_cancel()
+    if assets and all(getattr(a,'analysis_mode','portrait')=='portrait' for a in assets):
+        from .scene_burst_grouping import assign_bursts
+        return assign_bursts(assets,set(protected_group_ids),source_photo_id,check_cancel,
+                             stats if stats is not None else GroupingStats(),preserve_existing=preserve_existing)
+    return _assign_groups_build15_compat(assets,preset,preserve_existing=preserve_existing,
+        protected_group_ids=protected_group_ids,stats=stats,cancel_check=cancel_check)
+
 
 
 def renumber_groups(assets: list[PhotoAsset]) -> list[PhotoAsset]:

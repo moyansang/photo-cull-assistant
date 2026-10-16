@@ -1,3 +1,4 @@
+# Historical build15 engine regression; new portrait policy is tested in test_scene_burst_grouping.py.
 """Corroborated portrait matches must not weaken manual or scene boundaries."""
 from copy import deepcopy
 from dataclasses import replace
@@ -54,7 +55,7 @@ def test_explicit_body_difference_needs_corrob_scene_and_face(tmp_path, distance
     b.subject_features = replace(b.subject_features, body=changed, body_hashes=(changed,))
     assert not grouping._subject_compatible(a, b, grouping.PRESETS['standard'])
     before = [deepcopy(x.subject_features) for x in (a, b)]
-    grouping.assign_groups([a, b], preserve_existing=False)
+    grouping._assign_groups_build15_compat([a, b], preserve_existing=False)
     assert a.group_id == b.group_id
     assert [x.subject_features for x in (a,b)] == before
 
@@ -70,7 +71,7 @@ def test_matching_scene_or_subject_alone_is_insufficient(tmp_path, change):
     contexts=[portrait_grouping.build_portrait_context(asset) for asset in (a,b)]
     assert all(context is not None for context in contexts)
     assert not portrait_grouping.pose_compatible(*contexts)
-    grouping.assign_groups([a,b], preserve_existing=False)
+    grouping._assign_groups_build15_compat([a,b], preserve_existing=False)
     assert a.group_id != b.group_id
 
 
@@ -138,23 +139,23 @@ def _weak_graph(monkeypatch, tmp_path):
 
 def test_relaxed_edges_cannot_bridge_incompatible_members(monkeypatch,tmp_path):
     assets=_weak_graph(monkeypatch,tmp_path)
-    grouping.assign_groups(assets,preserve_existing=False)
+    grouping._assign_groups_build15_compat(assets,preserve_existing=False)
     assert [a.group_id for a in assets]==[1,1,2]
 
 
 def test_relaxed_component_membership_is_order_independent(monkeypatch,tmp_path):
     assets=_weak_graph(monkeypatch,tmp_path)
-    grouping.assign_groups(assets,preserve_existing=False)
+    grouping._assign_groups_build15_compat(assets,preserve_existing=False)
     forward={a.stem:a.group_id for a in assets}
     for a in assets:a.group_id=0;a.grouping_anchor_id=None
-    grouping.assign_groups(list(reversed(assets)),preserve_existing=False)
+    grouping._assign_groups_build15_compat(list(reversed(assets)),preserve_existing=False)
     assert forward=={a.stem:a.group_id for a in assets}
 
 
 def test_strict_component_cannot_be_joined_through_only_one_weak_member(monkeypatch,tmp_path):
     assets=_weak_graph(monkeypatch,tmp_path)
     monkeypatch.setattr(grouping,'_similar',lambda a,b,*rest,**kw:{a.stem,b.stem}=={'B','C'})
-    grouping.assign_groups(assets,preserve_existing=False)
+    grouping._assign_groups_build15_compat(assets,preserve_existing=False)
     assert assets[0].group_id!=assets[1].group_id==assets[2].group_id
 
 
@@ -169,7 +170,7 @@ def test_cancel_during_context_build_leaves_all_group_fields_intact(monkeypatch,
         return SimpleNamespace(context_hash=0,name=asset.stem)
     monkeypatch.setattr(portrait_grouping,'build_portrait_context',build)
     with pytest.raises(grouping.GroupingCancelled):
-        grouping.assign_groups(assets,preserve_existing=False,cancel_check=lambda:bool(built))
+        grouping._assign_groups_build15_compat(assets,preserve_existing=False,cancel_check=lambda:bool(built))
     assert built==['A']
     assert [(a.group_id,a.grouping_anchor_id) for a in assets]==[(9,'saved-anchor')]*3
 
@@ -183,6 +184,6 @@ def test_protected_manual_component_is_never_context_candidate(monkeypatch,tmp_p
         observed.append(asset.stem)
         return SimpleNamespace(context_hash=0,name=asset.stem)
     monkeypatch.setattr(portrait_grouping,'build_portrait_context',build)
-    grouping.assign_groups(assets,preserve_existing=False,protected_group_ids={7})
+    grouping._assign_groups_build15_compat(assets,preserve_existing=False,protected_group_ids={7})
     assert observed==['A']
     assert [(a.group_id,a.grouping_anchor_id) for a in assets[1:]]==[(7,'manual-anchor')]*2

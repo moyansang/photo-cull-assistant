@@ -1,3 +1,4 @@
+# Historical build15 engine regression; new portrait policy is tested in test_scene_burst_grouping.py.
 """Independent evidence checks for the bounded translation/body-ROI repair."""
 from dataclasses import replace
 import cv2
@@ -54,7 +55,7 @@ def test_real_pixels_rescue_roi_crop_drift_without_orb(monkeypatch,tmp_path):
     assert p._small_translation_body_match(x,y,'standard')
     assert p._small_translation_body_match(y,x,'standard')
     monkeypatch.setattr(p,'_scene_compatible',lambda *args:False)
-    grouping.assign_groups([a,b],preserve_existing=False)
+    grouping._assign_groups_build15_compat([a,b],preserve_existing=False)
     assert a.group_id==b.group_id
 
 

@@ -1,3 +1,4 @@
+# Historical build15 engine regression; new portrait policy is tested in test_scene_burst_grouping.py.
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -8,7 +9,7 @@ from PIL import Image
 import pytest
 
 from ai_cull_assistant import grouping
-from ai_cull_assistant.grouping import assign_groups
+from ai_cull_assistant.grouping import _assign_groups_build15_compat as assign_groups
 from ai_cull_assistant.models import PhotoAsset
 
 

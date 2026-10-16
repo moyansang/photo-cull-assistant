@@ -1,3 +1,4 @@
+# Historical build15 engine regression; new portrait policy is tested in test_scene_burst_grouping.py.
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -34,7 +35,7 @@ def test_crop_fallback_is_symmetric_and_keeps_fixed_representative(tmp_path, rev
     b=asset(tmp_path,'B',original if reverse_source else trimmed)
     left,right=g.visual_features(a),g.visual_features(b)
     assert not g._similar(a,b,left,right,g.PRESETS[preset],g.GroupingStats())
-    stats=g.GroupingStats();g.assign_groups([b,a],preset,stats=stats)
+    stats=g.GroupingStats();g._assign_groups_build15_compat([b,a],preset,stats=stats)
     assert a.group_id==b.group_id
     assert a.grouping_anchor_id==b.grouping_anchor_id==g.source_photo_id(a)
     assert stats.crop_matches==1
@@ -43,7 +44,7 @@ def test_crop_fallback_is_symmetric_and_keeps_fixed_representative(tmp_path, rev
 def test_connected_policy_chains_successive_crop_edges(tmp_path):
     original=scene();trimmed=crop(original)
     a=asset(tmp_path,'A',original);b=asset(tmp_path,'B',trimmed);c=asset(tmp_path,'C',crop(trimmed))
-    g.assign_groups([c,b,a])
+    g._assign_groups_build15_compat([c,b,a])
     assert a.group_id==b.group_id==c.group_id
     assert b.grouping_anchor_id==g.source_photo_id(a)
     # The preserved legacy policy still rejects the transitive second crop.
@@ -55,9 +56,9 @@ def test_connected_policy_chains_successive_crop_edges(tmp_path):
 def test_incremental_crop_addition_respects_manual_protection(tmp_path):
     original=scene();a=asset(tmp_path,'A',original);a.group_id=17
     a.grouping_anchor_id=g.source_photo_id(a);b=asset(tmp_path,'B',crop(original))
-    g.assign_groups([a,b],protected_group_ids={17})
+    g._assign_groups_build15_compat([a,b],protected_group_ids={17})
     assert a.group_id==17 and b.group_id!=17
-    b.group_id=0;g.assign_groups([a,b])
+    b.group_id=0;g._assign_groups_build15_compat([a,b])
     assert b.group_id==17 and b.grouping_anchor_id==a.grouping_anchor_id
 
 
@@ -99,7 +100,7 @@ def test_crop_bank_is_bounded_immutable_and_absent_on_tiny_previews():
 
 def test_unrelated_structured_sources_do_not_join_via_crop_fallback(tmp_path):
     assets=[asset(tmp_path,f'{i:02}',scene(i)) for i in range(12)]
-    g.assign_groups(assets,'loose')
+    g._assign_groups_build15_compat(assets,'loose')
     assert len({a.group_id for a in assets})==len(assets)
 
 

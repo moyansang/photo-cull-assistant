@@ -1,3 +1,4 @@
+# Historical build15 engine regression; new portrait policy is tested in test_scene_burst_grouping.py.
 """Round-two workspace grouping boundaries; synthetic data is not an accuracy set."""
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -43,7 +44,7 @@ def collision_visuals(count, seed=983):
 def test_protected_absent_group_ids_cannot_be_reused_by_additions(monkeypatch, preset):
     hash_visuals(monkeypatch, {'A': 0, 'C': 0})
     items = [asset('A', 1), asset('C')]
-    grouping.assign_groups(items, preset, protected_group_ids={1, 2, 42})
+    grouping._assign_groups_build15_compat(items, preset, protected_group_ids={1, 2, 42})
     assert [item.group_id for item in items] == [1, 43]
     assert items[1].group_id not in {1, 2, 42}
 
@@ -56,13 +57,13 @@ def test_partial_manual_restore_keeps_absent_ids_reserved_until_photo_returns(tm
     survivors = [asset('A'), asset('C')]
     assert load_groups(survivors, path, 'workspace', allow_partial=True)
     protected = manual_group_ids(path, 'workspace')
-    grouping.assign_groups(survivors, protected_group_ids=protected)
+    grouping._assign_groups_build15_compat(survivors, protected_group_ids=protected)
     assert [item.group_id for item in survivors] == [1, 3]
     save_groups(survivors, path, source='auto', collection_key='workspace')
     assert path.read_bytes() == original_store
     survivors.append(asset('B'))
     assert load_groups(survivors, path, 'workspace', allow_partial=True)
-    grouping.assign_groups(survivors, protected_group_ids=protected)
+    grouping._assign_groups_build15_compat(survivors, protected_group_ids=protected)
     assert {item.stem: item.group_id for item in survivors} == {'A': 1, 'B': 2, 'C': 3}
 
 
@@ -94,12 +95,12 @@ def test_explicit_regroup_uses_rewritten_preview_evidence(tmp_path):
     for item in items:
         item.preview_path = tmp_path / f'{item.stem}.bmp'
         Image.new('L', (64, 64), 0).save(item.preview_path)
-    grouping.assign_groups(items)
+    grouping._assign_groups_build15_compat(items)
     assert [item.group_id for item in items] == [1, 1]
     old_stat = items[1].preview_path.stat()
     Image.new('L', (64, 64), 255).save(items[1].preview_path)
     os.utime(items[1].preview_path, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
-    grouping.assign_groups(items, preserve_existing=False)
+    grouping._assign_groups_build15_compat(items, preserve_existing=False)
     assert [item.group_id for item in items] == [1, 2]
 
 
@@ -114,7 +115,7 @@ def test_collision_fixture_keeps_different_structure_separate(monkeypatch, prese
     monkeypatch.setattr(grouping, 'visual_features', lambda item: visuals[item.stem])
     items = [asset(name) for name in visuals]
     stats = grouping.GroupingStats()
-    grouping.assign_groups(items, preset, stats=stats)
+    grouping._assign_groups_build15_compat(items, preset, stats=stats)
     assert len({item.group_id for item in items}) == len(items)
     assert stats.hash_candidates == stats.structure_comparisons == 128 * 127 // 2
     assert stats.representatives == 128
@@ -131,7 +132,7 @@ def test_collision_stress_is_order_invariant_without_time_cutoffs(monkeypatch):
             item.captured_at += timedelta(days=index * 113)
         original_order = list(items)
         stats = grouping.GroupingStats()
-        grouping.assign_groups(items, stats=stats)
+        grouping._assign_groups_build15_compat(items, stats=stats)
         memberships = {item.stem: (item.group_id, item.grouping_anchor_id) for item in items}
         if expected:
             assert memberships == expected
@@ -144,7 +145,7 @@ def test_collision_stress_is_order_invariant_without_time_cutoffs(monkeypatch):
 def test_saved_anchor_survives_every_input_order_and_earlier_addition(tmp_path, monkeypatch):
     hash_visuals(monkeypatch, {'A': 0xff, 'B': 0, 'C': 0xffff, 'D': (1 << 64) - 1})
     saved = [asset('B')]
-    grouping.assign_groups(saved)
+    grouping._assign_groups_build15_compat(saved)
     anchor = saved[0].grouping_anchor_id
     path = tmp_path / 'groups.json'
     save_groups(saved, path, source='auto')
@@ -153,7 +154,7 @@ def test_saved_anchor_survives_every_input_order_and_earlier_addition(tmp_path, 
         assert load_groups(items, path)
         items.extend(asset(name) for name in names if name != 'B')
         items.sort(key=lambda item: names.index(item.stem))
-        grouping.assign_groups(items)
+        grouping._assign_groups_build15_compat(items)
         assert {item.stem: item.group_id for item in items} == {'A': 1, 'B': 1, 'C': 2}
         assert {item.grouping_anchor_id for item in items if item.group_id == 1} == {anchor}
 
@@ -161,7 +162,7 @@ def test_saved_anchor_survives_every_input_order_and_earlier_addition(tmp_path, 
 def test_removed_anchor_stays_absent_across_save_load(tmp_path, monkeypatch):
     hash_visuals(monkeypatch, {'A': 0, 'B': 0xff, 'C': 0xffff})
     items = [asset('A'), asset('B')]
-    grouping.assign_groups(items)
+    grouping._assign_groups_build15_compat(items)
     original_anchor = items[0].grouping_anchor_id
     path = tmp_path / 'groups.json'
     save_groups([items[1]], path, source='auto')
@@ -169,7 +170,7 @@ def test_removed_anchor_stays_absent_across_save_load(tmp_path, monkeypatch):
     assert load_groups(restored, path)
     assert restored[0].grouping_anchor_id == original_anchor
     restored.append(asset('C'))
-    grouping.assign_groups(restored)
+    grouping._assign_groups_build15_compat(restored)
     assert [item.group_id for item in restored] == [1, 2]
     assert restored[0].grouping_anchor_id == original_anchor
 
@@ -256,7 +257,7 @@ def test_scalar_and_batched_assignment_have_same_membership_and_anchors(monkeypa
     monkeypatch.setattr(grouping, 'visual_features', lambda item: visuals[item.stem])
     scalar_items = [asset(name) for name in visuals]
     batch_items = [asset(name) for name in reversed(visuals)]
-    grouping.assign_groups(batch_items)
+    grouping._assign_groups_build15_compat(batch_items)
 
     def scalar_first(item, visual, candidates, representatives, cfg, stats):
         for _, position in candidates:
@@ -266,7 +267,7 @@ def test_scalar_and_batched_assignment_have_same_membership_and_anchors(monkeypa
         return None
 
     monkeypatch.setattr(grouping, '_first_matching_representative', scalar_first)
-    grouping.assign_groups(scalar_items)
+    grouping._assign_groups_build15_compat(scalar_items)
     assert {item.stem: (item.group_id, item.grouping_anchor_id) for item in scalar_items} == {
         item.stem: (item.group_id, item.grouping_anchor_id) for item in batch_items}
 

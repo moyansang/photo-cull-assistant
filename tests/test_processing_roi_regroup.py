@@ -167,7 +167,7 @@ def test_crop_snapshot_accepts_mapping_and_tuple_json_roundtrip(scanned):
     assert job.run(OPTIONS, settings, Event(), None) is not None
 
 
-def test_real_pixels_roi_edit_split_merge_and_reopen(tmp_path, monkeypatch):
+def test_real_pixels_quality_roi_edit_keeps_same_burst_and_reopens(tmp_path, monkeypatch):
     """No mocks for extraction, pair decisions, components, publication or reload."""
     import numpy as np
     from ai_cull_assistant.grouping import hamming_distance
@@ -197,7 +197,8 @@ def test_real_pixels_roi_edit_split_merge_and_reopen(tmp_path, monkeypatch):
     # Creating the ROI task does not yet publish any membership or feature.
     assert _published(workspace) == original
     second = job.run(OPTIONS, changed_crops, Event(), None)
-    assert len({a.group_id for a in second.assets}) == 2
+    # Changing the technical ROI does not change the camera, burst or people.
+    assert len({a.group_id for a in second.assets}) == 1
     assert hamming_distance(second.assets[0].subject_features.body, second.assets[1].subject_features.body) > 20
     assert all(a.subject_features.feature_schema == FEATURE_SCHEMA for a in second.assets)
     reopened = load_session(workspace, photos)
@@ -228,19 +229,19 @@ def test_rescan_source_change_in_preview_preparation_never_rewrites_live(scanned
 
 
 def test_stop_during_real_group_pairing_is_resumable_without_publication(scanned, monkeypatch):
-    from ai_cull_assistant import grouping
+    from ai_cull_assistant import scene_burst_grouping as scene
     photos, workspace, first = scanned
     before = _published(workspace)
     memberships = [a.group_id for a in first.assets]
     stop = Event()
     compared = []
-    real_similar = grouping._similar
+    real_similar = scene.pair_evidence
     def stop_after_real_pair(*args, **kwargs):
         decision = real_similar(*args, **kwargs)
         compared.append(decision)
         stop.set()
         return decision
-    monkeypatch.setattr(grouping, '_similar', stop_after_real_pair)
+    monkeypatch.setattr(scene, 'pair_evidence', stop_after_real_pair)
     job = _job(scanned)
     assert job.run(OPTIONS, CropSettings(), stop, None) is None
     assert compared
@@ -249,7 +250,7 @@ def test_stop_during_real_group_pairing_is_resumable_without_publication(scanned
     assert _published(workspace) == before
     resumed = load_job(workspace, photos)
     assert resumed._data['grouping_complete'] is False
-    monkeypatch.setattr(grouping, '_similar', real_similar)
+    monkeypatch.setattr(scene, 'pair_evidence', real_similar)
     assert resumed.run(OPTIONS, CropSettings(), Event(), None) is not None
     assert load_session(workspace, photos) is not None
 

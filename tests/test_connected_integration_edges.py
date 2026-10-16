@@ -1,3 +1,4 @@
+# Historical build15 engine regression; new portrait policy is tested in test_scene_burst_grouping.py.
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,7 +37,7 @@ def test_component_shortcut_preserves_full_graph_partition(monkeypatch):
                 for right in list(unseen):
                     if frozenset((left,right)) in edges:unseen.remove(right);component.add(right);pending.append(right)
             expected.append(frozenset(component))
-        xs=[asset(i) for i in range(n)];rng.shuffle(xs);g.assign_groups(xs)
+        xs=[asset(i) for i in range(n)];rng.shuffle(xs);g._assign_groups_build15_compat(xs)
         assert partitions(xs)==set(expected)
 
 
@@ -45,12 +46,12 @@ def test_protected_bridge_excluded_and_absent_ids_reserved(monkeypatch):
     hashes=[0,255,65535]
     monkeypatch.setattr(g,'visual_features',lambda a:replace(base,whole=hashes[int(a.stem)]))
     xs=[asset(i) for i in range(3)];xs[1].group_id=7;xs[1].grouping_anchor_id='manual'
-    g.assign_groups(xs,'strict',preserve_existing=False,protected_group_ids=[7,99])
+    g._assign_groups_build15_compat(xs,'strict',preserve_existing=False,protected_group_ids=[7,99])
     assert [a.group_id for a in xs]==[100,7,101]
     assert xs[1].grouping_anchor_id=='manual'
 
 
 def test_partial_roi_schema_migration_rejected_without_modification(monkeypatch):
     xs=[asset(0),asset(1)];xs[0].subject_features=SimpleNamespace(feature_schema='roi-v1');xs[1].subject_features=SimpleNamespace(feature_schema=None)
-    with pytest.raises(ValueError,match='schemas differ'):g.assign_groups(xs)
+    with pytest.raises(ValueError,match='schemas differ'):g._assign_groups_build15_compat(xs)
     assert [a.group_id for a in xs]==[0,0]

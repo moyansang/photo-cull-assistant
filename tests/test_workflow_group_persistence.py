@@ -23,7 +23,7 @@ def test_run_scan_creates_group_store_and_reuses_saved_groups(tmp_path):
     first = run_scan(photo_dir, workspace, grouping_preset='standard', photos_per_page=4, columns=2)
     store_path = workspace / 'groups.json'
     assert store_path.exists()
-    assert [a.group_id for a in first.assets] == [1, 1, 1]  # identical images, no time gate
+    assert [a.group_id for a in first.assets] == [1, 1, 1]  # identical pixels within one burst
 
     # Simulate a user's manual split, then persist it.
     for group_id, asset in enumerate(first.assets, 7):
