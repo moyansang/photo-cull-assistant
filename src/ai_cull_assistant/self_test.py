@@ -243,6 +243,11 @@ def run(report_path: str) -> None:
 
 def _primary_quality_protocol_check(report, asset):
     """Controlled data contracts only; no model calls or accuracy claims."""
+    from copy import copy
+    # This protocol fixture has its own selected people. Do not inherit a
+    # previous scan's measurement binding or mutate the real scan result.
+    asset = copy(asset)
+    asset.clarity_evidence = {}
     from . import focus_protocol as protocol
     from .crop_settings import CropSettings
     from .primary_quality import CONFIRMATION_KEY, confirm_selection, confirmed_selection
