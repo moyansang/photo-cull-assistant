@@ -1517,9 +1517,13 @@ class ReviewDialog(WorkspacePage):
                 else:
                     details+=f"\n人物 {person.get('participant','?')}：{person.get('status','uncertain')} · {person.get('reason','')}"
         policy=(photo.get('clarity_evidence') or {}).get('primary_quality') or {}
+        if policy.get('selection_origin') == 'automatic':
+            details+='\n主体范围：本地自动识别（未经人工确认）'
+        if policy.get('enabled_parts') == ['face']:
+            details+='\n检查范围：脸部/眼区；身体未检查'
         identities={person['id']:index for index,person in enumerate(policy.get('subjects',[]),1)}
         parts={'face':'脸部/眼区','body':'身体','selection':'主体范围','measurement':'测量记录'}
-        labels={'primary_selection_unconfirmed':'尚未确认主要人物范围',
+        labels={'primary_selection_unconfirmed':'主体范围未能可靠确定，请确认主要人物',
                 'measurement_confirmation_mismatch':'框选或照片已变化，需要重新扫描',
                 'weak_eye_and_face_detail':'脸部和眼区有充分的严重模糊证据',
                 'multiple_major_body_regions_severely_blurred':'多个主要身体部位有充分的严重模糊证据',

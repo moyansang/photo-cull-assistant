@@ -32,6 +32,7 @@ _SCOPE_KEYS = {
     "version", "mode", "photo_identity", "source_digest",
     "settings_digest", "confirmation_digest", "subjects", "digest",
 }
+_SELECTION_SCOPE_KEYS = {"selection_origin", "selection_digest", "enabled_parts"}
 _ITEM_KEYS = _RESPONSE_KEYS | {"context"}
 _ENVELOPE_KEYS = {
     "version", "prompt_version", "scope",
@@ -105,6 +106,27 @@ def _load_json(text):
         raise FocusProtocolError("AI 技术复核返回的不是严格 JSON。") from exc
 
 
+def policy_matches_scope(policy, evidence, scope):
+    """Accept body associations only from this selection's current measurement."""
+    if not isinstance(policy, dict) or not isinstance(evidence, dict):
+        return False
+    if policy.get("version") != "confirmed-primary-quality-v1":
+        return False
+    if "selection_origin" in scope:
+        digest = scope["selection_digest"]
+        return (
+            policy.get("selection_origin") == scope["selection_origin"]
+            and policy.get("selection_digest") == digest
+            and policy.get("confirmation_digest") == scope["confirmation_digest"]
+            and policy.get("enabled_parts") == scope["enabled_parts"]
+            and evidence.get("measurement_confirmation_digest" if scope["selection_origin"] == "human"
+                             else "measurement_selection_digest") == digest
+        )
+    digest = scope.get("confirmation_digest")
+    return (_hex(digest) and policy.get("confirmation_digest") == digest
+            and evidence.get("measurement_confirmation_digest") == digest)
+
+
 def make_scope(asset, settings):
     """Capture current photo identity and the complete allowed subject set."""
     from .image_decode import asset_source_signature
@@ -121,16 +143,24 @@ def make_scope(asset, settings):
     ):
         raise FocusProtocolError("无法确认当前照片来源。")
 
+    selection_fields = {}
     if mode == "portrait":
-        from .primary_quality import confirmed_selection
+        from .primary_quality import current_selection
 
-        confirmation = confirmed_selection(asset, settings)
+        confirmation = current_selection(asset, settings)
         if confirmation is None:
-            raise FocusProtocolError("请先确认主要主体范围，再进行技术复核。")
+            raise FocusProtocolError("当前主要主体范围不可靠，请先确认主要主体范围，再进行技术复核。")
         # Both reads must describe the same source version.
         if _canonical(confirmation["source_signature"]) != source:
             raise FocusProtocolError("照片来源在校验期间发生变化。")
-        confirmation_digest = confirmation["digest"]
+        human = confirmation.get("human_confirmed") is True
+        confirmation_digest = confirmation["digest"] if human else None
+        if not human or "enabled_parts" in confirmation:
+            selection_fields = {
+                "selection_origin": "human" if human else "automatic",
+                "selection_digest": confirmation["digest"],
+                "enabled_parts": confirmation.get("enabled_parts", ["face", "body"]),
+            }
         subjects = [
             {"id": region["id"], "kind": region["kind"]}
             for region in confirmation["regions"]
@@ -141,9 +171,8 @@ def make_scope(asset, settings):
         evidence = evidence if isinstance(evidence, dict) else {}
         policy = evidence.get('primary_quality') or {}
         policy = policy if isinstance(policy, dict) else {}
-        if (policy.get('version') == 'confirmed-primary-quality-v1'
-                and policy.get('confirmation_digest') == confirmation_digest
-                and evidence.get('measurement_confirmation_digest') == confirmation_digest):
+        if policy_matches_scope(policy, evidence, dict(
+                confirmation_digest=confirmation_digest, **selection_fields)):
             people = policy.get('subjects')
             people = people if isinstance(people,list) else []
             merged = {rid for person in people
@@ -171,6 +200,7 @@ def make_scope(asset, settings):
         "settings_digest": settings_digest,
         "confirmation_digest": confirmation_digest,
         "subjects": sorted(subjects, key=lambda item: item["id"]),
+        **selection_fields,
     }
     scope["digest"] = _digest(scope)
     return _validate_scope(scope)
@@ -178,7 +208,7 @@ def make_scope(asset, settings):
 
 def _validate_scope(scope):
     value = _canonical(scope)
-    if not isinstance(value, dict) or set(value) != _SCOPE_KEYS:
+    if not isinstance(value, dict) or set(value) not in (_SCOPE_KEYS, _SCOPE_KEYS | _SELECTION_SCOPE_KEYS):
         raise FocusProtocolError("技术复核范围字段无效。")
     if value["version"] != PROTOCOL_VERSION:
         raise FocusProtocolError("技术复核协议版本不匹配。")
@@ -188,8 +218,20 @@ def _validate_scope(scope):
         raise FocusProtocolError("技术复核来源摘要无效。")
     if value["photo_identity"] != "photo:" + value["source_digest"]:
         raise FocusProtocolError("照片标识与来源摘要不匹配。")
+    explicit = _SELECTION_SCOPE_KEYS <= set(value)
+    if explicit:
+        if (value["mode"] != "portrait"
+                or value["selection_origin"] not in {"human", "automatic"}
+                or not _hex(value["selection_digest"])
+                or value["enabled_parts"] not in (["face"], ["face", "body"])):
+            raise FocusProtocolError("技术复核主体来源或启用部位无效。")
+        if value["selection_origin"] == "automatic":
+            if value["confirmation_digest"] is not None:
+                raise FocusProtocolError("自动主体不能携带人工确认摘要。")
+        elif value["selection_digest"] != value["confirmation_digest"]:
+            raise FocusProtocolError("人工选择摘要与确认摘要不匹配。")
     if value["mode"] == "portrait":
-        if not _hex(value["confirmation_digest"]):
+        if not (explicit and value["selection_origin"] == "automatic") and not _hex(value["confirmation_digest"]):
             raise FocusProtocolError("缺少主要主体确认摘要。")
     elif value["confirmation_digest"] is not None:
         raise FocusProtocolError("景物复核不能携带人像确认摘要。")
@@ -230,7 +272,7 @@ def make_context(scope, subject_id, *, evidence_parts=(), not_visible_parts=()):
     scope = _validate_scope(scope)
     if subject_id not in {item["id"] for item in scope["subjects"]}:
         raise FocusProtocolError("请求主体不在当前确认范围内。")
-    required = ["scene"] if scope["mode"] == "landscape" else ["face", "body"]
+    required = ["scene"] if scope["mode"] == "landscape" else scope.get("enabled_parts", ["face", "body"])
     available, invisible = list(evidence_parts), list(not_visible_parts)
     for values in (available, invisible):
         if len(set(values)) != len(values) or not set(values) <= set(required):
@@ -457,7 +499,9 @@ def assemble_result(scope, items):
         person = expected_ids.index(issue['subject_id']) + 1
         reason = f"人物 {person} · {issue['location']}：{issue['reason']}"
     elif all_clear:
-        reason = "已确认主体的可见必需部位均有充分清楚证据。"
+        reason = ("当前主体的可见必需部位均有充分清楚证据。"
+                  if scope.get("selection_origin") == "automatic"
+                  else "已确认主体的可见必需部位均有充分清楚证据。")
     else:
         issue = issues[0]
         person = expected_ids.index(issue['subject_id']) + 1

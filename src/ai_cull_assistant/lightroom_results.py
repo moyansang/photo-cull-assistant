@@ -68,6 +68,9 @@ def focus_review_reason(photo):
     reason=_value(photo,'screening_reason','') or _value(photo,'technical_reason','')
     labels={
         'person_selection_pending':'检测到多个人脸，请先确认合影主体并重新扫描。',
+        'primary_selection_unconfirmed':'主体范围未能可靠确定，请先确认主要人物并重新扫描。',
+        'automatic_primary_quality_uncertain':'主体已自动定位，但启用范围内清晰度证据不足，需要复核。',
+        'confirmed_primary_quality_uncertain':'主体已人工确认，但启用范围内清晰度证据不足，需要复核。',
         'ai_focus_uncertain':'AI 清晰度复核仍无法确定。',
         'face_focus_uncertain':'本地人脸清晰度证据不足或相互冲突。',
         'body_focus_uncertain':'身体清晰度实验检查无法确认主体主要部位清晰，请检查原图。',
@@ -143,12 +146,16 @@ def local_recommendation(photo):
         scope = _value(photo, 'focus_scope') or {}
         if not isinstance(policy, dict) or not isinstance(scope, dict):
             return 'review'
+        automatic = policy.get('selection_origin') == 'automatic'
+        digest = policy.get('selection_digest', policy.get('confirmation_digest'))
+        stamp = 'measurement_selection_digest' if automatic else 'measurement_confirmation_digest'
+        scope_digest = scope.get('selection_digest') if automatic else scope.get('confirmation_digest')
         if (policy.get('version') == 'confirmed-primary-quality-v1'
-                and policy.get('confirmation_digest')
+                and digest and digest == evidence.get(stamp) and digest == scope_digest
+                and (not automatic or scope.get('selection_origin') == 'automatic')
+                and (not scope.get('enabled_parts') or policy.get('enabled_parts') == scope['enabled_parts'])
                 and not _value(photo, 'ai_focus_dirty', False)
-                and _live_scope_matches(photo,scope)
-                and policy.get('confirmation_digest') == evidence.get('measurement_confirmation_digest')
-                and policy.get('confirmation_digest') == scope.get('confirmation_digest')):
+                and _live_scope_matches(photo,scope)):
             return policy.get('recommendation') if policy.get('recommendation') in {'keep','reject','review'} else 'review'
         return 'review'
     recommendation = evidence.get('recommendation') if isinstance(evidence, dict) else None

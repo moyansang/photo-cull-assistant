@@ -410,14 +410,14 @@ def _write_cache(path: Path, result: dict[str, Any]) -> None:
 
 
 def review_focus(asset, crop_settings, profile, cache_dir):
-    """Review the complete current confirmed range using the strict protocol."""
+    """Review the complete current reliable subject range using the strict protocol."""
     if _mode(asset) == 'landscape':
         return _legacy_review_focus(asset, crop_settings, profile, cache_dir)
     from . import focus_protocol as protocol
-    from .primary_quality import confirmed_selection
+    from .primary_quality import current_selection
     settings = crop_settings or CropSettings()
     scope = protocol.make_scope(asset, settings)
-    confirmation = confirmed_selection(asset, settings)
+    confirmation = current_selection(asset, settings)
     regions = {item['id']:item for item in confirmation['regions']}
     results = [_review_primary_target(asset, settings, profile, Path(cache_dir), scope,
                                       regions[item['id']]) for item in scope['subjects']]
@@ -440,9 +440,7 @@ def _review_primary_target(asset, settings, profile, root, scope, region):
     per_settings = replace(settings, photos={**settings.photos, settings.key(asset):values})
     evidence = getattr(asset, 'clarity_evidence', None) or {}
     policy = evidence.get('primary_quality') or {}
-    if not (policy.get('version') == 'confirmed-primary-quality-v1'
-            and policy.get('confirmation_digest') == scope['confirmation_digest']
-            and evidence.get('measurement_confirmation_digest') == scope['confirmation_digest']):
+    if not protocol.policy_matches_scope(policy, evidence, scope):
         policy = {}
     people=policy.get('subjects')
     people=people if isinstance(people,list) else []
@@ -452,6 +450,9 @@ def _review_primary_target(asset, settings, profile, root, scope, region):
     linked = person.get('original_body_evidence') or []
     body = (linked[0] if len(linked)==1 and linked[0].get('association')=='pose_head_overlap'
             and type(linked[0].get('associated_face')) is int else original.get('body', {}))
+    enabled_parts = scope.get('enabled_parts', ['face', 'body'])
+    if 'body' not in enabled_parts:
+        body = {}
     if isinstance(body,dict) and ((body.get('diagnostics') or {}).get('ambiguous') is True
             or body.get('association') in ('ambiguous','unverified','reverse_conflict')):
         body = {}
@@ -464,9 +465,9 @@ def _review_primary_target(asset, settings, profile, root, scope, region):
     # legacy motion-only image gate. Never invent a motion diagnosis to get
     # an image through that gate.
     extra_boxes = []
-    if face:
-        from .primary_quality import confirmed_selection
-        current = confirmed_selection(asset, settings)
+    if face and 'body' in enabled_parts:
+        from .primary_quality import current_selection
+        current = current_selection(asset, settings)
         for item in current['regions']:
             if item['kind']=='body' and item['id'] in person.get('region_ids', []):
                 extra_boxes.append(('normalized', item['box']))
@@ -510,6 +511,8 @@ def _review_primary_target(asset, settings, profile, root, scope, region):
             available.append('body')
     invisible = ['body'] if any(part.get('part')=='body' and part.get('state')=='not_visible'
                                for part in person.get('parts', [])) else []
+    available = [part for part in available if part in enabled_parts]
+    invisible = [part for part in invisible if part in enabled_parts]
     context = protocol.make_context(scope, region['id'], evidence_parts=available,
                                      not_visible_parts=invisible)
     digest = hashlib.sha256((_cache_digest(asset, face, profile, per_settings)

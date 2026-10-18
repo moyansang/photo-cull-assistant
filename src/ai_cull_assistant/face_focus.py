@@ -20,7 +20,7 @@ from .shared_decode import full_image
 
 VERSION = "native-face-v5-jpg-first"
 # Derived local cache format only; do not invalidate persisted paid AI identities.
-LOCAL_CACHE_VERSION = "source-stat-v2"
+LOCAL_CACHE_VERSION = "source-stat-v3-auto-selection"
 
 
 @measure('decode')
@@ -115,6 +115,20 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
         (tuple(subject.face), getattr(subject, "landmarks", None))
         for subject in faces
     ]
+    # Record the detector view actually used for this measurement, after refresh.
+    # candidate_confidence is the configured threshold, not a face confidence.
+    automatic_subject = None
+    if (len(faces) == 1 and not any(key in entry for key in
+            ('selected_faces', 'manual_face', 'selected_bodies'))):
+        subject = faces[0]
+        automatic_subject = dict(
+            version='single-detected-face-v1',
+            candidate_count=getattr(subject, 'candidate_count', None),
+            detection_threshold=settings.detection_confidence,
+            box=list(subject.face),
+            landmarks_available=bool(getattr(subject, 'landmarks', None)
+                                     and len(subject.landmarks) == 5),
+        )
     source = asset.jpg_path or asset.raw_path or asset.primary_path
     try:
         from .image_decode import source_signature, asset_source_signature
@@ -140,6 +154,7 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
         # The paired JPG is normally measured, so changes to either member must
         # invalidate evidence even when the RAW filename remains the identity.
         identity['sources'] = source_signatures
+        identity['automatic_subject'] = automatic_subject
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         cache = Path(cache_dir) / VERSION / (digest + '.json') if cache_dir else None
         if cache and cache.is_file():
@@ -216,6 +231,8 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
                 "state": aggregate_state,
                 "participants": participant_results,
             }
+        if automatic_subject is not None:
+            evidence['automatic_subject'] = automatic_subject
         if decode_evidence:
             evidence['decode'] = decode_evidence
         result = ScreeningResult(

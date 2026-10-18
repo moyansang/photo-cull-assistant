@@ -344,18 +344,45 @@ def _assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=
 
 
 def assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=None, body_check=False):
-    """Apply the confirmed-primary policy to fresh portrait measurements only."""
-    from .primary_quality import confirmed_selection, evaluate_local_evidence
+    """Apply source-bound human/automatic policy to fresh portrait measurements."""
+    from .primary_quality import (confirmed_selection, current_selection, evaluate_local_evidence,
+                                  measurement_inputs, automatic_selection)
     settings = crop_settings or CropSettings()
-    before = confirmed_selection(asset, settings) if normalize_mode(mode) == 'portrait' else None
+    portrait = normalize_mode(mode) == 'portrait'
+    before = confirmed_selection(asset, settings) if portrait else None
+    entry = settings.photos.get(settings.key(asset), {}) if portrait else {}
+    # Explicit body ROIs request body inspection even when the optional
+    # face-associated body expansion checkbox is off.
+    enabled_parts = ['face', 'body'] if body_check or entry.get('selected_bodies') else ['face']
+    try:
+        inputs = measurement_inputs(asset, settings, enabled_parts) if portrait else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        inputs = None
     result = _assess_asset_mode(asset, mode=mode, crop_settings=settings,
                                 cache_dir=cache_dir, body_check=body_check)
     if normalize_mode(mode) == 'landscape':
         return result
-    evidence = result.focus_evidence or {}
+    evidence = dict(result.focus_evidence or {})
+    for key in ('measurement_inputs', 'automatic_selection', 'measurement_selection_digest',
+                'measurement_confirmation_digest', 'enabled_parts', 'primary_quality'):
+        evidence.pop(key, None)
     after = confirmed_selection(asset, settings)
+    try:
+        inputs_current = inputs is not None and inputs == measurement_inputs(asset, settings, enabled_parts)
+    except (AttributeError, OSError, TypeError, ValueError):
+        inputs_current = False
+    if inputs_current:
+        evidence['measurement_inputs'] = inputs
+        evidence['enabled_parts'] = enabled_parts
+        try:
+            automatic = automatic_selection(asset, settings, evidence, inputs)
+        except (KeyError, AttributeError, OSError, TypeError, ValueError):
+            automatic = None
+        if automatic is not None:
+            evidence['automatic_selection'] = automatic
+            evidence['measurement_selection_digest'] = automatic['digest']
     # Never assign the current confirmation to historical evidence.
-    if before is not None and after is not None and before['digest'] == after['digest']:
+    if inputs_current and before is not None and after is not None and before['digest'] == after['digest']:
         evidence['measurement_confirmation_digest'] = before['digest']
     policy = evaluate_local_evidence(asset, settings, evidence)
     evidence['primary_quality'] = policy
@@ -369,10 +396,12 @@ def assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=N
         asset.focus_scope = make_scope(scoped, settings)
     except (FocusProtocolError, OSError, TypeError, ValueError):
         asset.focus_scope = None
-    asset.person_review_pending = after is None
-    reason = ('primary_selection_unconfirmed' if after is None else
-              {'reject':'confirmed_primary_severe_blur', 'keep':'confirmed_primary_clear',
-               'review':'confirmed_primary_quality_uncertain'}[policy['recommendation']])
+    selection = current_selection(asset, settings, evidence)
+    asset.person_review_pending = selection is None
+    prefix = 'confirmed' if after is not None else 'automatic'
+    reason = ('primary_selection_unconfirmed' if selection is None else
+              {'reject':prefix+'_primary_severe_blur', 'keep':prefix+'_primary_clear',
+               'review':prefix+'_primary_quality_uncertain'}[policy['recommendation']])
     return replace(result, focus_evidence=evidence, rejected=policy['recommendation']=='reject', reason=reason)
 
 

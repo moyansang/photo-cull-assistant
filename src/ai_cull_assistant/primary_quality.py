@@ -1,4 +1,4 @@
-"""Confirmed-primary-subject quality policy; no settings or decision mutation."""
+"""Source-bound primary-subject quality policy; no settings or decision mutation."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -201,6 +201,95 @@ def confirmed_selection(asset, settings):
     except (AttributeError, OSError, TypeError, ValueError, OverflowError):
         return None
 
+
+
+def measurement_inputs(asset, settings, enabled_parts):
+    """Snapshot source, effective settings and requested parts before measuring."""
+    from .body_focus import VERSION as body_version
+    from .face_focus import VERSION as face_version
+    from .roi_contract import SCHEMA_VERSION
+    from .subject import DETECTION_VERSION
+    if enabled_parts not in (["face"], ["face", "body"]):
+        raise ValueError("Invalid enabled inspection parts")
+    source = _canonical(image_decode.asset_source_signature(asset))
+    if not source or any(not isinstance(item, list) or len(item) != 2
+                         or not isinstance(item[1], list) or len(item[1]) < 2
+                         or item[1][1] is None for item in source):
+        raise ValueError("Source identity unavailable")
+    entry = _entry(asset, settings)
+    return {
+        "source_signature": source,
+        "parameters_digest": _digest({
+            "global": {key: getattr(settings, key) for key in _CROP_KEYS},
+            "photo": {key: entry[key] for key in _ENTRY_KEYS if key in entry},
+            "confirmation": entry.get(CONFIRMATION_KEY),
+            "versions": [SCHEMA_VERSION, DETECTION_VERSION, face_version, body_version],
+            "enabled_parts": enabled_parts,
+        }),
+        "enabled_parts": list(enabled_parts),
+    }
+
+
+def automatic_selection(asset, settings, evidence, inputs):
+    """Build an automatic range from actual detector provenance, never a consent."""
+    entry = _entry(asset, settings)
+    # A changed or unconfirmed manual selection must never silently become auto.
+    if any(key in entry for key in ("selected_faces", "manual_face", "selected_bodies", CONFIRMATION_KEY)):
+        return None
+    if entry.get("hidden") or entry.get("subjects_disabled") or evidence.get("selection_pending"):
+        return None
+    proof = evidence.get("automatic_subject")
+    if not isinstance(proof, dict) or proof.get("version") != "single-detected-face-v1":
+        return None
+    if type(proof.get("candidate_count")) is not int or proof["candidate_count"] != 1:
+        return None
+    # The threshold is a detector setting, NOT the selected face's confidence.
+    if proof.get("detection_threshold") != settings.detection_confidence:
+        return None
+    if proof.get("landmarks_available") is not True:
+        return None
+    box = _box(proof.get("box"))
+    faces = [item for item in evidence.get("subjects", [])
+             if isinstance(item, dict) and item.get("evidence_kind") == "face"]
+    if len(faces) != 1 or not _same_box(faces[0].get("normalized_box"), box):
+        return None
+    if measurement_inputs(asset, settings, inputs["enabled_parts"]) != inputs:
+        return None
+    result = dict(inputs, version="automatic-primary-selection-v1",
+                  origin="automatic", human_confirmed=False,
+                  regions=[{"id": "face:" + face_box_key(box), "kind": "face", "box": box}],
+                  detector_provenance=_canonical(proof))
+    result["digest"] = _digest(result)
+    return result
+
+
+def current_selection(asset, settings, evidence=None):
+    """Current human or measured automatic range; human confirmation stays separate."""
+    evidence = (getattr(asset, "clarity_evidence", None) or {}) if evidence is None else evidence
+    if not isinstance(evidence, dict):
+        return None
+    confirmation = confirmed_selection(asset, settings)
+    if confirmation is not None:
+        inputs = evidence.get("measurement_inputs")
+        if inputs is not None:
+            try:
+                if measurement_inputs(asset, settings, inputs["enabled_parts"]) != inputs:
+                    return None
+                confirmation = dict(confirmation, origin="human", enabled_parts=inputs["enabled_parts"])
+            except (KeyError, AttributeError, OSError, TypeError, ValueError):
+                return None
+        return confirmation
+    try:
+        saved = evidence.get("automatic_selection")
+        if not isinstance(saved, dict):
+            return None
+        current = automatic_selection(asset, settings, evidence, evidence["measurement_inputs"])
+        if (current is not None and current == saved
+                and evidence.get("measurement_selection_digest") == current["digest"]):
+            return current
+    except (KeyError, AttributeError, OSError, TypeError, ValueError, OverflowError):
+        pass
+    return None
 
 def _part(part, state, reasons, *, reliable=False):
     return {
@@ -449,7 +538,10 @@ def _policy_payload(confirmation, subjects, issues, raw_subjects):
     recommendation = "reject" if severe else "keep" if clear else "review"
     return {
         "version": POLICY_VERSION,
-        "confirmation_digest": confirmation["digest"] if confirmation else None,
+        "confirmation_digest": confirmation["digest"] if confirmation and confirmation.get("human_confirmed") else None,
+        "selection_digest": confirmation["digest"] if confirmation else None,
+        "selection_origin": ("human" if confirmation.get("human_confirmed") else "automatic") if confirmation else None,
+        "enabled_parts": confirmation.get("enabled_parts", ["face", "body"]) if confirmation else [],
         "recommendation": recommendation,
         "state": {
             "reject": "severe_blur", "keep": "clear", "review": "uncertain",
@@ -466,14 +558,15 @@ def evaluate_local_evidence(asset, settings, evidence):
     raw_subjects = evidence.get("subjects")
     raw_subjects = raw_subjects if isinstance(raw_subjects, list) else []
     subjects = [s for s in raw_subjects if isinstance(s, dict)]
-    confirmation = confirmed_selection(asset, settings)
+    confirmation = current_selection(asset, settings, evidence)
 
     if confirmation is None:
         return _policy_payload(None, [], [{
             "subject_id": None, "part": "selection",
             "state": "uncertain", "reason": "primary_selection_unconfirmed",
         }], raw_subjects)
-    if evidence.get("measurement_confirmation_digest") != confirmation["digest"]:
+    stamp = "measurement_confirmation_digest" if confirmation.get("human_confirmed") else "measurement_selection_digest"
+    if evidence.get(stamp) != confirmation["digest"]:
         return _policy_payload(confirmation, [], [{
             "subject_id": None, "part": "measurement",
             "state": "uncertain", "reason": "measurement_confirmation_mismatch",
@@ -508,7 +601,10 @@ def evaluate_local_evidence(asset, settings, evidence):
             if valid_participant and type(b.get('associated_face')) is int
             and b.get("associated_face") == participant
         ]
-        if len(attached) == 1 and attached[0][1].get("association") == "pose_head_overlap":
+        if "body" not in confirmation.get("enabled_parts", ["face", "body"]):
+            # Disabled is not clear/not-visible. Keep it outside the judged parts.
+            body_ids = []
+        elif len(attached) == 1 and attached[0][1].get("association") == "pose_head_overlap":
             index, body = attached[0]
             consumed_bodies.add(index)
             parts.append(_body_part(body))
@@ -572,7 +668,7 @@ def evaluate_local_evidence(asset, settings, evidence):
             })
 
     # A source/settings change during evaluation must invalidate the result.
-    rechecked = confirmed_selection(asset, settings)
+    rechecked = current_selection(asset, settings, evidence)
     if rechecked is None or rechecked["digest"] != confirmation["digest"]:
         return _policy_payload(None, [], [{
             "subject_id": None, "part": "measurement",

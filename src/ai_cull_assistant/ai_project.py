@@ -236,16 +236,16 @@ class ReviewProject:
         for asset in self._assets:
             from .participant_review import needs_person_review
             from .focus_protocol import make_scope, FocusProtocolError
-            from .primary_quality import confirmed_selection
+            from .primary_quality import current_selection
             if getattr(asset, 'analysis_mode', 'portrait') == 'portrait':
-                asset.person_review_pending = confirmed_selection(asset, crop_settings) is None
+                asset.person_review_pending = current_selection(asset, crop_settings) is None
             try:
                 focus_scope = make_scope(asset, crop_settings)
             except (FocusProtocolError, OSError, TypeError, ValueError):
                 focus_scope = None
             asset.focus_scope = focus_scope
             asset.person_review_pending = (getattr(asset,'analysis_mode','portrait')!='landscape' and
-                (confirmed_selection(asset, crop_settings) is None or
+                (current_selection(asset, crop_settings) is None or
                  needs_person_review(asset, crop_settings.photos.get(crop_settings.key(asset), {}))))
             pid=photo_id(asset)
             if pid in active:raise ValueError('重复原照片路径')

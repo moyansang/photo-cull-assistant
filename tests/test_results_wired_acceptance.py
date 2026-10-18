@@ -143,7 +143,11 @@ def test_scan_payload_response_manual_export_crop_regroup_wired(tmp_path,monkeyp
     assert len(requests)==before_group
     a,b=(project.data['photos'][photo_id(assets[name])] for name in ('A','B'))
     assert current_selection(a) is None and current_selection(b) is None
-    assert current_focus(b)['status']=='uncertain'  # face-only evidence cannot establish limb clarity
+    # The checkbox is off: face-only scope can be clear without inventing limb clarity.
+    focus = current_focus(b)
+    assert focus['status']=='clear'
+    assert focus['scope']['enabled_parts']==['face']
+    assert all(part['part']=='face' for person in focus['participants'] for part in person['parts'])
     assert len(b['history'])>=2 and b['focus_history']==[old_focus]
     rows={row['filename']:row for row in json.loads(project.export_final().read_text(encoding='utf-8'))['photos']}
     assert rows['A.png']['rating']==5 and rows['A.png']['pick_status']==1

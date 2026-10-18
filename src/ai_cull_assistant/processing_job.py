@@ -177,14 +177,15 @@ def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: 
     asset.ai_focus_result = result
     asset.ai_focus_stale = False
     local_policy = evidence.get('primary_quality') or {}
-    from .primary_quality import confirmed_selection
-    confirmation = confirmed_selection(asset, crop_settings or CropSettings())
+    from .primary_quality import current_selection
+    confirmation = current_selection(asset, crop_settings or CropSettings(), evidence)
     local_reject = (local_policy.get('recommendation') == 'reject'
                     and confirmation is not None
-                    and local_policy.get('confirmation_digest') == confirmation['digest']
-                    and evidence.get('measurement_confirmation_digest') == confirmation['digest'])
+                    and local_policy.get('selection_digest', local_policy.get('confirmation_digest')) == confirmation['digest']
+                    and evidence.get('measurement_confirmation_digest' if confirmation.get('human_confirmed') else 'measurement_selection_digest') == confirmation['digest'])
     asset.auto_rejected = status == "blur" or local_reject
-    asset.screening_reason = 'confirmed_primary_severe_blur' if local_reject else f"ai_focus_{status}"
+    local_reason = ('confirmed' if confirmation and confirmation.get('human_confirmed') else 'automatic') + '_primary_severe_blur'
+    asset.screening_reason = local_reason if local_reject else f"ai_focus_{status}"
     screened.rejected = asset.auto_rejected
     screened.reason = asset.screening_reason
 
@@ -231,8 +232,8 @@ def _has_reliable_face(asset: PhotoAsset, crops: CropSettings) -> bool:
 def _has_reviewable_subject(asset: PhotoAsset, crops: CropSettings) -> bool:
     if getattr(asset, 'analysis_mode', 'portrait') == 'landscape':
         return not any(str(n).startswith('decode_error:') for n in asset.notes)
-    from .primary_quality import confirmed_selection
-    if confirmed_selection(asset, crops) is None:
+    from .primary_quality import current_selection
+    if current_selection(asset, crops) is None:
         return False
     if _has_reliable_face(asset, crops):
         return True
