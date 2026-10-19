@@ -22,3 +22,11 @@ def test_each_worker_has_its_own_timing_dictionary():
         values = list(pool.map(run, ['preview', 'clarity']))
     assert set(values[0]) == {'preview'}
     assert set(values[1]) == {'clarity'}
+
+
+def test_summary_distinguishes_missing_zero_and_short_measurements():
+    summary = timing.timing_summary({'preview': 0, 'clarity': .0004, 'grouping': 1.23456})
+    assert '未记录' in summary
+    assert '0.000 秒' in summary
+    assert '<0.001 秒' in summary
+    assert '1.235 秒' in summary

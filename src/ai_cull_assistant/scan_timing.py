@@ -57,4 +57,9 @@ def merge_timings(target, values):
 
 
 def timing_summary(values):
-    return '；'.join(f'{label} {values.get(key, 0):.1f} 秒' for key, label in LABELS.items())
+    def display(key):
+        if key not in values:
+            return '未记录'
+        elapsed = max(0.0, values[key])
+        return '<0.001 秒' if 0 < elapsed < .001 else f'{elapsed:.3f} 秒'
+    return '；'.join(f'{label} {display(key)}' for key, label in LABELS.items())
