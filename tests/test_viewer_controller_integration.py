@@ -226,11 +226,16 @@ def test_group_doubleclick_closure_opens_exact_member_and_group_order(monkeypatc
     owner = SimpleNamespace(detail_canvas=canvas, _detail_images=[], selected_group_id=1,
                             selected_stem=first.stem, _members_by_group={1: [first, second]},
                             _fonts={'small': font}, _refresh_detail_status=lambda *args: None,
+                            filter_var=Surface(), filter_count_var=Surface(),
+                            _refresh_inspector=lambda: None,
                             _thumbnail_key=lambda asset, size: (asset.stem, size),
                             _cancel_stale_thumbnail_requests=lambda: None,
                             _cached_photo=lambda *args: None, _select_asset=lambda stem: None)
+    owner.filter_var.set('全部')
+    owner._filtered_members = MethodType(GroupEditor._filtered_members, owner)
     owner._open_viewer = MethodType(GroupEditor._open_viewer, owner)
     GroupEditor._redraw_detail(owner)
+    assert owner.filter_count_var.get() == '显示 2 / 2 张'
     canvas.bindings['detail:b', '<Double-Button-1>'](None)
     assert calls == [(owner, [first, second], {'index': 1, 'fullscreen': True})]
 

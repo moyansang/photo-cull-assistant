@@ -64,12 +64,16 @@ def apply_face_box(entry, selected_boxes, box, preview_version):
 
 
 class CropDialog(WorkspacePage):
-    def __init__(self, parent, assets, settings, on_save, *, embedded=False):
+    def __init__(self, parent, assets, settings, on_save, *, embedded=False, initial_asset=None):
+        visible_assets = [a for a in assets if a.preview_path or a.primary_path]
+        initial_index = 0 if initial_asset is None else self.asset_index(visible_assets, initial_asset)
+        if initial_index is None:
+            raise ValueError("无法唯一定位要检查的照片，请重新选择。")
         super().__init__(parent, embedded=embedded)
         self.withdraw()
         self.title("检测/调整人脸框")
         self.transient(parent)
-        self.assets = [a for a in assets if a.preview_path or a.primary_path]
+        self.assets = visible_assets
         self.edits = deepcopy(settings.photos)
         self._original_photos = deepcopy(settings.photos)
         self._original_confidence = settings.detection_confidence
@@ -103,7 +107,7 @@ class CropDialog(WorkspacePage):
         self._selected_boxes = []
         self._active_face_key = None
         self._person_dirty = False
-        self.index = 0
+        self.index = initial_index
         self.on_save = on_save
         self.scale = tk.DoubleVar(value=settings.scale_factor)
         self.shift = tk.DoubleVar(value=settings.shift_factor)
@@ -513,6 +517,38 @@ class CropDialog(WorkspacePage):
             return None
         version = Path(asset.preview_path).parent.name
         return version if version in ('v04', 'v05') else None
+
+    @staticmethod
+    def asset_index(assets, asset):
+        """Locate one exact source path, never guess from a filename or group."""
+        if asset is None:
+            return None
+        try:
+            settings = CropSettings()
+            key = settings.key(asset)
+            matches = [index for index, current in enumerate(assets)
+                       if settings.key(current) == key]
+        except (AttributeError, OSError, TypeError, ValueError):
+            return None
+        return matches[0] if len(matches) == 1 else None
+
+    def show_asset(self, asset):
+        """Navigate to a verified photo while retaining all unsaved draft edits."""
+        if self._closed or not self.winfo_exists():
+            return False
+        index = self.asset_index(self.assets, asset)
+        if index is None:
+            return False
+        # Resolve before storing: a stale or ambiguous target must do nothing.
+        self.store_current()
+        if index != self.index:
+            self.index = index
+            self._crop_selected = False
+            self._active_face_key = None
+            self._drag = None
+        self.load_current()
+        self.render()
+        return True
 
     def navigate(self, step):
         if self.assets:

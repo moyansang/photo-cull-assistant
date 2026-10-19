@@ -282,6 +282,8 @@ def test_group_summary_shows_local_ties_and_keeps_review_separate():
     from ai_cull_assistant.group_editor import local_recommendation_summary
     from dataclasses import asdict
     members = [make_asset('A', 7), make_asset('B', 7), make_asset('C', 7)]
+    for asset in members:
+        asset.analysis_mode = 'landscape'  # This fixture tests categories, not portrait scope validation.
     for asset in members[:2]:
         asset.clarity_evidence = {'recommendation': 'keep', 'reliability': 'adequate'}
     members[2].clarity_evidence = {'recommendation': 'review', 'reliability': 'insufficient'}
@@ -299,6 +301,8 @@ def test_group_summary_shows_local_ties_and_keeps_review_separate():
 def test_group_summary_without_reliable_keep_does_not_force_a_winner():
     from ai_cull_assistant.group_editor import local_recommendation_summary
     members = [make_asset('A', 7), make_asset('B', 7)]
+    for asset in members:
+        asset.analysis_mode = 'landscape'  # Portrait validity is covered in evidence tests.
     members[0].clarity_evidence = {'recommendation': 'review', 'reliability': 'insufficient'}
     members[1].clarity_evidence = {'recommendation': 'reject', 'reliability': 'adequate'}
     summary = local_recommendation_summary(members, members[1])

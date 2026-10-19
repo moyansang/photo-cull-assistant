@@ -1412,6 +1412,36 @@ class App(EvidenceCleanupMixin, tk.Tk):
             return
         self._mount_workspace_page('faces', CropDialog(self._page_host, assets, self.crop_settings, self._save_crop_settings, embedded=True))
 
+    def _open_group_subject(self, asset) -> bool:
+        """Open the existing subject editor for this current workspace photo only."""
+        if (getattr(self, '_cleaning_evidence', False)
+                or getattr(self, '_processing_busy', False)
+                or getattr(self, '_processing_job', None) is not None
+                or self.updates.busy or self._review_busy()):
+            messagebox.showinfo('暂不能编辑', '当前任务尚未完成，请等待或继续完成任务后再选择检查人物。', parent=self)
+            return False
+        if not self._sync_selected_workspace():
+            return False
+        assets = self.scan_result.assets if self.scan_result else []
+        # A group page from an earlier scan/workspace cannot route a stale asset.
+        if (not any(current is asset for current in assets)
+                or CropDialog.asset_index(assets, asset) is None):
+            messagebox.showinfo('无法定位照片', '照片或工作区已变化，请重新打开分组页并选择照片。', parent=self)
+            return False
+        if getattr(asset, 'analysis_mode', 'portrait') == 'landscape':
+            messagebox.showinfo('风景模式', '这张照片采用整图分析，无需选择检查人物。', parent=self)
+            return False
+        page = self._workspace_pages.get('faces')
+        if page is not None and page.winfo_exists():
+            if not page.show_asset(asset):
+                messagebox.showinfo('无法定位照片', '当前人脸框草稿页无法唯一定位这张照片；草稿已保留，请返回人脸框页检查。', parent=self)
+                return False
+            return self._show_workspace_page('faces')
+        page = CropDialog(self._page_host, assets, self.crop_settings,
+                          self._save_crop_settings, embedded=True, initial_asset=asset)
+        self._mount_workspace_page('faces', page)
+        return True
+
     def _save_crop_settings(self, settings: CropSettings) -> None:
         # One saved batch is one job. Do not let a second edit replace the ROI
         # snapshot while an earlier worker can still publish its result.
@@ -1481,7 +1511,8 @@ class App(EvidenceCleanupMixin, tk.Tk):
             self.next_step_var.set("推荐下一步：AI 复核")
             self._discard_workspace_pages(keep=('groups', 'faces', 'focus'))
 
-        self._mount_workspace_page('groups', GroupEditor(self._page_host, self.scan_result.assets, save_changes, embedded=True))
+        self._mount_workspace_page('groups', GroupEditor(self._page_host, self.scan_result.assets, save_changes,
+                                                        on_select_subject=self._open_group_subject, embedded=True))
 
     def _clear_workspace(self):
         if self._review_busy():
