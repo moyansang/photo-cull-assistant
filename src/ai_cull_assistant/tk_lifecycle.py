@@ -22,5 +22,7 @@ def cancel_pending_callbacks(widget, *, all_callbacks=False):
             # Arbitrary Tcl scripts need not be valid Tcl lists. Tkinter's
             # after() registers a single command name, so these are not ours.
             continue
-        if parts and parts[0] in commands:
+        # Tcl may return a typed, unhashable Tcl_Obj for a command word.
+        # Tkinter registers command names as strings; compare their Tcl text.
+        if parts and str(parts[0]) in commands:
             widget.tk.call('after', 'cancel', token)

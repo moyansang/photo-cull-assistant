@@ -67,6 +67,29 @@ def test_root_cleanup_cancels_child_and_raw_tcl_timers(interpreter):
     assert interpreter.eval('set callback_errors') == ''
 
 
+@pytest.mark.parametrize('owned', [False, True])
+def test_typed_tcl_command_word_preserves_ownership(interpreter, owned):
+    widget = owner(interpreter)
+    word = interpreter.tk.call('dict', 'create', 'typed', 'command')
+    with pytest.raises(TypeError):
+        hash(word)
+    calls = []
+    interpreter.tk.createcommand(str(word), lambda: calls.append('called'))
+    if owned:
+        widget._tclCommands.append(str(word))
+    token = interpreter.tk.call('after', 0, (word,))
+    script, _ = interpreter.tk.call('after', 'info', token)
+    with pytest.raises(TypeError):
+        hash(interpreter.tk.splitlist(script)[0])
+    cancel_pending_callbacks(widget)
+    widget.destroy()
+    interpreter.eval('update')
+    assert calls == ([] if owned else ['called'])
+    assert interpreter.eval('set callback_errors') == ''
+    if not owned:
+        interpreter.tk.deletecommand(str(word))
+
+
 @pytest.mark.parametrize('all_callbacks', [False, True])
 def test_non_list_tcl_script_does_not_interrupt_cleanup(interpreter, all_callbacks):
     widget = owner(interpreter)
