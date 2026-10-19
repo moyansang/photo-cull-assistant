@@ -123,6 +123,9 @@ def _portrait_result(face_result, *, bodies=(), include_face=True):
             item = dict(participant, participant=index, evidence_kind='face',
                         eye_evidence=bool(participant.get('landmarks_used')))
             item['face_measurement_state'] = participant.get('face_state', participant.get('state'))
+            item['face_reasons'] = list(participant.get('face_reasons', participant.get('reasons', [])))
+            item['body_reasons'] = list(participant.get('body_reasons', []))
+            item['reason_schema_version'] = 'part-reasons-v1'
             legacy_box = item.get('face_box') or (face_result.face_box if len(participants)==1 else None)
             if not item.get('normalized_box') and legacy_box and face_result.source_size:
                 px,py,pw,ph=legacy_box
@@ -139,6 +142,7 @@ def _portrait_result(face_result, *, bodies=(), include_face=True):
                 item['body'] = own_body
                 item['state'] = ('severe_blur' if own_body.get('state') == 'severe_blur'
                                  else 'uncertain' if item.get('state') != 'severe_blur' else 'severe_blur')
+                item['body_reasons'] = list(own_body.get('reasons', []))
                 item['reasons'] = list(item.get('reasons', [])) + list(own_body.get('reasons', []))
             item['reliability'] = _reliability(item)
             face_subjects.append(item)

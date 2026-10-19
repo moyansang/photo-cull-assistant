@@ -110,7 +110,8 @@ def policy_matches_scope(policy, evidence, scope):
     """Accept body associations only from this selection's current measurement."""
     if not isinstance(policy, dict) or not isinstance(evidence, dict):
         return False
-    if policy.get("version") != "confirmed-primary-quality-v1":
+    from .primary_quality import POLICY_VERSION
+    if policy.get("version") != POLICY_VERSION:
         return False
     if "selection_origin" in scope:
         digest = scope["selection_digest"]

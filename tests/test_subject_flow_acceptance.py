@@ -146,14 +146,17 @@ def test_manual_body_editor_to_settings_save_rescan_and_results(tmp_path,monkeyp
     changed,still=app.scan_result.assets
     assert changed.local_recommendation=='review' and not changed.auto_rejected
     rows=changed.clarity_evidence['subjects']
-    assert len(rows)==2 and [row['state'] for row in rows]==['clear','uncertain']
+    # This mock places one person at each crop centre but at a different
+    # full-image position. Crop-local uniqueness cannot prove ownership.
+    assert len(rows)==2 and [row['state'] for row in rows]==['uncertain','uncertain']
+    assert 'body_region_ownership_unresolved' in rows[0]['reasons']
     assert all(row['evidence_kind']=='body' and not row['eye_evidence'] for row in rows)
     assert changed.ai_focus_stale and changed.ai_focus_result['reason']=='old subject'
     assert not changed.ai_focus_dirty
     assert still.clarity_evidence==untouched_evidence and still.ai_focus_result['reason']=='unchanged'
     assert not still.ai_focus_stale
     labels=body_participant_labels(changed,settings.photos[settings.key(changed)],settings.photos[settings.key(changed)])
-    assert '身体细节清晰' in labels[0] and '身体待复核' in labels[1]
+    assert '身体待复核' in labels[0] and '身体待复核' in labels[1]
     restored=load_session(workspace,source)
     assert restored.assets[0].clarity_evidence['subjects']==json.loads(json.dumps(changed.clarity_evidence['subjects']))
     assert original_hashes=={path.name:sha256(path.read_bytes()).hexdigest() for path in source.iterdir()}

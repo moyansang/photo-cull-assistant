@@ -150,7 +150,8 @@ def local_recommendation(photo):
         digest = policy.get('selection_digest', policy.get('confirmation_digest'))
         stamp = 'measurement_selection_digest' if automatic else 'measurement_confirmation_digest'
         scope_digest = scope.get('selection_digest') if automatic else scope.get('confirmation_digest')
-        if (policy.get('version') == 'confirmed-primary-quality-v1'
+        from .primary_quality import POLICY_VERSION
+        if (policy.get('version') == POLICY_VERSION
                 and digest and digest == evidence.get(stamp) and digest == scope_digest
                 and (not automatic or scope.get('selection_origin') == 'automatic')
                 and (not scope.get('enabled_parts') or policy.get('enabled_parts') == scope['enabled_parts'])

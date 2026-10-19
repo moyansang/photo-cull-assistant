@@ -19,7 +19,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 
-VERSION = "body-focus-v1"
+VERSION = "body-focus-v2"
 MODEL_FILENAMES = (
     "person_detection_mediapipe_2023mar.onnx",
     "pose_estimation_mediapipe_2023mar.onnx",
@@ -193,7 +193,8 @@ class _PoseEstimator:
         sx0, sy0 = max(-left, 0), max(-top, 0)
         sx1, sy1 = sx0 + clip[2] - clip[0], sy0 + clip[3] - clip[1]
         full_mask[clip[1]:clip[3], clip[0]:clip[2]] = (mask[sy0:sy1, sx0:sx1] > 0).astype(np.uint8) * 255
-        return {"landmarks": points[:33].copy(), "mask": full_mask, "confidence": score}
+        return {"landmarks": points[:33].copy(), "mask": full_mask, "confidence": score,
+                "mask_kind": "binary_foreground", "instance_ownership_verified": False}
 
 
 def _get_models() -> tuple[_PersonDetector, _PoseEstimator]:
@@ -298,12 +299,12 @@ def _region_metrics(image: np.ndarray, mask: np.ndarray, box: tuple[int, int, in
     crop = image[y0:y1, x0:x1]
     valid = mask[y0:y1, x0:x1] > 0
     if crop.size == 0 or valid.size == 0:
-        return {"state": "insufficient", "reason": "empty_region"}
+        return {"state": "insufficient", "reason": "empty_region", "texture_sufficiency": "unknown"}
     # Suppress the segmentation outline, which otherwise looks like a sharp
     # subject edge even when the subject itself is blurred.
     valid = cv2.erode(valid.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
     if int(valid.sum()) < 1024 or valid.mean() < 0.20:
-        return {"state": "insufficient", "reason": "insufficient_subject_pixels"}
+        return {"state": "insufficient", "reason": "insufficient_subject_pixels", "texture_sufficiency": "unknown"}
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
     values = gray[valid]
     p05, p95 = np.percentile(values, (5, 95))
@@ -337,28 +338,108 @@ def _region_metrics(image: np.ndarray, mask: np.ndarray, box: tuple[int, int, in
         state, reason = "uncertain", "borderline_body_detail"
     return {
         "state": state, "reason": reason, "contrast": contrast,
+        "texture_sufficiency": "insufficient" if contrast < 0.10 or texture_fraction < 0.08 else "sufficient",
         "texture_fraction": texture_fraction, "laplacian_normalized": lap_norm,
         "coarse_laplacian_normalized": coarse_norm, "edge_curvature": curvature,
         "edge_anisotropy": anisotropy,
     }
 
 
+def _region_ownership(box: Iterable[int], person: np.ndarray | None,
+                      detections: np.ndarray | None) -> dict[str, Any]:
+    """Conservative geometric support, never semantic instance ownership proof.
+
+    Detector rectangles describe heads. A competing person's hip/full-body
+    radius is a deliberately broad exclusion envelope, including limbs that a
+    failed or occluded pose could miss. Invalid competitor geometry fails closed.
+    """
+    base = {"basis": "geometric_association", "semantic_ownership_verified": False,
+            "mask_kind": "binary_foreground", "competing_envelopes": []}
+    if person is None or detections is None or not len(detections):
+        return dict(base, status="unverified", reason="association_not_available")
+    if len(person) != 13 or not np.isfinite(person).all() or not any(np.array_equal(row, person) for row in detections):
+        return dict(base, status="unverified", reason="association_not_available")
+    bounds = np.asarray(box, dtype=float)
+    skipped_selected = False
+    for other in detections:
+        if not skipped_selected and np.array_equal(other, person):
+            skipped_selected = True
+            continue
+        if len(other) != 13 or not np.isfinite(other).all():
+            return dict(base, status="unverified", reason="competitor_geometry_unavailable")
+        hip, full = other[4:6], other[6:8]
+        radius = float(np.linalg.norm(hip - full))
+        if radius < 8:
+            return dict(base, status="unverified", reason="competitor_geometry_unavailable")
+        envelope = np.r_[np.minimum(hip - radius, other[:2]),
+                         np.maximum(hip + radius, other[2:4])]
+        base["competing_envelopes"].append([float(v) for v in envelope])
+        if np.all(np.minimum(bounds[2:], envelope[2:]) > np.maximum(bounds[:2], envelope[:2])):
+            return dict(base, status="ambiguous", reason="competing_person_envelope_overlap")
+    return dict(base, status="geometrically_supported", reason="no_competing_person_envelope_overlap")
+
+
+def _measured_region(image: np.ndarray, pose: dict[str, Any], spec: dict[str, Any],
+                     person: np.ndarray, detections: np.ndarray) -> dict[str, Any]:
+    """Keep measured detail separate from geometric permission to use it."""
+    height, width = image.shape[:2]
+    box = [int(value) for value in spec["box"]]
+    ownership = _region_ownership(box, person, detections)
+    measured = _region_metrics(image, pose["mask"], spec["box"])
+    evidence = dict(measured, measurement_state=measured["state"], measurement_reason=measured["reason"])
+    if ownership["status"] != "geometrically_supported":
+        evidence.update(state="insufficient", reason="region_ownership_" + ownership["status"])
+    return {
+        **spec, "box": box, "evidence": evidence,
+        "coordinate_space": "exif_transposed_image_pixels_xyxy",
+        "coordinate_image_size": [width, height],
+        "measurement_image_size": [width, height], "measurement_box": list(box),
+        "measurement_origin_px": [0, 0], "ownership": ownership,
+        "visibility": "unknown", "occlusion": "unknown",
+        "texture_sufficiency": measured.get("texture_sufficiency", "unknown"),
+        "version": VERSION,
+    }
+
+
+def _region_is_usable(region: dict[str, Any]) -> bool:
+    # Existing legacy results stay readable; all newly produced regions have an
+    # explicit ownership gate. This is not an upgrade of old measurement data.
+    ownership = region.get("ownership")
+    if region.get("version") == VERSION and not isinstance(ownership, dict):
+        return False
+    if ownership is not None and (not isinstance(ownership, dict) or
+                                  ownership.get("status") != "geometrically_supported"):
+        return False
+    return region.get("evidence", {}).get("state") in {"clear", "uncertain", "severe_blur"}
+
+
 def _aggregate_regions(regions: list[dict[str, Any]]) -> tuple[str, list[str]]:
-    usable = [region for region in regions if region["evidence"]["state"] != "insufficient"]
+    ownership_unresolved = any(
+        (region.get("version") == VERSION or "ownership" in region) and
+        (not isinstance(region.get("ownership"), dict) or
+         region["ownership"].get("status") != "geometrically_supported")
+        for region in regions
+    )
+    ownership_reasons = ["body_region_ownership_unresolved"] if ownership_unresolved else []
+    usable = [region for region in regions if _region_is_usable(region)]
     severe = [region for region in usable if region["evidence"]["state"] == "severe_blur"]
     clear = [region for region in usable if region["evidence"]["state"] == "clear"]
     borderline = [region for region in usable if region["evidence"]["state"] == "uncertain"]
     severe_families = {region["family"] for region in severe}
     clear_families = {region["family"] for region in clear}
     if ("torso" in severe_families and len(severe_families) >= 2) or len(severe_families) >= 3:
-        return "severe_blur", ["multiple_major_body_regions_severely_blurred"]
+        return "severe_blur", ["multiple_major_body_regions_severely_blurred"] + ownership_reasons
     if severe:
-        return "uncertain", ["isolated_body_blur_evidence"]
+        return "uncertain", ["isolated_body_blur_evidence"] + ownership_reasons
     if borderline:
-        return "uncertain", ["at_least_one_major_body_region_uncertain"]
+        return "uncertain", ["at_least_one_major_body_region_uncertain"] + ownership_reasons
+    # Excluding unsafe pixels must never manufacture a clear result from the
+    # remaining regions. Reliable multi-family severe evidence above still wins.
+    if any(not _region_is_usable(region) for region in regions):
+        return "uncertain", ["insufficient_consistent_body_evidence"] + ownership_reasons
     if len(clear_families) >= 2:
-        return "clear", ["multiple_major_body_regions_clear"]
-    return "uncertain", ["insufficient_consistent_body_evidence"]
+        return "clear", ["multiple_major_body_regions_clear"] + ownership_reasons
+    return "uncertain", ["insufficient_consistent_body_evidence"] + ownership_reasons
 
 
 def _headshot(face: tuple[float, float, float, float]) -> bool:
@@ -418,8 +499,7 @@ def assess_body_focus(image: Image.Image, face: tuple[float, float, float, float
         result["diagnostics"]["pose_confidence"] = pose_result["confidence"]
         region_specs = _pose_regions(pose_result["landmarks"], (height, width))
         for spec in region_specs:
-            evidence = _region_metrics(bgr, pose_result["mask"], spec["box"])
-            result["regions"].append({**spec, "box": [int(value) for value in spec["box"]], "evidence": evidence})
+            result["regions"].append(_measured_region(bgr, pose_result, spec, person, detections))
         if not region_specs and _headshot((x, y, fw, fh)):
             result.update(state="clear", review_kind="none", reasons=["body_not_visible_headshot"])
             return result
@@ -452,7 +532,7 @@ def body_review_boxes(evidence: dict[str, Any], limit: int = 3) -> list[tuple[in
     rank = {"severe_blur": 0, "uncertain": 1}
     candidates = [
         region for region in evidence.get("regions", [])
-        if region.get("evidence", {}).get("state") in rank
+        if _region_is_usable(region) and region.get("evidence", {}).get("state") in rank
     ]
     candidates.sort(key=lambda region: (
         rank[region["evidence"]["state"]],
@@ -514,12 +594,11 @@ def detect_body_candidates(image: Image.Image, *, max_people: int = 8) -> list[d
                 continue
             regions = []
             for spec in _pose_regions(points, (height, width)):
-                regions.append({**spec, 'box': [int(value) for value in spec['box']],
-                                'evidence': _region_metrics(bgr, estimated['mask'], spec['box'])})
+                regions.append(_measured_region(bgr, estimated, spec, person, detections))
             state, reasons = _aggregate_regions(regions)
             found.append({'box': box, 'source': 'mediapipe_pose',
                           'confidence': min(float(person[-1]), float(estimated['confidence'])),
-                          'state': state, 'reasons': reasons, 'regions': regions,
+                          'state': state, 'reasons': reasons, 'regions': regions, 'version': VERSION,
                           'evidence_kind': 'body', 'eye_evidence': False,
                           'source_size': [width, height],
                           'head_box': [float(person[0]/width),float(person[1]/height),
@@ -532,12 +611,13 @@ def detect_body_candidates(image: Image.Image, *, max_people: int = 8) -> list[d
 def assess_body_region(image: Image.Image, box: tuple[float, float, float, float]) -> dict[str, Any]:
     """Measure a manually selected body only when pose/segmentation supports it."""
     from .subject import _valid_normalized_box
-    result = {'box': tuple(box), 'source': 'manual', 'evidence_kind': 'body',
+    result = {'box': tuple(box), 'source': 'manual', 'evidence_kind': 'body', 'version': VERSION,
               'eye_evidence': False, 'state': 'uncertain', 'regions': [],
               'reasons': ['manual_body_without_reliable_pose'], 'confidence': None}
     if not _valid_normalized_box(box):
         result['reasons'] = ['invalid_body_box']
         return result
+    image = ImageOps.exif_transpose(image)
     width, height = image.size
     x, y, w, h = box
     bounds = (round(x*width), round(y*height), round((x+w)*width), round((y+h)*height))
@@ -556,8 +636,43 @@ def assess_body_region(image: Image.Image, box: tuple[float, float, float, float
                   confidence=candidate['confidence'], source_size=[width, height])
     if candidate.get('head_box'):
         hx,hy,hw,hh=candidate['head_box']
-        result['head_box']=[x+hx*w,y+hy*h,hw*w,hh*h]
+        crop_width, crop_height = bounds[2]-bounds[0], bounds[3]-bounds[1]
+        result['head_box'] = [(bounds[0]+hx*crop_width)/width, (bounds[1]+hy*crop_height)/height,
+                              hw*crop_width/width, hh*crop_height/height]
+    result['version'] = VERSION
     result['regions'] = [dict(region, box=[region['box'][0]+bounds[0], region['box'][1]+bounds[1],
-                                         region['box'][2]+bounds[0], region['box'][3]+bounds[1]])
+                                         region['box'][2]+bounds[0], region['box'][3]+bounds[1]],
+                             coordinate_image_size=[width, height],
+                             measurement_origin_px=[bounds[0], bounds[1]])
                          for region in candidate['regions']]
+    for region in result['regions']:
+        region['evidence'] = dict(region['evidence'])
+        region['ownership'] = dict(region.get('ownership', {'status': 'unverified'}))
+        region['ownership']['competing_envelopes'] = [
+            [b[0]+bounds[0], b[1]+bounds[1], b[2]+bounds[0], b[3]+bounds[1]]
+            for b in region['ownership'].get('competing_envelopes', [])]
+    # Cropping can hide a neighboring person's head while retaining their arm.
+    # Recheck competition in the full image; crop-local uniqueness is not enough.
+    try:
+        detector, _pose = _get_models()
+        full_bgr = cv2.cvtColor(np.asarray(image.convert('RGB')), cv2.COLOR_RGB2BGR)
+        detections = detector.infer(full_bgr)
+        head = result.get('head_box')
+        selected = None
+        if head:
+            hx, hy, hw, hh = head
+            face_px = np.asarray([hx*width, hy*height, (hx+hw)*width, (hy+hh)*height])
+            selected, _association = _associate_person(detections, face_px)
+        for region in result['regions']:
+            ownership = _region_ownership(region['box'], selected, detections)
+            region['full_image_ownership'] = ownership
+            if ownership['status'] != 'geometrically_supported':
+                region['ownership'] = ownership
+                region['evidence'].update(state='insufficient', reason='region_ownership_' + ownership['status'])
+    except (BodyModelUnavailable, cv2.error, OSError, ValueError, OverflowError):
+        for region in result['regions']:
+            region['ownership'] = {'status': 'unverified', 'basis': 'full_image_check_unavailable',
+                                   'semantic_ownership_verified': False}
+            region['evidence'].update(state='insufficient', reason='region_ownership_unverified')
+    result['state'], result['reasons'] = _aggregate_regions(result['regions'])
     return result

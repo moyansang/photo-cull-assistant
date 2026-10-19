@@ -56,6 +56,9 @@ def apply_body_check(asset, screened, settings, cache_dir):
         evidence['state']='severe_blur';screened.rejected=True;screened.reason='obvious_body_blur'
     elif body['state']!='clear':
         evidence['state']='uncertain';screened.reason='body_focus_uncertain'
-    evidence['reasons']=list(face.get('reasons',[]))+list(body.get('reasons',[]))
+    evidence['face_reasons']=list(face.get('face_reasons', face.get('reasons', [])))
+    evidence['body_reasons']=list(body.get('reasons', []))
+    evidence['reason_schema_version']='part-reasons-v1'
+    evidence['reasons']=evidence['face_reasons']+evidence['body_reasons']
     screened.focus_evidence=evidence
     return screened

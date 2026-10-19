@@ -1,5 +1,5 @@
 """Face-anchored appearance features; this is not skeletal pose estimation."""
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from collections import OrderedDict
 from pathlib import Path
@@ -15,6 +15,7 @@ from .scan_timing import timed
 
 _manual_details = OrderedDict()
 DETECTION_VERSION = 'subject-v2-profile-head'
+CANDIDATE_PROVENANCE_VERSION = 'subject-candidates-v1'
 
 
 def _remember_manual(key, head, landmarks):
@@ -40,6 +41,8 @@ def asset_features(asset, score_threshold=.8, *, require_landmarks=False, roi_co
     legacy_face_without_points = bool(
         require_landmarks
         and (getattr(asset.subject_features, 'detection_version', None) != DETECTION_VERSION
+             or (getattr(asset.subject_features, 'face', None)
+                 and getattr(asset.subject_features, 'candidate_provenance', None) is None)
              or (getattr(asset.subject_features, "face", None)
                  and not getattr(asset.subject_features, "landmarks", None)))
     )
@@ -80,6 +83,9 @@ class SubjectFeatures:
     primary_body_index: int | None = None
     body_box: tuple[float, float, float, float] | None = None
     roi_primary_selection_required: bool = False
+    # Diagnostic evidence only: never affects grouping equality or selection.
+    # None distinguishes legacy records from an observed empty candidate list.
+    candidate_provenance: dict | None = field(default=None, compare=False)
 
     def __post_init__(self):
         # JSON/session/worker transport turns tuples into lists. Normalize at
@@ -92,6 +98,14 @@ class SubjectFeatures:
                 object.__setattr__(self, name, tuple(getattr(self, name)))
         if self.landmarks is not None:
             object.__setattr__(self, 'landmarks', tuple(tuple(point) for point in self.landmarks))
+        if self.candidate_provenance is not None:
+            provenance = deepcopy(self.candidate_provenance)
+            candidates = tuple(provenance.get('initial_candidates', ()))
+            for candidate in (*candidates, provenance.get('chosen_candidate')):
+                if isinstance(candidate, dict) and candidate.get('box') is not None:
+                    candidate['box'] = tuple(candidate['box'])
+            provenance['initial_candidates'] = candidates
+            object.__setattr__(self, 'candidate_provenance', provenance)
 
 
 def image_hash(image: Image.Image) -> str:
@@ -152,6 +166,35 @@ def _choose_subject(image, candidates, score_threshold):
     return (refined, None) if refined else (None, located)
 
 
+def _candidate_record(candidate, width, height, source):
+    """Record detector geometry, not visibility, person identity or primacy."""
+    x, y, w, h = candidate.box
+    points = np.asarray(candidate.landmarks)
+    return {
+        'box': (float(x / width), float(y / height), float(w / width), float(h / height)),
+        'score': float(candidate.score),
+        # Five finite detector points do not prove that eyes are visible.
+        'landmarks_available': bool(points.shape == (5, 2) and np.isfinite(points).all()),
+        'source': source,
+    }
+
+
+def _candidate_provenance(candidates, chosen, width, height):
+    initial = tuple(_candidate_record(face, width, height, 'initial_yunet') for face in candidates)
+    # Selection returns the original object for initial detections. A rescue
+    # must not borrow the original count, even if its box happens to coincide.
+    chosen_index = next((index for index, face in enumerate(candidates) if face is chosen), None)
+    chosen_source = ('initial_yunet' if chosen_index is not None else 'head_face_retry') if chosen else None
+    return {
+        'diagnostic_version': CANDIDATE_PROVENANCE_VERSION,
+        'coordinate_space': 'normalized_exif_oriented',
+        'initial_candidates': initial,
+        'chosen_initial_index': chosen_index,
+        'chosen_source': chosen_source,
+        'chosen_candidate': _candidate_record(chosen, width, height, chosen_source) if chosen else None,
+    }
+
+
 @lru_cache(maxsize=256)
 def _cached_features(path: str, modified: int, size: int, score_threshold: float) -> SubjectFeatures:
     with Image.open(path) as source:
@@ -186,6 +229,7 @@ def _cached_features(path: str, modified: int, size: int, score_threshold: float
         DETECTION_VERSION,
         len(candidates),
         score_threshold,
+        candidate_provenance=_candidate_provenance(candidates, chosen, w, h),
     )
 
 

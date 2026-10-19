@@ -18,9 +18,9 @@ from .scan_timing import measure, timed
 from .scan_diagnostics import operation
 from .shared_decode import full_image
 
-VERSION = "native-face-v5-jpg-first"
+VERSION = "native-face-v6-effective-region"
 # Derived local cache format only; do not invalidate persisted paid AI identities.
-LOCAL_CACHE_VERSION = "source-stat-v3-auto-selection"
+LOCAL_CACHE_VERSION = "source-stat-v4-candidate-provenance"
 
 
 @measure('decode')
@@ -126,6 +126,7 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
             candidate_count=getattr(subject, 'candidate_count', None),
             detection_threshold=settings.detection_confidence,
             box=list(subject.face),
+            candidate_provenance=getattr(subject, 'candidate_provenance', None),
             landmarks_available=bool(getattr(subject, 'landmarks', None)
                                      and len(subject.landmarks) == 5),
         )

@@ -10,7 +10,7 @@ from numbers import Real
 from . import image_decode
 from .crop_settings import face_box_key
 
-POLICY_VERSION = "confirmed-primary-quality-v1"
+POLICY_VERSION = "confirmed-primary-quality-v2-effective-region"
 CONFIRMATION_KEY = "primary_subject_confirmation"
 
 _CROP_KEYS = (
@@ -51,6 +51,8 @@ _FACE_BLOCKERS = {
     "insufficient_local_contrast",
     "high_frequency_noise_or_artifacts",
     "source_detail_evidence_insufficient",
+    "face_visibility_unverified",
+    "face_region_outside_source",
 }
 
 
@@ -243,6 +245,23 @@ def automatic_selection(asset, settings, evidence, inputs):
         return None
     if type(proof.get("candidate_count")) is not int or proof["candidate_count"] != 1:
         return None
+    # New measured records carry all detector candidates. A rescued face must
+    # not inherit the initial detector's single-candidate count.
+    provenance = proof.get("candidate_provenance")
+    if provenance is not None:
+        if not isinstance(provenance, dict):
+            return None
+        candidates = provenance.get("initial_candidates")
+        if (provenance.get("diagnostic_version") != "subject-candidates-v1"
+                or provenance.get("coordinate_space") != "normalized_exif_oriented"
+                or not isinstance(candidates, (list, tuple)) or len(candidates) != 1
+                or type(provenance.get("chosen_initial_index")) is not int
+                or provenance["chosen_initial_index"] != 0
+                or provenance.get("chosen_source") != "initial_yunet"
+                or not isinstance(candidates[0], dict)
+                or not _same_box(candidates[0].get("box"), proof.get("box"))
+                or candidates[0].get("landmarks_available") is not True):
+            return None
     # The threshold is a detector setting, NOT the selected face's confidence.
     if proof.get("detection_threshold") != settings.detection_confidence:
         return None
@@ -307,6 +326,26 @@ def _finite_metrics(value, keys):
     )
 
 
+def face_reasons(item):
+    """Read part-specific reasons; legacy originals remain untouched for audit."""
+    if "face_reasons" in item:
+        return item["face_reasons"]
+    reasons = item.get("reasons")
+    if not isinstance(reasons, list):
+        return reasons
+    body = item.get("body")
+    def body_reason_codes(record):
+        raw = record.get("reasons") if isinstance(record, dict) else None
+        return {code for code in raw if isinstance(code, str)} if isinstance(raw, list) else set()
+    body_codes = body_reason_codes(body)
+    for attached in item.get("body_evidence", []) if isinstance(item.get("body_evidence"), list) else []:
+        if isinstance(attached, dict):
+            body_codes.update(body_reason_codes(attached))
+    return [r for r in reasons if isinstance(r, str) and r not in body_codes
+            and not r.startswith(("body_", "multiple_major_body_", "isolated_body_"))
+            and r not in {"face_body_quality_disagree", "ambiguous_face_body_association"}]
+
+
 def _face_part(item):
     """Validate the existing face decision and its necessary measurements."""
     from .focus_metrics import MIN_NATIVE_EYE_DISTANCE
@@ -314,11 +353,11 @@ def _face_part(item):
     unknown = _part("face", "uncertain", ["face_measurement_not_supported"])
     if not isinstance(item, dict):
         return _part("face", "unassessed", ["face_evidence_missing"])
-    reasons = item.get("reasons")
+    reasons = face_reasons(item)
     if not isinstance(reasons, list) or not all(isinstance(x, str) for x in reasons):
         return unknown
     if _FACE_BLOCKERS.intersection(reasons):
-        return unknown
+        return _part("face", "uncertain", reasons)
     if (
         item.get("landmarks_used") is not True
         or not _number(item.get("native_face_width"))
@@ -329,6 +368,12 @@ def _face_part(item):
         return unknown
 
     regions = item.get("regions")
+    if isinstance(regions, dict) and any(
+        isinstance(region, dict) and isinstance(region.get("effective_area"), dict)
+        and region["effective_area"].get("source_supported") is not True
+        for region in regions.values()
+    ):
+        return _part("face", "uncertain", ["face_region_outside_source"])
     if not isinstance(regions, dict):
         return unknown
     eye, core = regions.get("eye_band"), regions.get("face_core")
@@ -396,6 +441,26 @@ def _face_part(item):
     return _part("face", "uncertain", reasons or ["face_quality_uncertain"])
 
 
+def _body_region_coordinates_supported(region):
+    if region.get("version") != "body-focus-v2" or region.get("coordinate_space") != "exif_transposed_image_pixels_xyxy":
+        return False
+    size = region.get("coordinate_image_size")
+    measured_size = region.get("measurement_image_size")
+    origin = region.get("measurement_origin_px")
+    box = region.get("box")
+    measured_box = region.get("measurement_box")
+    for values, length in ((size, 2), (measured_size, 2), (origin, 2), (box, 4), (measured_box, 4)):
+        if not isinstance(values, (list, tuple)) or len(values) != length or not all(_number(v) for v in values):
+            return False
+    if min(*size, *measured_size) <= 0 or min(*origin) < 0:
+        return False
+    if not (0 <= measured_box[0] < measured_box[2] <= measured_size[0]
+            and 0 <= measured_box[1] < measured_box[3] <= measured_size[1]
+            and 0 <= box[0] < box[2] <= size[0] and 0 <= box[1] < box[3] <= size[1]):
+        return False
+    return all(box[i] == measured_box[i] + origin[i % 2] for i in range(4))
+
+
 def _body_part(item, *, face_box=None, linked=False):
     from .body_focus import _aggregate_regions, _headshot
 
@@ -439,7 +504,7 @@ def _body_part(item, *, face_box=None, linked=False):
             and .55 <= item["confidence"] <= 1
         )
     if not confidence_ok:
-        return _part("body", "uncertain", ["body_confidence_not_supported"])
+        return _part("body", "uncertain", list(dict.fromkeys(reasons + ["body_confidence_not_supported"])))
 
     regions = item.get("regions")
     if not isinstance(regions, list) or not regions:
@@ -466,6 +531,12 @@ def _body_part(item, *, face_box=None, linked=False):
             or not isinstance(measured, dict)
         ):
             return _part("body", "uncertain", ["invalid_body_region"])
+
+        if item.get("version") == "body-focus-v2":
+            if not _body_region_coordinates_supported(region):
+                return _part("body", "uncertain", ["body_region_coordinates_unverified"])
+            if not isinstance(region.get("ownership"), dict):
+                return _part("body", "uncertain", ["body_region_ownership_unresolved"])
 
         if measured.get("state") == "insufficient":
             checked.append(deepcopy(region))
@@ -536,7 +607,14 @@ def _policy_payload(confirmation, subjects, issues, raw_subjects):
         for subject in subjects
     )
     recommendation = "reject" if severe else "keep" if clear else "review"
+    by_part = {name: [] for name in ("selection", "face", "body", "measurement")}
+    for issue in issues:
+        part = issue.get("part", "measurement")
+        codes = issue.get("reasons", [issue["reason"]] if "reason" in issue else [])
+        by_part.setdefault(part, []).extend(code for code in codes if code not in by_part.get(part, []))
     return {
+        "reason_schema_version": "part-reasons-v1",
+        "reasons_by_part": by_part,
         "version": POLICY_VERSION,
         "confirmation_digest": confirmation["digest"] if confirmation and confirmation.get("human_confirmed") else None,
         "selection_digest": confirmation["digest"] if confirmation else None,
@@ -588,6 +666,7 @@ def evaluate_local_evidence(asset, settings, evidence):
         ]
         face = matches[0] if len(matches) == 1 else None
         parts = [_face_part(face)]
+        parts[0]["original_reasons"] = deepcopy(face.get("reasons", [])) if face else []
         own_body = face.get("body") if face else None
 
         participant = face.get("participant") if face else None

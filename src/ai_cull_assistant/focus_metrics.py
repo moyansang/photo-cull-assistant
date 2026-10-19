@@ -97,6 +97,46 @@ def _regions(face_bgr: np.ndarray, landmarks: np.ndarray | None) -> tuple[dict[s
     return {"eye_band": eye_band, "face_core": face_core}, eye_distance
 
 
+def _effective_regions(face_bgr, points):
+    """Check source support using the exact same affine/crop geometry.
+
+    A reflected pixel is useful for display but is not observed face evidence.
+    This checks sampling support, not anatomical visibility or occlusion.
+    """
+    if points is None:
+        return {name: {"source_supported": False} for name in ("eye_band", "face_core")}
+    height, width = face_bgr.shape[:2]
+    eye_mid = points[:2].mean(axis=0)
+    vector = points[1] - points[0]
+    angle = float(np.degrees(np.arctan2(vector[1], vector[0])))
+    # _regions uses reflection. A zero border around the real image, transformed
+    # identically, lets the crop expose reflected/out-of-source sample support.
+    matrix = cv2.getRotationMatrix2D(tuple(map(float, eye_mid)), angle, 1.0)
+    valid = cv2.warpAffine(np.ones((height, width), np.float32), matrix,
+                          (width, height), flags=cv2.INTER_LINEAR,
+                          borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    aligned = cv2.transform(points[None, :, :], matrix)[0]
+    distance = float(np.linalg.norm(vector))
+    left, right = sorted(map(float, aligned[:2, 0]))
+    y = float(aligned[:2, 1].mean())
+    bounds = {
+        "eye_band": (left-.42*distance, y-.38*distance, right+.42*distance, y+.43*distance),
+        "face_core": (min(float(aligned[:,0].min()), left)-.32*distance,
+                      y-.52*distance, max(float(aligned[:,0].max()), right)+.32*distance,
+                      max(float(aligned[:,1].max()), y+.95*distance)+.35*distance),
+    }
+    result = {}
+    for name, box in bounds.items():
+        sampled = _bounded_crop(valid, *box)
+        inside = box[0] >= 0 and box[1] >= 0 and box[2] <= width and box[3] <= height
+        result[name] = {"source_supported": bool(inside and np.all(sampled == 1)),
+                        "source_fraction": float(np.mean(sampled)),
+                        "requested_bounds": list(map(float, box)),
+                        "coordinate_space": "aligned_native_face_pixels",
+                        "source_size": [width, height]}
+    return result
+
+
 def _scale_metrics(gray: np.ndarray, sigma: float) -> dict[str, float]:
     smooth = cv2.GaussianBlur(gray, (0, 0), sigma)
     gx = cv2.Sobel(smooth, cv2.CV_32F, 1, 0, ksize=3)
@@ -168,6 +208,9 @@ def focus_metrics(
     points = _validated_landmarks(landmarks, width, height)
     regions, eye_distance = _regions(face_bgr, points)
     evidence = {name: _region_metrics(region) for name, region in regions.items()}
+    support = _effective_regions(face_bgr, points)
+    for name in evidence:
+        evidence[name]["effective_area"] = support[name]
     eye = evidence["eye_band"]
     core = evidence["face_core"]
 
@@ -192,6 +235,9 @@ def focus_metrics(
     elif eye["fine"]["contrast"] < .10 or core["fine"]["contrast"] < .08:
         state = "uncertain"
         reasons.append("insufficient_local_contrast")
+    elif not all(region["source_supported"] for region in support.values()):
+        state = "uncertain"
+        reasons.append("face_region_outside_source")
     elif noisy:
         state = "uncertain"
         reasons.append("high_frequency_noise_or_artifacts")
@@ -224,7 +270,13 @@ def focus_metrics(
         state = "uncertain"
         reasons.append("borderline_focus_evidence")
 
+    metric_state = state
+    # This diagnostic is deliberately not a semantic visibility classifier.
+    # Preserve supported severe metrics; eye-covering protection needs separately
+    # validated evidence and must not silently disable all face-only rejection.
     return {
+        "metric_state": metric_state,
+        "visibility": {"state": "unknown", "basis": "not_measured"},
         "state": state,
         "reasons": reasons,
         "landmarks_used": points is not None,
