@@ -352,6 +352,12 @@ def _start_job(
     if incremental:
         work_indices = new_indices
     elif stage == "rescan":
+        from .primary_quality import manual_scope_remeasurement_required
+        current_crops = CropSettings.from_dict(_crop_dict(crops))
+        for asset in assets:
+            if manual_scope_remeasurement_required(asset, current_crops):
+                asset.ai_focus_dirty = True
+                asset.ai_focus_stale = asset.ai_focus_result is not None
         work_indices = [index for index, asset in enumerate(assets) if asset.ai_focus_dirty]
     elif stage == "focus":
         from .lightroom_results import focus_review_status

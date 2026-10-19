@@ -63,6 +63,16 @@ def apply_face_box(entry, selected_boxes, box, preview_version):
     entry.pop('hidden', None)
 
 
+def _selected_face_boxes(entry):
+    if 'selected_faces' not in entry:
+        return None
+    from .primary_quality import selected_boxes
+    try:
+        return selected_boxes(entry, 'face')
+    except (TypeError, ValueError):
+        return []
+
+
 class CropDialog(WorkspacePage):
     def __init__(self, parent, assets, settings, on_save, *, embedded=False, initial_asset=None):
         visible_assets = [a for a in assets if a.preview_path or a.primary_path]
@@ -345,7 +355,7 @@ class CropDialog(WorkspacePage):
         if self._loading or not self.assets:
             return
         self.store_current()
-        selected = self.current_entry().get('selected_faces')
+        selected = _selected_face_boxes(self.current_entry())
         if not isinstance(selected, list) or not selected:
             self._active_face_key = None
         else:
@@ -703,10 +713,7 @@ class CropDialog(WorkspacePage):
         self.store_current()
         asset = self.assets[self.index]
         key = self.global_settings().key(asset)
-        from .body_subject_dialog import BodySubjectDialog, effective_face_boxes
-        if effective_face_boxes(asset, self.current_entry()):
-            self.caption.configure(text='当前照片有人脸，仅编辑人脸框；身体选择保留供后台分析。')
-            return
+        from .body_subject_dialog import BodySubjectDialog
         def apply(boxes):
             entry = self.edits.setdefault(key, {})
             if boxes is None:
@@ -722,7 +729,7 @@ class CropDialog(WorkspacePage):
 
     @staticmethod
     def _reference_box_for_entry(entry, active_face_key=None):
-        selected = entry.get('selected_faces')
+        selected = _selected_face_boxes(entry)
         if isinstance(selected, list) and selected:
             keyed = [(face_box_key(box), box) for box in selected]
             if active_face_key:
@@ -1053,7 +1060,7 @@ class CropDialog(WorkspacePage):
         value = self.settings()
         if 'selected_faces' in entry:
             selected_keys = {
-                face_box_key(box) for box in entry.get('selected_faces', [])
+                face_box_key(box) for box in (_selected_face_boxes(entry) or [])
                 if face_box_key(box)
             }
             if self._active_face_key in selected_keys and self._person_dirty:
@@ -1082,7 +1089,7 @@ class CropDialog(WorkspacePage):
         settings = self.global_settings()
         asset = self.assets[self.index]
         entry = settings.photos.get(settings.key(asset), {})
-        selected = entry.get('selected_faces')
+        selected = _selected_face_boxes(entry)
         if isinstance(selected, list) and selected:
             keys = [face_box_key(box) for box in selected]
             if self._active_face_key not in keys:

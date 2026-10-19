@@ -32,6 +32,7 @@ _SCOPE_KEYS = {
     "version", "mode", "photo_identity", "source_digest",
     "settings_digest", "confirmation_digest", "subjects", "digest",
 }
+_MANUAL_FACE_SCOPE_KEYS = {"manual_face_scope_contract"}
 _SELECTION_SCOPE_KEYS = {"selection_origin", "selection_digest", "enabled_parts"}
 _ITEM_KEYS = _RESPONSE_KEYS | {"context"}
 _ENVELOPE_KEYS = {
@@ -182,6 +183,10 @@ def make_scope(asset, settings):
                       if str(rid).startswith('body:')}
             subjects = [item for item in subjects if item['id'] not in merged]
         settings_digest = confirmation["parameters_digest"]
+        if human and any(region["kind"] == "face" for region in confirmation["regions"]):
+            from .primary_quality import MANUAL_FACE_SCOPE_VERSION
+            selection_fields["manual_face_scope_contract"] = MANUAL_FACE_SCOPE_VERSION
+            settings_digest = _digest([settings_digest, MANUAL_FACE_SCOPE_VERSION])
     else:
         # Landscape does not require a portrait confirmation or face ROI.
         confirmation_digest = None
@@ -209,7 +214,9 @@ def make_scope(asset, settings):
 
 def _validate_scope(scope):
     value = _canonical(scope)
-    if not isinstance(value, dict) or set(value) not in (_SCOPE_KEYS, _SCOPE_KEYS | _SELECTION_SCOPE_KEYS):
+    if not isinstance(value, dict) or set(value) not in (_SCOPE_KEYS, _SCOPE_KEYS | _SELECTION_SCOPE_KEYS,
+            _SCOPE_KEYS | _MANUAL_FACE_SCOPE_KEYS,
+            _SCOPE_KEYS | _SELECTION_SCOPE_KEYS | _MANUAL_FACE_SCOPE_KEYS):
         raise FocusProtocolError("技术复核范围字段无效。")
     if value["version"] != PROTOCOL_VERSION:
         raise FocusProtocolError("技术复核协议版本不匹配。")
@@ -254,6 +261,14 @@ def _validate_scope(scope):
         ):
             raise FocusProtocolError("人像主体标识无效。")
         identities.append(identity)
+    from .primary_quality import MANUAL_FACE_SCOPE_VERSION
+    manual_face = (value["mode"] == "portrait" and value["confirmation_digest"] is not None
+                   and any(subject["kind"] == "face" for subject in subjects))
+    if manual_face:
+        if value.get("manual_face_scope_contract") != MANUAL_FACE_SCOPE_VERSION:
+            raise FocusProtocolError("手动人脸范围规则已更新，请重新检查当前范围。")
+    elif "manual_face_scope_contract" in value:
+        raise FocusProtocolError("人脸范围标记与主体来源不匹配。")
     if len(set(identities)) != len(identities):
         raise FocusProtocolError("技术复核主体标识重复。")
     if value["mode"] == "landscape" and len(subjects) != 1:

@@ -12,6 +12,7 @@ from .crop_settings import face_box_key
 
 POLICY_VERSION = "confirmed-primary-quality-v2-effective-region"
 CONFIRMATION_KEY = "primary_subject_confirmation"
+MANUAL_FACE_SCOPE_VERSION = "unique-contained-manual-face-v1"
 
 _CROP_KEYS = (
     "scale_factor", "shift_factor", "offset_x_factor",
@@ -47,6 +48,7 @@ _BODY_FAMILIES = {
 _FACE_BLOCKERS = {
     "face_too_small_for_focus",
     "missing_reliable_landmarks",
+    "manual_face_scope_ambiguous",
     "insufficient_native_eye_pixels",
     "insufficient_local_contrast",
     "high_frequency_noise_or_artifacts",
@@ -104,7 +106,7 @@ def _entry(asset, settings):
     return entry
 
 
-def selection_regions(entry):
+def selection_regions(entry, *, preserve_order=False):
     """Return only manually selected regions.
 
     Invalid selected entries invalidate the whole selection; they are not
@@ -146,7 +148,36 @@ def selection_regions(entry):
                 continue
             seen[identity] = box
             output.append({"id": identity, "kind": kind, "box": box})
-    return sorted(output, key=lambda item: item["id"])
+    return output if preserve_order else sorted(output, key=lambda item: item["id"])
+
+
+def selected_boxes(entry, kind):
+    """Shared validation/deduplication; measurement and UI preserve first order."""
+    return [tuple(region["box"]) for region in selection_regions(entry, preserve_order=True)
+            if region["kind"] == kind]
+
+
+def explicit_body_parts(entry):
+    return ["face", "body"] if selected_boxes(entry, "body") else ["face"]
+
+
+def manual_faces_disable_body_fallback(entry):
+    if "selected_faces" not in entry and "manual_face" not in entry:
+        return False
+    try:
+        faces = selected_boxes(entry, "face")
+    except (TypeError, ValueError):
+        return True
+    return not faces and entry.get("roi_selection_schema", 1) != 2
+
+
+def manual_scope_remeasurement_required(asset, settings):
+    """Schedule local remeasurement of confirmed scopes after contract migration."""
+    if getattr(asset, "analysis_mode", "portrait") != "portrait":
+        return False
+    if confirmed_selection(asset, settings) is None:
+        return False
+    return not manual_body_measurement_current(asset, settings, getattr(asset, "clarity_evidence", None))
 
 
 def confirm_selection(asset, settings):
@@ -221,6 +252,8 @@ def measurement_inputs(asset, settings, enabled_parts):
     entry = _entry(asset, settings)
     return {
         "source_signature": source,
+        **({"manual_face_scope_contract": MANUAL_FACE_SCOPE_VERSION}
+           if selected_boxes(entry, "face") else {}),
         "parameters_digest": _digest({
             "global": {key: getattr(settings, key) for key in _CROP_KEYS},
             "photo": {key: entry[key] for key in _ENTRY_KEYS if key in entry},
@@ -299,7 +332,7 @@ def current_selection(asset, settings, evidence=None):
         entry = _entry(asset, settings)
         if "selected_bodies" in entry and inputs is None:
             confirmation = dict(confirmation, origin="human",
-                enabled_parts=["face", "body"] if entry["selected_bodies"] else ["face"])
+                enabled_parts=explicit_body_parts(entry))
         if inputs is not None:
             try:
                 if measurement_inputs(asset, settings, inputs["enabled_parts"]) != inputs:
@@ -321,15 +354,21 @@ def current_selection(asset, settings, evidence=None):
     return None
 
 def manual_body_measurement_current(asset, settings, evidence):
-    """Local body claims need measurement proof; human scope alone is not proof."""
-    entry = _entry(asset, settings)
-    if "selected_bodies" not in entry:
-        return True
-    inputs = evidence.get("measurement_inputs") if isinstance(evidence, dict) else None
-    parts = ["face", "body"] if entry["selected_bodies"] else ["face"]
-    if not isinstance(inputs, dict) or inputs.get("enabled_parts") != parts:
-        return False
+    """Explicit ROI claims need current measurement proof, not just confirmation.
+
+    Name retained for callers; manual-face uniqueness is also source-bound.
+    """
     try:
+        entry = _entry(asset, settings)
+        manual_face = bool(selected_boxes(entry, "face"))
+        if "selected_bodies" not in entry and not manual_face:
+            return True
+        inputs = evidence.get("measurement_inputs") if isinstance(evidence, dict) else None
+        if not isinstance(inputs, dict):
+            return False
+        parts = explicit_body_parts(entry) if "selected_bodies" in entry else inputs.get("enabled_parts")
+        if inputs.get("enabled_parts") != parts:
+            return False
         return inputs == measurement_inputs(asset, settings, parts)
     except (AttributeError, OSError, TypeError, ValueError, OverflowError):
         return False
@@ -687,6 +726,10 @@ def evaluate_local_evidence(asset, settings, evidence):
     ]
     selected_faces = [r for r in confirmation["regions"] if r["kind"] == "face"]
     selected_bodies = [r for r in confirmation["regions"] if r["kind"] == "body"]
+    explicit_bodies = "selected_bodies" in _entry(asset, settings)
+    if explicit_bodies:
+        bodies = [body for body in bodies if any(
+            _same_box(body.get("box"), region["box"]) for region in selected_bodies)]
     output, issues, consumed_bodies = [], [], set()
 
     for region in selected_faces:
@@ -724,7 +767,7 @@ def evaluate_local_evidence(asset, settings, evidence):
         elif attached:
             parts.append(_part("body", "uncertain", ["body_association_unresolved"]))
             body_ids = []
-        elif isinstance(own_body, dict):
+        elif isinstance(own_body, dict) and not explicit_bodies:
             parts.append(_body_part(
                 own_body, face_box=region["box"], linked=True,
             ))

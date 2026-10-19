@@ -111,7 +111,7 @@ def test_automatic_policy_requires_origin_digest_and_measurement(automatic):
         assert not protocol.policy_matches_scope(changed, asset.clarity_evidence, scope)
 
 
-def test_legacy_manual_scope_is_unchanged_and_body_off_is_explicit(automatic):
+def test_manual_scope_preserves_confirmation_and_versions_face_resolution(automatic):
     asset, settings = automatic
     box = asset.clarity_evidence['automatic_subject']['box']
     settings.photos[settings.key(asset)] = {'selected_faces': [box]}
@@ -119,7 +119,7 @@ def test_legacy_manual_scope_is_unchanged_and_body_off_is_explicit(automatic):
     settings.photos[settings.key(asset)][quality.CONFIRMATION_KEY] = confirmation
     asset.clarity_evidence = {}
     scope = protocol.make_scope(asset, settings)
-    assert set(scope) == protocol._SCOPE_KEYS
+    assert set(scope) == protocol._SCOPE_KEYS | protocol._MANUAL_FACE_SCOPE_KEYS
     assert scope['confirmation_digest'] == confirmation['digest']
     ctx = protocol.make_context(scope, scope['subjects'][0]['id'], evidence_parts=['face','body'])
     value = protocol.response_template(ctx)

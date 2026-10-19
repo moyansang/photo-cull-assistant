@@ -18,8 +18,8 @@ DETECTION_VERSION = 'subject-v2-profile-head'
 CANDIDATE_PROVENANCE_VERSION = 'subject-candidates-v1'
 
 
-def _remember_manual(key, head, landmarks):
-    _manual_details[key] = (head, landmarks)
+def _remember_manual(key, head, landmarks, source="manual"):
+    _manual_details[key] = (head, landmarks, source)
     _manual_details.move_to_end(key)
     while len(_manual_details) > 128:
         _manual_details.popitem(last=False)
@@ -269,8 +269,14 @@ def detail_features(asset, settings, *, require_landmarks=False):
             return selected[0]
         return replace(subject, face=None, head=None) if subject else None
     box = override.get('manual_face')
-    if _valid_normalized_box(box):
-        return _manual_detail(asset, settings, subject, box)
+    if box is not None:
+        from .primary_quality import selected_boxes
+        try:
+            boxes = selected_boxes(override, 'face')
+        except (TypeError, ValueError):
+            boxes = []
+        return (_manual_detail(asset, settings, subject, boxes[0]) if boxes else
+                replace(subject, face=None, head=None) if subject else None)
     return subject
 
 
@@ -296,8 +302,9 @@ def _manual_detail(asset, settings, subject, box):
     ensure_preview(asset)
     preview = Path(asset.preview_path)
     stat = preview.stat()
+    from .primary_quality import MANUAL_FACE_SCOPE_VERSION
     cache_key = (
-        str(preview.resolve()), stat.st_mtime_ns, stat.st_size,
+        MANUAL_FACE_SCOPE_VERSION, str(preview.resolve()), stat.st_mtime_ns, stat.st_size,
         box, settings.detection_confidence,
     )
     base = subject or SubjectFeatures('', '', None, None)
@@ -310,7 +317,7 @@ def _manual_detail(asset, settings, subject, box):
                        roi_primary_selection_required=False)
     cached = _manual_details.get(cache_key)
     if cached is not None:
-        return replace(base, face=box, head=cached[0], landmarks=cached[1], head_source='manual')
+        return replace(base, face=box, head=cached[0], landmarks=cached[1], head_source=cached[2])
     with Image.open(asset.preview_path) as source:
         image = ImageOps.exif_transpose(source).convert("RGB")
     iw, ih = image.size
@@ -333,17 +340,8 @@ def _manual_detail(asset, settings, subject, box):
         center_x, center_y = px0 + dx + dw / 2, py0 + dy + dh / 2
         if face_left <= center_x <= face_right and face_top <= center_y <= face_bottom:
             contained.append(candidate)
-    if contained:
-        target_x = (face_left + face_right) / 2
-        target_y = (face_top + face_bottom) / 2
-        chosen = min(
-            contained,
-            key=lambda item: (
-                ((px0 + item.box[0] + item.box[2] / 2 - target_x) / max(1, face_right - face_left)) ** 2
-                + ((py0 + item.box[1] + item.box[3] / 2 - target_y) / max(1, face_bottom - face_top)) ** 2
-                - .05 * item.score
-            ),
-        )
+    if len(contained) == 1:
+        chosen = contained[0]
         from .yunet import FaceDetection
         absolute = FaceDetection(
             (chosen.box[0] + px0, chosen.box[1] + py0, chosen.box[2], chosen.box[3]),
@@ -354,8 +352,9 @@ def _manual_detail(asset, settings, subject, box):
         head = head_box(absolute, iw, ih)
         _remember_manual(cache_key, head, landmarks)
         return replace(base, face=box, head=head, landmarks=landmarks, head_source='manual')
-    _remember_manual(cache_key, box, None)
-    return replace(base, face=box, head=box, landmarks=None, head_source='manual')
+    source = 'manual_ambiguous' if len(contained) > 1 else 'manual'
+    _remember_manual(cache_key, box, None, source)
+    return replace(base, face=box, head=box, landmarks=None, head_source=source)
 
 
 def detail_features_list(asset, settings, *, require_landmarks=False, _subject=None):
@@ -376,17 +375,20 @@ def detail_features_list(asset, settings, *, require_landmarks=False, _subject=N
         return []
     if 'selected_faces' not in override:
         box = override.get('manual_face')
-        if _valid_normalized_box(box):
-            return [_manual_detail(asset, settings, subject, box)]
+        if box is not None:
+            from .primary_quality import selected_boxes
+            try:
+                boxes = selected_boxes(override, 'face')
+            except (TypeError, ValueError):
+                return []
+            return [_manual_detail(asset, settings, subject, item) for item in boxes]
         return [subject] if subject else []
-    boxes = override.get('selected_faces')
-    if not isinstance(boxes, list):
+    from .primary_quality import selected_boxes
+    try:
+        boxes = selected_boxes(override, 'face')
+    except (TypeError, ValueError):
         return []
-    return [
-        _manual_detail(asset, settings, subject, box)
-        for box in boxes
-        if _valid_normalized_box(box)
-    ]
+    return [_manual_detail(asset, settings, subject, box) for box in boxes]
 
 
 @lru_cache(maxsize=128)
@@ -412,15 +414,17 @@ def body_candidates(asset, settings=None):
     if entry.get('hidden') or entry.get('subjects_disabled'):
         return []
     if 'selected_bodies' in entry:
-        boxes = entry['selected_bodies']
-        if not isinstance(boxes, list):
+        from .primary_quality import selected_boxes
+        try:
+            boxes = selected_boxes(entry, 'body')
+        except (TypeError, ValueError):
             return []
         return [{'box': tuple(map(float, box)), 'source': 'manual',
                  'confidence': None, 'evidence_kind': 'body', 'eye_evidence': False}
                 for box in boxes if _valid_normalized_box(box)]
     # An explicitly empty face selection means the user removed all candidates.
-    if ('selected_faces' in entry and not entry['selected_faces']
-            and entry.get('roi_selection_schema', 1) != 2):
+    from .primary_quality import manual_faces_disable_body_fallback
+    if manual_faces_disable_body_fallback(entry):
         return []
     try:
         from .preview import ensure_preview

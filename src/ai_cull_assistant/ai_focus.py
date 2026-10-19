@@ -438,6 +438,19 @@ def _review_primary_target(asset, settings, profile, root, scope, region):
                   selected_bodies=[] if face else [region['box']])
     values.pop('manual_face', None)
     per_settings = replace(settings, photos={**settings.photos, settings.key(asset):values})
+    if face:
+        import cv2
+        # Re-resolve the selected rectangle before any AI cache or upload: a
+        # confirmed rectangle containing multiple faces is not one chosen person.
+        from .subject import _manual_detail
+        try:
+            resolved = _manual_detail(asset, per_settings, None, face)
+        except (OSError, ValueError, TypeError, cv2.error):
+            return protocol.unavailable_result(protocol.make_context(scope, region['id']),
+                                               '无法核实所选人脸范围，请检查原图后重试。')
+        if getattr(resolved, 'head_source', None) == 'manual_ambiguous':
+            return protocol.unavailable_result(protocol.make_context(scope, region['id']),
+                                               '所选人脸框内有多个人脸，请分别框选要检查的人物。')
     evidence = getattr(asset, 'clarity_evidence', None) or {}
     policy = evidence.get('primary_quality') or {}
     from .primary_quality import manual_body_measurement_current
@@ -455,6 +468,11 @@ def _review_primary_target(asset, settings, profile, root, scope, region):
     enabled_parts = scope.get('enabled_parts', ['face', 'body'])
     if 'body' not in enabled_parts:
         body = {}
+    elif 'selected_bodies' in entry:
+        from .primary_quality import selected_boxes
+        allowed_bodies = selected_boxes(entry, 'body')
+        if not isinstance(body, dict) or tuple(body.get('box') or ()) not in allowed_bodies:
+            body = {}
     if isinstance(body,dict) and ((body.get('diagnostics') or {}).get('ambiguous') is True
             or body.get('association') in ('ambiguous','unverified','reverse_conflict')):
         body = {}

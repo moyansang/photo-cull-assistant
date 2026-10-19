@@ -118,6 +118,8 @@ def grouping_review_stage(asset: PhotoAsset) -> str:
             codes.update(code for code in legacy if isinstance(code, str))
     if getattr(asset, 'ai_focus_dirty', False) or 'measurement_confirmation_mismatch' in codes:
         return '需重新扫描：范围或源文件可能已改变，旧证据不能代表当前结果。'
+    if 'manual_face_scope_ambiguous' in codes:
+        return '所选人脸框内有多个人脸：请缩小或分别框选要检查的人物，再保存重算。'
     if 'primary_selection_unconfirmed' in codes:
         return '主体范围待指定或重新确认：请选择本次要检查的人物。'
     if policy.get('recommendation') == 'review' or (evidence.get('recommendation') == 'review' and codes):

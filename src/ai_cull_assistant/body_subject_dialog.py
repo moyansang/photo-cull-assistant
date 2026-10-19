@@ -18,10 +18,12 @@ def effective_face_boxes(asset, entry, *, face_boxes=None):
     """
     if entry.get('hidden') or entry.get('subjects_disabled'):
         return []
-    if 'selected_faces' in entry:
-        boxes = entry['selected_faces']
-    elif _valid_normalized_box(entry.get('manual_face')):
-        boxes = [entry['manual_face']]
+    if 'selected_faces' in entry or entry.get('manual_face') is not None:
+        from .primary_quality import selected_boxes
+        try:
+            return selected_boxes(entry, 'face')
+        except (TypeError, ValueError):
+            return []
     elif face_boxes is not None:
         boxes = face_boxes
     else:
@@ -34,12 +36,16 @@ def effective_face_boxes(asset, entry, *, face_boxes=None):
 
 def selected_body_boxes(asset, entry, *, auto_boxes=None):
     """Retain analysis/edit selection independently of face-first visibility."""
+    from .primary_quality import manual_faces_disable_body_fallback
     if entry.get('hidden') or entry.get('subjects_disabled'):
         return []
     if 'selected_bodies' in entry:
-        boxes = entry['selected_bodies']
-    elif ('selected_faces' in entry and not entry['selected_faces']
-          and entry.get('roi_selection_schema', 1) != 2):
+        from .primary_quality import selected_boxes
+        try:
+            return selected_boxes(entry, 'body')
+        except (TypeError, ValueError):
+            return []
+    elif manual_faces_disable_body_fallback(entry):
         return []
     elif auto_boxes is not None:
         boxes = auto_boxes
@@ -81,7 +87,14 @@ class BodySubjectDialog(tk.Toplevel):
         self.on_apply = on_apply
         self.face_boxes = effective_face_boxes(asset, entry, face_boxes=face_boxes)
         self._face_first = bool(self.face_boxes)
-        self.selected = selected_body_boxes(asset, entry)
+        self._has_faces = self._face_first
+        from .primary_quality import selected_boxes
+        try:
+            self._has_manual_faces = bool(selected_boxes(entry, 'face'))
+        except (TypeError, ValueError):
+            self._has_manual_faces = False
+        self.selected = (selected_body_boxes(asset, entry)
+                         if 'selected_bodies' in entry or not self._has_faces else [])
         self.candidates = []
         self.original = None
         self._image_rect = None
@@ -91,6 +104,11 @@ class BodySubjectDialog(tk.Toplevel):
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='body-subject-preview')
         self.status = ttk.Label(self, text='正在读取预览与人体候选…', wraplength=780)
         self.status.pack(fill='x', padx=12, pady=8)
+        self._body_scope_var = tk.BooleanVar(self, value=False)
+        if self._has_faces:
+            ttk.Checkbutton(self, text='单独调整身体检查范围（可选，不改变人脸裁切）',
+                            variable=self._body_scope_var, command=self.toggle_body_scope,
+                            state='normal' if self._has_manual_faces else 'disabled').pack(fill='x', padx=12, pady=(0, 6))
         self.canvas = tk.Canvas(self, background='#20252b', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True, padx=12)
         self.canvas.bind('<Configure>', lambda event: self.render())
@@ -100,16 +118,32 @@ class BodySubjectDialog(tk.Toplevel):
         actions = ttk.Frame(self)
         actions.pack(fill='x', padx=12, pady=10)
         actions.columnconfigure((0,1,2), weight=1)
+        self._scope_buttons = []
         for column, (label, command) in enumerate((('全选候选',self.select_all), ('全部忽略',self.clear), ('恢复自动候选',self.restore_auto))):
-            ttk.Button(actions, text=label, command=command, state='disabled' if self._face_first else 'normal').grid(row=0,column=column,sticky='ew',padx=3,pady=3)
+            button = ttk.Button(actions, text=label, command=command, state='disabled' if self._face_first else 'normal')
+            button.grid(row=0,column=column,sticky='ew',padx=3,pady=3)
+            self._scope_buttons.append(button)
         ttk.Button(actions, text='取消', command=self.destroy).grid(row=1,column=2,sticky='ew',padx=3,pady=3)
-        ttk.Button(actions, text='应用主体', command=self.apply, state='disabled' if self._face_first else 'normal').grid(row=1,column=1,sticky='ew',padx=3,pady=3)
+        apply_button = ttk.Button(actions, text='应用身体检查范围', command=self.apply, state='disabled' if self._face_first else 'normal')
+        apply_button.grid(row=1,column=1,sticky='ew',padx=3,pady=3)
+        self._scope_buttons.append(apply_button)
         self.protocol('WM_DELETE_WINDOW', self.destroy)
         self.bind('<Escape>', lambda event: self.destroy())
         self._future = self._executor.submit(self._prepare)
         self._future.add_done_callback(self._discard_closed_result)
         self._poll = self.after(30, self._finish_prepare)
         self.grab_set()
+
+    def toggle_body_scope(self):
+        # A view switch is not a selection, confirmation or save operation.
+        if self._has_faces and not getattr(self, '_has_manual_faces', True):
+            self._body_scope_var.set(False)
+        self._face_first = bool(self._has_faces and not self._body_scope_var.get())
+        self._drag = None
+        self.canvas.delete('draft')
+        for button in self._scope_buttons:
+            button.configure(state='disabled' if self._face_first else 'normal')
+        self.render()
 
     def _prepare(self):
         from .preview import ensure_preview
@@ -142,7 +176,8 @@ class BodySubjectDialog(tk.Toplevel):
         except (OSError, ValueError, TypeError) as exc:
             self.status.configure(text=f'预览无法读取：{exc}')
             return
-        if 'selected_bodies' not in self.entry and not self.selected:
+        if ('selected_bodies' not in self.entry and not self.selected
+                and not getattr(self, '_has_faces', False)):
             self.selected = selected_body_boxes(self.asset, self.entry, auto_boxes=self.candidates)
         self.render()
 
@@ -169,9 +204,12 @@ class BodySubjectDialog(tk.Toplevel):
         self.canvas.create_image(width/2,height/2,image=self.photo)
         self._image_rect = ((width-shown.width)/2,(height-shown.height)/2,shown.width,shown.height)
         if self._face_first:
-            self.status.configure(text='当前照片有人脸，仅显示人脸框；身体选择保留供后台分析。请返回主体页调整人脸。')
+            text = '当前照片有人脸，默认仅显示人脸框；身体选择保留。仅需调整身体检查范围时勾选上方选项；切换或取消不会保存。'
+            if not getattr(self, '_has_manual_faces', True):
+                text += ' 当前仍是自动人脸候选，请先返回主体页明确选择要检查的人脸，再调整身体范围。'
+            self.status.configure(text=text)
             return
-        self.status.configure(text=f'已选 {len(self.selected)} 个身体主体。点框可增减；拖拽补框。身体清晰度不能证明眼睛清晰。应用后返回主体页，再保存并局部重算。')
+        self.status.configure(text=f'已选 {len(self.selected)} 个身体主体。点框可增减；拖拽补框。仅检查明确选中的身体；无选择并应用表示不检查身体。框选不证明与人脸同人，身体清晰度不能证明眼睛清晰。应用后仍需保存确认并局部重算。')
 
     def _normalized(self, x, y):
         if not self._image_rect:

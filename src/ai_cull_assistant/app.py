@@ -1468,8 +1468,10 @@ class App(EvidenceCleanupMixin, tk.Tk):
                                   if (k != 'offset_x_factor' or v != 0) and (k != 'preview_version' or v != 'v04')}
                 current_entry = {k: v for k, v in settings.photos.get(key, {}).items()
                                  if (k != 'offset_x_factor' or v != 0) and (k != 'preview_version' or v != 'v04')}
+                from .primary_quality import manual_scope_remeasurement_required
                 if (previous_entry != current_entry
-                        or self.crop_settings.detection_confidence != settings.detection_confidence):
+                        or self.crop_settings.detection_confidence != settings.detection_confidence
+                        or manual_scope_remeasurement_required(asset, settings)):
                     asset.ai_focus_dirty = True
                     asset.ai_focus_stale = asset.ai_focus_result is not None
             self._save_session()

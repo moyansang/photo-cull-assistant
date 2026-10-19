@@ -10,7 +10,8 @@ def test_body_candidates_render_and_explicit_ignore_persists():
     assert visible_body_boxes(a,{})==[box]
     assert visible_body_boxes(a,{'selected_bodies':[]})==[]
     assert visible_body_boxes(a,{'hidden':True})==[]
-    assert visible_body_boxes(a,{'selected_bodies':[[0,0,2,1],box]})==[box]
+    # A malformed explicit collection cannot partially masquerade as confirmed.
+    assert visible_body_boxes(a,{'selected_bodies':[[0,0,2,1],box]})==[]
 
 
 def test_toggle_adds_removes_only_clicked_body():

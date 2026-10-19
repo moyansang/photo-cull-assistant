@@ -54,6 +54,7 @@ def focus_review_reason(photo):
     codes=evidence.get('reasons',[]) if isinstance(evidence,dict) else []
     evidence_labels={
         'head_without_visible_face':'已定位头部，但没有可靠的可见人脸证据，需检查原图清晰度。',
+        'manual_face_scope_ambiguous':'所选人脸框内有多个人脸，请缩小或分别选择人物，暂不判断清晰度。',
         'missing_reliable_landmarks':'没有可靠的眼部关键点，无法准确检查眼部细节。',
         'insufficient_native_eye_pixels':'原图中的双眼像素不足，无法可靠判断。',
         'insufficient_native_face_pixels':'原图中的人脸像素不足，无法可靠判断。',
@@ -150,7 +151,13 @@ def local_recommendation(photo):
         digest = policy.get('selection_digest', policy.get('confirmation_digest'))
         stamp = 'measurement_selection_digest' if automatic else 'measurement_confirmation_digest'
         scope_digest = scope.get('selection_digest') if automatic else scope.get('confirmation_digest')
-        from .primary_quality import POLICY_VERSION
+        from .primary_quality import POLICY_VERSION, MANUAL_FACE_SCOPE_VERSION
+        manual_face = (not automatic and any(isinstance(item, dict) and item.get('kind') == 'face'
+                       for item in scope.get('subjects', [])))
+        inputs = evidence.get('measurement_inputs')
+        if manual_face and (not isinstance(inputs, dict) or inputs.get('manual_face_scope_contract') != MANUAL_FACE_SCOPE_VERSION
+                            or scope.get('manual_face_scope_contract') != MANUAL_FACE_SCOPE_VERSION):
+            return 'review'
         if (policy.get('version') == POLICY_VERSION
                 and (not scope.get('selection_origin') or isinstance(evidence.get('measurement_inputs'), dict))
                 and digest and digest == evidence.get(stamp) and digest == scope_digest

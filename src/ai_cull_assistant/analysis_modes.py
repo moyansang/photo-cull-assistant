@@ -359,7 +359,11 @@ def assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=N
     # face-associated body expansion checkbox is off.
     # Explicit [] disables body inspection; a nonempty manual list replaces
     # automatic expansion even when the global checkbox remains enabled.
-    body_enabled = bool(entry['selected_bodies']) if 'selected_bodies' in entry else body_check
+    from .primary_quality import explicit_body_parts
+    try:
+        body_enabled = ('body' in explicit_body_parts(entry)) if 'selected_bodies' in entry else body_check
+    except (TypeError, ValueError):
+        body_enabled = False  # Invalid selection cannot confirm or become automatic.
     enabled_parts = ['face', 'body'] if body_enabled else ['face']
     try:
         inputs = measurement_inputs(asset, settings, enabled_parts) if portrait else None

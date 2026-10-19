@@ -156,6 +156,8 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
         # invalidate evidence even when the RAW filename remains the identity.
         identity['sources'] = source_signatures
         identity['automatic_subject'] = automatic_subject
+        if 'selected_faces' in entry or entry.get('manual_face') is not None:
+            identity['manual_scope_sources'] = [getattr(subject, 'head_source', None) for subject in faces]
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         cache = Path(cache_dir) / VERSION / (digest + '.json') if cache_dir else None
         if cache and cache.is_file():
@@ -202,6 +204,10 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
                 if abs((width / height) / (pw / ph) - 1) > .05:
                     return ScreeningResult(False, 'source_preview_geometry_mismatch', True, analysis_version=VERSION)
                 participant_results = _measure_participants(image, participant_inputs)
+        for subject, item in zip(faces, participant_results):
+            if getattr(subject, 'head_source', None) == 'manual_ambiguous':
+                item['state'] = 'uncertain'
+                item['reasons'] = list(item.get('reasons', [])) + ['manual_face_scope_ambiguous']
         if decode_evidence.get('evidence_sufficient') is False:
             for item in participant_results:
                 item['state'] = 'uncertain'
