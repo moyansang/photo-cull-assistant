@@ -177,9 +177,10 @@ def _apply_focus_review(asset: PhotoAsset, screened: ScreeningResult, reviewed: 
     asset.ai_focus_result = result
     asset.ai_focus_stale = False
     local_policy = evidence.get('primary_quality') or {}
-    from .primary_quality import current_selection
+    from .primary_quality import current_selection, manual_body_measurement_current
     confirmation = current_selection(asset, crop_settings or CropSettings(), evidence)
     local_reject = (local_policy.get('recommendation') == 'reject'
+                    and manual_body_measurement_current(asset, crop_settings or CropSettings(), evidence)
                     and confirmation is not None
                     and local_policy.get('selection_digest', local_policy.get('confirmation_digest')) == confirmation['digest']
                     and evidence.get('measurement_confirmation_digest' if confirmation.get('human_confirmed') else 'measurement_selection_digest') == confirmation['digest'])

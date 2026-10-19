@@ -227,6 +227,10 @@ def measurement_inputs(asset, settings, enabled_parts):
             "confirmation": entry.get(CONFIRMATION_KEY),
             "versions": [SCHEMA_VERSION, DETECTION_VERSION, face_version, body_version],
             "enabled_parts": enabled_parts,
+            # Invalidate only old manual-body measurements whose scope could
+            # include automatically attached bodies. Human confirmation remains valid.
+            **({"manual_body_scope": "explicit-body-scope-v1"}
+               if "selected_bodies" in entry else {}),
         }),
         "enabled_parts": list(enabled_parts),
     }
@@ -290,6 +294,12 @@ def current_selection(asset, settings, evidence=None):
     confirmation = confirmed_selection(asset, settings)
     if confirmation is not None:
         inputs = evidence.get("measurement_inputs")
+        # Human-confirmed ranges may request a fresh AI review before local
+        # measurement. Their explicit body scope still controls requested parts.
+        entry = _entry(asset, settings)
+        if "selected_bodies" in entry and inputs is None:
+            confirmation = dict(confirmation, origin="human",
+                enabled_parts=["face", "body"] if entry["selected_bodies"] else ["face"])
         if inputs is not None:
             try:
                 if measurement_inputs(asset, settings, inputs["enabled_parts"]) != inputs:
@@ -309,6 +319,21 @@ def current_selection(asset, settings, evidence=None):
     except (KeyError, AttributeError, OSError, TypeError, ValueError, OverflowError):
         pass
     return None
+
+def manual_body_measurement_current(asset, settings, evidence):
+    """Local body claims need measurement proof; human scope alone is not proof."""
+    entry = _entry(asset, settings)
+    if "selected_bodies" not in entry:
+        return True
+    inputs = evidence.get("measurement_inputs") if isinstance(evidence, dict) else None
+    parts = ["face", "body"] if entry["selected_bodies"] else ["face"]
+    if not isinstance(inputs, dict) or inputs.get("enabled_parts") != parts:
+        return False
+    try:
+        return inputs == measurement_inputs(asset, settings, parts)
+    except (AttributeError, OSError, TypeError, ValueError, OverflowError):
+        return False
+
 
 def _part(part, state, reasons, *, reliable=False):
     return {
@@ -642,6 +667,11 @@ def evaluate_local_evidence(asset, settings, evidence):
         return _policy_payload(None, [], [{
             "subject_id": None, "part": "selection",
             "state": "uncertain", "reason": "primary_selection_unconfirmed",
+        }], raw_subjects)
+    if not manual_body_measurement_current(asset, settings, evidence):
+        return _policy_payload(confirmation, [], [{
+            "subject_id": None, "part": "measurement", "state": "uncertain",
+            "reason": "manual_body_measurement_scope_unverified",
         }], raw_subjects)
     stamp = "measurement_confirmation_digest" if confirmation.get("human_confirmed") else "measurement_selection_digest"
     if evidence.get(stamp) != confirmation["digest"]:

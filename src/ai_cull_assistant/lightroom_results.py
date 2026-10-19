@@ -152,6 +152,7 @@ def local_recommendation(photo):
         scope_digest = scope.get('selection_digest') if automatic else scope.get('confirmation_digest')
         from .primary_quality import POLICY_VERSION
         if (policy.get('version') == POLICY_VERSION
+                and (not scope.get('selection_origin') or isinstance(evidence.get('measurement_inputs'), dict))
                 and digest and digest == evidence.get(stamp) and digest == scope_digest
                 and (not automatic or scope.get('selection_origin') == 'automatic')
                 and (not scope.get('enabled_parts') or policy.get('enabled_parts') == scope['enabled_parts'])

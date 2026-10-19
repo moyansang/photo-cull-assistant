@@ -50,6 +50,8 @@ def face(state='clear', box=FACE, participant=1, body=True):
 
 def measured(asset, settings, subjects, bodies=None):
     value = dict(subjects=subjects, measurement_confirmation_digest=confirm(asset,settings)['digest'])
+    if 'selected_bodies' in settings.photos.get(settings.key(asset), {}):
+        value['measurement_inputs'] = quality.measurement_inputs(asset, settings, ['face', 'body'])
     if bodies is not None:
         value['body_results'] = bodies
     return value

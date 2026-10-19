@@ -8,6 +8,10 @@ LOCAL_CACHE_VERSION = "source-stat-v2"
 
 
 def apply_body_check(asset, screened, settings, cache_dir):
+    # An explicit body list (including []) owns body scope. Never resurrect
+    # a face-associated automatic body or its cache after a manual override.
+    if 'selected_bodies' in settings.photos.get(settings.key(asset), {}):
+        return screened
     if screened.rejected or not screened.face_found or not screened.focus_evidence:
         return screened
     from .subject import detail_features, detail_features_list

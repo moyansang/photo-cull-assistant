@@ -1,0 +1,9 @@
+# Explicit body scope overrides automatic body expansion
+
+An explicit `selected_bodies` key owns body inspection scope in the portrait analysis path. An empty list disables body inspection, even if the global body-check option is on. A nonempty list measures those manual body regions and does not additionally attach automatically face-associated bodies. Absence of the key preserves the prior optional automatic expansion.
+
+The legacy `apply_body_check` helper also returns without automatic expansion whenever this key exists. This guard prevents cached automatic body evidence from reappearing after a manual body edit. It does not add manual-body analysis to legacy `screen_assets(analysis_mode=None)`; use the portrait mode for the complete manual-body flow.
+
+Measurement input digests include an explicit-body-scope contract only for records with this key. Previously measured manual-body evidence requires remeasurement. Legacy manual-body records without measurement inputs also cannot establish the new scope contract for local decisions or face/body associations. The confirmed ROI range can still request a fresh AI review; stale local policy cannot merge those regions or override the new review. User confirmation and manual keep/discard decisions are not rewritten; confirmation metadata remains separately valid for unchanged source/settings. Other automatic/face-only measurement digests retain their existing semantics.
+
+The existing manual-body implementation already crops and re-detects, maps crop evidence back to the original image and rechecks full-image competitors. This change does not relax that geometry or invent pose landmarks. Three fixed research selections in round16 did not establish improved body detection: two yielded no crop candidates and one yielded an incomplete pose. All remained review. No clarity threshold, AF-driven subject selection, grouping membership, source image, or UI layout is changed.

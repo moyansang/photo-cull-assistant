@@ -328,7 +328,7 @@ def _assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=
                             bodies = [dict(candidate,state='uncertain',reasons=['body_pose_unreliable_at_analysis_resolution']) for candidate in candidates]
             except (OSError, ValueError, cv2.error):
                 bodies = [dict(candidate,state='uncertain',reasons=['body_source_unreadable']) for candidate in candidates]
-    if reliable_face and body_check:
+    if reliable_face and body_check and 'selected_bodies' not in entry:
         from .body_pipeline import apply_body_check
         face = apply_body_check(asset, face, settings, cache_dir)
     # Explicit mixed subjects retain their own face issue; automatic fallback
@@ -357,7 +357,10 @@ def assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=N
     entry = settings.photos.get(settings.key(asset), {}) if portrait else {}
     # Explicit body ROIs request body inspection even when the optional
     # face-associated body expansion checkbox is off.
-    enabled_parts = ['face', 'body'] if body_check or entry.get('selected_bodies') else ['face']
+    # Explicit [] disables body inspection; a nonempty manual list replaces
+    # automatic expansion even when the global checkbox remains enabled.
+    body_enabled = bool(entry['selected_bodies']) if 'selected_bodies' in entry else body_check
+    enabled_parts = ['face', 'body'] if body_enabled else ['face']
     try:
         inputs = measurement_inputs(asset, settings, enabled_parts) if portrait else None
     except (AttributeError, OSError, TypeError, ValueError):

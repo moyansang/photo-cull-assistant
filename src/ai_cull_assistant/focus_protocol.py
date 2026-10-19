@@ -146,7 +146,7 @@ def make_scope(asset, settings):
 
     selection_fields = {}
     if mode == "portrait":
-        from .primary_quality import current_selection
+        from .primary_quality import current_selection, manual_body_measurement_current
 
         confirmation = current_selection(asset, settings)
         if confirmation is None:
@@ -172,7 +172,7 @@ def make_scope(asset, settings):
         evidence = evidence if isinstance(evidence, dict) else {}
         policy = evidence.get('primary_quality') or {}
         policy = policy if isinstance(policy, dict) else {}
-        if policy_matches_scope(policy, evidence, dict(
+        if manual_body_measurement_current(asset, settings, evidence) and policy_matches_scope(policy, evidence, dict(
                 confirmation_digest=confirmation_digest, **selection_fields)):
             people = policy.get('subjects')
             people = people if isinstance(people,list) else []

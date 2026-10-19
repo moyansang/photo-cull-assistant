@@ -156,7 +156,9 @@ def test_merged_face_body_request_contains_both_native_inputs(confirmed,tmp_path
     # Controlled current measurement relationship. This tests image binding,
     # not the quality accuracy of a synthetic person detector.
     asset.clarity_evidence=dict(measurement_confirmation_digest=confirmation['digest'],
+        measurement_inputs=primary_quality.measurement_inputs(asset,settings,['face','body']),
         primary_quality=dict(version=primary_quality.POLICY_VERSION,confirmation_digest=confirmation['digest'],
+            selection_origin='human',selection_digest=confirmation['digest'],enabled_parts=['face','body'],
             subjects=[dict(id=face_id,region_ids=[face_id,body_id],parts=[],original_evidence={},
                            original_body_evidence=[dict(box=[.05,.05,.8,.9],regions=[])])]))
     calls=[]

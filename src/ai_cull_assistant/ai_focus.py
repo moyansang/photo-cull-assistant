@@ -440,7 +440,9 @@ def _review_primary_target(asset, settings, profile, root, scope, region):
     per_settings = replace(settings, photos={**settings.photos, settings.key(asset):values})
     evidence = getattr(asset, 'clarity_evidence', None) or {}
     policy = evidence.get('primary_quality') or {}
-    if not protocol.policy_matches_scope(policy, evidence, scope):
+    from .primary_quality import manual_body_measurement_current
+    if (not manual_body_measurement_current(asset, settings, evidence)
+            or not protocol.policy_matches_scope(policy, evidence, scope)):
         policy = {}
     people=policy.get('subjects')
     people=people if isinstance(people,list) else []
