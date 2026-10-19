@@ -5,6 +5,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 
+import pytest
 from PIL import Image
 
 from ai_cull_assistant.group_editor import (
@@ -309,3 +310,28 @@ def test_group_summary_without_reliable_keep_does_not_force_a_winner():
     assert '本地暂无保留推荐' in summary
     assert '当前本地：推荐弃置' in summary
     assert '星' not in summary
+
+
+def test_af_display_toggle_keeps_small_window_grid_and_is_opt_in(tmp_path, monkeypatch):
+    from ai_cull_assistant import window_layout, af_metadata
+    monkeypatch.setattr(window_layout, 'work_area_for',
+                        lambda _widget: window_layout.WorkArea(0, 0, 900, 600))
+    monkeypatch.setattr(af_metadata, 'read_af_metadata',
+                        lambda *args, **kwargs: pytest.fail('opening the page must not read AF'))
+    path = tmp_path / 'preview.jpg'
+    Image.new('RGB', (160, 120), 'white').save(path)
+    asset = make_asset('A', 1)
+    asset.preview_path = path
+    asset.primary_path = path
+    root = tk.Tk()
+    try:
+        editor = GroupEditor(root, [asset], lambda: None)
+        root.update()
+        assert editor.af_overlay_var.get() is False
+        assert editor._af_loader is None
+        assert editor.af_toggle.winfo_viewable()
+        assert editor.af_toggle.winfo_rootx() >= editor.winfo_rootx()
+        assert editor.af_toggle.winfo_rootx() + editor.af_toggle.winfo_width() <= editor.winfo_rootx() + editor.winfo_width()
+        assert editor.detail_canvas.winfo_height() >= 250
+    finally:
+        root.destroy()

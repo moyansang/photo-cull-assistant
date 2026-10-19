@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from collections import Counter, OrderedDict
+from collections.abc import Mapping
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from itertools import count
+import math
+from pathlib import Path
 from queue import Empty, SimpleQueue
 from threading import Lock
 import tkinter as tk
@@ -144,7 +147,7 @@ def grouping_evidence_text(asset: PhotoAsset, recommendation: str) -> str:
     if not reasons:
         lines.append('未记录具体原因。')
     lines.extend(['', '原图检查', '双击照片可打开全屏查看器。',
-                  '本页未建立可靠坐标映射，不绘制推测区域。', '', '选择检查人物',
+                  '同源JPEG或RAW内嵌预览可在映射明确时显示AF诊断；不代表合焦或检查人物，未知映射不绘制推测区域。', '', '选择检查人物',
                   '入口只打开当前照片的框选页，不会确认、保存或重扫。',
                   '在框选页明确确认并保存后，会按现有流程重扫并重判自动分组；人工分组保留。'])
     if evidence:
@@ -202,6 +205,142 @@ def detail_grid_layout(width: int, height: int, photo_count: int, caption_height
     box = tuple(max(8, min(768, value // 8 * 8)) for value in
                 (cell_width - 22, row_height - overhead))
     return columns, cell_width, row_height, box
+
+
+def draw_af_projection(canvas, geometry, *, tags=()) -> tuple[int, ...]:
+    """Render an already validated canvas projection, never diagnostic hypotheses.
+
+    This is a display-only contract. The current thumbnail pipeline has no
+    source/frame provenance provider and therefore never supplies this renderer
+    with real-camera geometry. Synthetic renderer tests are not calibration.
+    """
+    if geometry is None or getattr(geometry, 'status', None) != 'validated':
+        return ()
+    center = getattr(geometry, 'center', None)
+    box = getattr(geometry, 'box', None)
+    clip_rect = getattr(geometry, 'clip_rect', None)
+
+    def finite(values, length):
+        try:
+            return (isinstance(values, (tuple, list)) and len(values) == length
+                    and all(not isinstance(value, bool) and isinstance(value, (int, float))
+                            and math.isfinite(value) for value in values))
+        except (OverflowError, ValueError, TypeError):
+            return False
+
+    if not finite(clip_rect, 4) or clip_rect[2] <= clip_rect[0] or clip_rect[3] <= clip_rect[1]:
+        return ()
+    left, top, right, bottom = clip_rect
+    if center is not None and not finite(center, 2):
+        return ()
+    if box is not None and (not finite(box, 4) or box[2] <= box[0] or box[3] <= box[1]):
+        return ()
+    if center is not None and not (left <= center[0] <= right and top <= center[1] <= bottom):
+        return ()
+    if box is not None and not (left <= box[0] < box[2] <= right and top <= box[1] < box[3] <= bottom):
+        return ()
+    if center is not None and box is not None and not (box[0] <= center[0] <= box[2] and box[1] <= center[1] <= box[3]):
+        return ()
+    overlay_tags = (*tags, 'af-overlay')
+    items = []
+    if box is not None:
+        items.append(canvas.create_rectangle(*box, outline=COLORS['accent'], width=2, dash=(4, 2), tags=overlay_tags))
+    if center is not None:
+        x, y = center
+        radius = 5
+        items.append(canvas.create_line(max(left, x-radius), y, min(right, x+radius), y,
+                                        fill=COLORS['accent'], width=2, tags=overlay_tags))
+        items.append(canvas.create_line(x, max(top, y-radius), x, min(bottom, y+radius),
+                                        fill=COLORS['accent'], width=2, tags=overlay_tags))
+    return tuple(items)
+
+
+def draw_af_diagnostic(canvas, geometry, *, tags=()) -> tuple[int, ...]:
+    """Display a separately bound AF-area diagnostic, never a validated focus hit."""
+    if geometry is None or getattr(geometry, 'status', None) != 'diagnostic':
+        return ()
+    center, box = getattr(geometry, 'center', None), getattr(geometry, 'box', None)
+    clip_rect = getattr(geometry, 'clip_rect', None)
+
+    def finite(values, length):
+        try:
+            return (isinstance(values, (tuple, list)) and len(values) == length
+                    and all(not isinstance(value, bool) and isinstance(value, (int, float))
+                            and math.isfinite(value) for value in values))
+        except (OverflowError, ValueError, TypeError):
+            return False
+
+    if not finite(clip_rect, 4) or clip_rect[2] <= clip_rect[0] or clip_rect[3] <= clip_rect[1]:
+        return ()
+    left, top, right, bottom = clip_rect
+    markers = getattr(geometry, 'markers', ())
+    if markers:
+        if not isinstance(markers, tuple) or len(markers) > 4096:
+            return ()
+        seen = set()
+        for marker in markers:
+            mc, mb = getattr(marker, 'center', None), getattr(marker, 'box', None)
+            index = getattr(marker, 'index', None)
+            if (getattr(marker, 'status', None) != 'diagnostic' or getattr(marker, 'markers', ())
+                    or getattr(marker, 'clip_rect', None) != clip_rect
+                    or type(index) is not int or index < 0 or index in seen
+                    or getattr(marker, 'role', None) not in {'selected', 'camera_reported_in_focus', 'selected_and_camera_reported_in_focus'}
+                    or not finite(mc, 2) or not (left <= mc[0] <= right and top <= mc[1] <= bottom)
+                    or (mb is not None and (not finite(mb, 4)
+                        or not (left <= mb[0] < mb[2] <= right and top <= mb[1] < mb[3] <= bottom)
+                        or not (mb[0] <= mc[0] <= mb[2] and mb[1] <= mc[1] <= mb[3])))):
+                return ()
+            seen.add(index)
+        return tuple(item for marker in markers for item in draw_af_diagnostic(canvas, marker, tags=tags))
+    if not finite(center, 2) or not (left <= center[0] <= right and top <= center[1] <= bottom):
+        return ()
+    if box is not None and (not finite(box, 4)
+            or not (left <= box[0] < box[2] <= right and top <= box[1] < box[3] <= bottom)
+            or not (box[0] <= center[0] <= box[2] and box[1] <= center[1] <= box[3])):
+        return ()
+    overlay_tags = (*tags, 'af-diagnostic')
+    items = []
+    role = getattr(geometry, 'role', None)
+    dash = {'selected': (6, 3), 'camera_reported_in_focus': (2, 2), 'selected_and_camera_reported_in_focus': (6, 2, 2, 2)}.get(role, (4, 2))
+    if box is not None:
+        items.append(canvas.create_rectangle(*box, outline=COLORS['accent'], width=2,
+                                             dash=dash, tags=overlay_tags))
+    x, y = center
+    items.append(canvas.create_line(max(left, x-5), y, min(right, x+5), y,
+                                    fill=COLORS['accent'], width=2, tags=overlay_tags))
+    items.append(canvas.create_line(x, max(top, y-5), x, min(bottom, y+5),
+                                    fill=COLORS['accent'], width=2, tags=overlay_tags))
+    return tuple(items)
+
+
+def _af_jpeg_source(asset) -> str | None:
+    """Use the explicitly paired JPEG, otherwise the asset's own RAW; never search siblings."""
+    paired = getattr(asset, 'jpg_path', None)
+    if paired is not None:
+        return str(paired)
+    primary = getattr(asset, 'primary_path', None)
+    if primary is not None and Path(primary).suffix.lower() in {'.jpg', '.jpeg', '.jpe'}:
+        return str(primary)
+    raw = getattr(asset, 'raw_path', None) or primary
+    if raw is not None and Path(raw).suffix.lower() in {'.cr3', '.nef', '.arw', '.rw2'}:
+        return str(raw)
+    return None
+
+
+def _close_af_bundle(bundle) -> None:
+    if isinstance(bundle, Mapping):
+        image = bundle.get('clean_image')
+        if isinstance(image, Image.Image):
+            image.close()
+
+
+def _af_source_stamp(path: str) -> tuple:
+    """Cheap change guard only; the AF worker owns content hashing and reading."""
+    try:
+        value = Path(path).stat()
+        return (value.st_size, value.st_mtime_ns, value.st_ctime_ns, value.st_dev, value.st_ino)
+    except (OSError, ValueError) as exc:
+        return (None, type(exc).__name__)
 
 
 ThumbnailKey = tuple[int, tuple[int, int]]
@@ -343,6 +482,7 @@ class GroupEditor(WorkspacePage):
     ROW_H = 62
     THUMB_CACHE_SIZE = 160
     THUMB_POLL_MS = 20
+    AF_POLL_MS = 40
 
     def __init__(
         self,
@@ -368,6 +508,17 @@ class GroupEditor(WorkspacePage):
         self._detail_images: list[ImageTk.PhotoImage] = []
         self._thumb_cache: OrderedDict[tuple[int, tuple[int, int]], ImageTk.PhotoImage | None] = OrderedDict()
         self._thumbnail_loader = ThumbnailLoader()
+        self._af_loader = None  # Lazy: opening this page never reads AF metadata.
+        self._af_poll_token = None
+        self._af_request_token = None
+        self._af_request_target = None
+        self._af_request_path = None
+        self._af_request_stamp = None
+        self._af_record = None
+        self._af_bundle = None
+        self._af_display_photo = None
+        self._af_display_photo_key = None
+        self._af_suspended = False
         self._row_requested_keys: set[ThumbnailKey] = set()
         self._detail_requested_keys: set[ThumbnailKey] = set()
         self._thumb_poll_token: str | None = None
@@ -390,6 +541,8 @@ class GroupEditor(WorkspacePage):
             fonts['body'].metrics('linespace') + fonts['shortcut'].metrics('linespace') + 25,
         )
         self._build_ui()
+        self.bind('<Unmap>', self._af_page_unmapped, add='+')
+        self.bind('<Map>', self._af_page_mapped, add='+')
         if not embedded:
             fit_window(self, (1180, 680), minimum_size=(640, 480), parent=parent)
         self._redraw_rows()
@@ -426,6 +579,18 @@ class GroupEditor(WorkspacePage):
         self.inspector_button.pack(side="right")
         self.subject_button = ttk.Button(filters, text="选择检查人物", command=self._choose_subject_for_photo, state="disabled")
         self.subject_button.pack(side="right", padx=(0, 8))
+
+        # Keep the opt-in display controls in the existing header so small
+        # Windows work areas retain the established photo-grid height.
+        af_controls = ttk.Frame(header, padding=(12, 0, 0, 0))
+        af_controls.pack(side="left", fill="x", expand=True)
+        self.af_overlay_var = tk.BooleanVar(value=False)
+        self.af_toggle = ttk.Checkbutton(af_controls, text="AF区域（所选照片）",
+                                         variable=self.af_overlay_var, command=self._toggle_af_overlay)
+        self.af_toggle.pack(side="left")
+        self.af_status_var = tk.StringVar(value="AF已关闭")
+        ttk.Label(af_controls, textvariable=self.af_status_var, style="Muted.TLabel",
+                  wraplength=460).pack(side="left", fill="x", expand=True, padx=(10, 0))
 
         content = ttk.Frame(self, padding=(10, 0, 10, 6))
         content.pack(side="top", fill="both", expand=True)
@@ -528,6 +693,7 @@ class GroupEditor(WorkspacePage):
     def _refresh_inspector(self) -> None:
         members = self._members_by_group.get(self.selected_group_id, [])
         asset = self._subject_target()
+        self._sync_af_overlay(asset)
         button = getattr(self, 'subject_button', None)
         if button is not None:
             button.configure(state='normal' if asset is not None and callable(getattr(self, 'on_select_subject', None)) else 'disabled')
@@ -543,6 +709,206 @@ class GroupEditor(WorkspacePage):
         self.evidence_text.insert("1.0", text)
         self.evidence_text.configure(state="disabled")
 
+
+    def _invalidate_af_request(self) -> None:
+        canvas = getattr(self, 'detail_canvas', None)
+        delete = getattr(canvas, 'delete', None)
+        if callable(delete):
+            try:
+                # A hidden Canvas retains its items. Remove diagnostic marks
+                # now so a later Map cannot briefly revive a stale AF area.
+                delete('af-diagnostic')
+            except tk.TclError:
+                pass
+        loader = getattr(self, '_af_loader', None)
+        if loader is not None and getattr(self, '_af_request_token', None) is not None:
+            loader.invalidate()
+        token = getattr(self, '_af_poll_token', None)
+        if token is not None:
+            try:
+                self.after_cancel(token)
+            except tk.TclError:
+                pass
+        self._af_poll_token = None
+        self._af_request_token = None
+        self._af_request_target = None
+        self._af_request_path = None
+        self._af_request_stamp = None
+        self._af_record = None
+        _close_af_bundle(getattr(self, '_af_bundle', None))
+        self._af_bundle = None
+        self._af_display_photo = None
+        self._af_display_photo_key = None
+
+    def _toggle_af_overlay(self) -> None:
+        self._invalidate_af_request()
+        self._sync_af_overlay(self._subject_target())
+        self._schedule_detail_redraw()
+
+    def _sync_af_overlay(self, asset) -> None:
+        # Older model-only callers do not construct the optional UI controls.
+        variable = getattr(self, 'af_overlay_var', None)
+        if variable is None or getattr(self, '_closed', False):
+            return
+        if not variable.get():
+            self._invalidate_af_request()
+            self.af_status_var.set('AF已关闭')
+            return
+        if getattr(self, '_af_suspended', False):
+            self._invalidate_af_request()
+            self.af_status_var.set('AF已暂停')
+            return
+        if asset is None:
+            self._invalidate_af_request()
+            self.af_status_var.set('请选择一张照片查看AF信息')
+            return
+        path = _af_jpeg_source(asset)
+        if path is None:
+            self._invalidate_af_request()
+            self.af_status_var.set('AF：此文件的预览来源尚未支持')
+            return
+        stamp = _af_source_stamp(path)
+        if (asset is self._af_request_target and path == self._af_request_path
+                and stamp == self._af_request_stamp and self._af_request_token is not None):
+            return
+        self._invalidate_af_request()
+        from .af_jpeg_preview import AfJpegPreviewLoader
+        if self._af_loader is None:
+            self._af_loader = AfJpegPreviewLoader()
+        self._af_request_target = asset
+        self._af_request_path = path
+        self._af_request_stamp = stamp
+        self._af_request_token = self._af_loader.request(path)
+        self.af_status_var.set('正在读取同源预览与AF区域信息…')
+        self._ensure_af_poll()
+
+    def _ensure_af_poll(self) -> None:
+        if (getattr(self, '_closed', False) or getattr(self, '_af_suspended', False)
+                or not self.af_overlay_var.get() or self._af_poll_token is not None
+                or self._af_request_token is None or self._af_record is not None):
+            return
+        self._af_poll_token = self.after(self.AF_POLL_MS, self._drain_af_results)
+
+    @staticmethod
+    def _af_bundle_bound(bundle, path, stamp) -> bool:
+        """Check the worker's exact request/source binding; never infer a frame."""
+        if not isinstance(bundle, Mapping) or bundle.get('request_path') != path:
+            return False
+        provenance = bundle.get('provenance')
+        if not isinstance(provenance, Mapping):
+            return False
+        source, binding = provenance.get('source'), provenance.get('binding')
+        if (not isinstance(source, Mapping) or not isinstance(binding, Mapping)
+                or binding.get('source_unchanged') is not True):
+            return False
+        identity = source.get('stat_identity')
+        if not isinstance(identity, Mapping):
+            return False
+        return tuple(identity.get(key) for key in ('size', 'mtime_ns', 'ctime_ns', 'device', 'inode')) == stamp
+
+    def _drain_af_results(self) -> None:
+        self._af_poll_token = None
+        if getattr(self, '_closed', False):
+            return
+        current = self._subject_target()
+        self._sync_af_overlay(current)
+        if (self._af_loader is None or self._af_request_token is None
+                or current is not self._af_request_target):
+            return
+        from .af_overlay import af_status_text
+        for token, bundle in self._af_loader.pop_completed():
+            if token != self._af_request_token:
+                _close_af_bundle(bundle)
+                continue
+            if (current is not self._subject_target()
+                    or _af_jpeg_source(current) != self._af_request_path
+                    or _af_source_stamp(self._af_request_path) != self._af_request_stamp):
+                _close_af_bundle(bundle)
+                self._invalidate_af_request()
+                self._sync_af_overlay(self._subject_target())
+                continue
+            image = bundle.get('clean_image') if isinstance(bundle, Mapping) else None
+            if image is not None and (not isinstance(image, Image.Image)
+                    or not self._af_bundle_bound(bundle, self._af_request_path, self._af_request_stamp)):
+                _close_af_bundle(bundle)
+                bundle = {'metadata': {'status': 'error', 'reason': 'jpeg_preview_unbound'},
+                          'status_text': 'AF区域：同源预览绑定失效，未显示区域'}
+            _close_af_bundle(getattr(self, '_af_bundle', None))
+            self._af_bundle = bundle if isinstance(bundle, Mapping) else {}
+            self._af_display_photo = None
+            self._af_display_photo_key = None
+            record = self._af_bundle.get('metadata')
+            self._af_record = record if isinstance(record, Mapping) else {'status': 'error', 'reason': 'invalid_af_bundle'}
+            self.af_status_var.set(self._af_bundle.get('status_text') or af_status_text(self._af_record))
+            self._schedule_detail_redraw()
+        self._ensure_af_poll()
+
+    def _af_page_unmapped(self, event) -> None:
+        if event.widget is self:
+            self._af_suspended = True
+            self._invalidate_af_request()
+
+    def _af_page_mapped(self, event) -> None:
+        if event.widget is self and not self._closed:
+            self._af_suspended = False
+            self._sync_af_overlay(self._subject_target())
+            self._schedule_detail_redraw()
+
+    def _af_projection_for_thumbnail(self, asset, photo, image_rect):
+        """Fail closed until actual thumbnail pixels have a verified frame binding.
+
+        ensure_preview can select a paired JPEG, RAW embedded preview, or legacy
+        cached image. ImageTk dimensions and asset.preview_path cannot prove its
+        source, crop, or orientation. In particular, *_hypothesis metadata is
+        never used here, and no caller may invent a binding from aspect ratio.
+        """
+        return None
+
+    def _af_bundle_is_current(self, asset) -> bool:
+        variable = getattr(self, 'af_overlay_var', None)
+        if (variable is None or not variable.get() or getattr(self, '_closed', False)
+                or getattr(self, '_af_suspended', False)
+                or asset is not getattr(self, '_af_request_target', None)
+                or asset is not self._subject_target()
+                or _af_jpeg_source(asset) != self._af_request_path
+                or _af_source_stamp(self._af_request_path) != self._af_request_stamp):
+            return False
+        return self._af_bundle_bound(getattr(self, '_af_bundle', None), self._af_request_path,
+                                     self._af_request_stamp)
+
+    def _af_thumbnail_photo(self, asset, box):
+        """Only this card's clean, source-bound preview can receive diagnostic marks."""
+        if not self._af_bundle_is_current(asset):
+            return None
+        image = self._af_bundle.get('clean_image')
+        if not isinstance(image, Image.Image):
+            return None
+        key = (self._af_request_token, box)
+        if key == self._af_display_photo_key:
+            return self._af_display_photo
+        thumb = None
+        try:
+            # All file IO/full JPEG decoding happened in the worker. This is a
+            # bounded resize of its detached, <=768-pixel clean RGB image.
+            thumb = ImageOps.contain(image, box, method=Image.Resampling.LANCZOS)
+            self._af_display_photo = ImageTk.PhotoImage(thumb, master=self)
+            self._af_display_photo_key = key
+        except Exception:
+            self._af_display_photo = self._af_display_photo_key = None
+            self.af_status_var.set('AF区域：同源预览显示失败，未显示区域')
+        finally:
+            if thumb is not None and thumb is not image:
+                thumb.close()
+        return self._af_display_photo
+
+    def _draw_af_overlay(self, asset, photo, image_rect, tag) -> bool:
+        if (not self._af_bundle_is_current(asset)
+                or photo is not getattr(self, '_af_display_photo', None)):
+            return False
+        from .af_jpeg_preview import project_jpeg_diagnostic
+        geometry = project_jpeg_diagnostic(self._af_bundle, image_rect)
+        # Diagnostic geometry never enters the stronger validated-focus gate.
+        return bool(draw_af_diagnostic(self.detail_canvas, geometry, tags=(tag,)))
 
     def _on_mousewheel(self, event) -> None:
         self.rows_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
@@ -694,13 +1060,21 @@ class GroupEditor(WorkspacePage):
                 width=2 if selected else 1,
                 tags=(tag,),
             )
-            photo = self._cached_photo(asset, thumb_box)
+            af_photo_provider = getattr(self, '_af_thumbnail_photo', None)
+            photo = af_photo_provider(asset, thumb_box) if callable(af_photo_provider) else None
+            if photo is None:
+                photo = self._cached_photo(asset, thumb_box)
+            af_drawn = False
             if photo is not None:
                 self._detail_images.append(photo)
                 image_x = x0 + max(6, (x1 - x0 - photo.width()) // 2)
                 image_area_height = row_height - caption_height - 26
                 image_y = y0 + 6 + max(0, (image_area_height - photo.height()) // 2)
                 self.detail_canvas.create_image(image_x, image_y, anchor="nw", image=photo, tags=(tag,))
+                af_draw = getattr(self, '_draw_af_overlay', None)
+                if callable(af_draw):
+                    af_drawn = af_draw(asset, photo,
+                                       (image_x, image_y, image_x + photo.width(), image_y + photo.height()), tag)
             local = recommendations.get(str(asset.primary_path), {})
             local_label = {'keep': '本地保留建议', 'reject': '本地弃置建议', 'review': '待复核'}.get(local.get('recommendation'), '待复核')
             if local.get('tied'):
@@ -709,7 +1083,15 @@ class GroupEditor(WorkspacePage):
             reason_line = reasons[0] if reasons else '未记录具体原因'
             extra = f" · 另 {len(reasons) - 1} 项" if len(reasons) > 1 else ''
             line_height = self._fonts['small'].metrics('linespace')
-            for line, value in enumerate((asset.stem, local_label,
+            af_name = 'AF区域（非确认焦点）'
+            if af_drawn and self._af_bundle.get('metadata', {}).get('diagnostics', {}).get('camera', {}).get('vendor') == 'sony':
+                af_name = 'AF回放位置（非确认焦点）'
+            elif af_drawn and self._af_bundle.get('metadata', {}).get('diagnostics', {}).get('camera', {}).get('vendor') == 'canon':
+                af_name = 'AF记录点（非清晰度证明）'
+            elif af_drawn and self._af_bundle.get('metadata', {}).get('diagnostics', {}).get('camera', {}).get('vendor') == 'nikon':
+                af_name = 'AF记录区域（非清晰度证明）'
+            photo_label = f'{af_name} · {asset.stem}' if af_drawn else asset.stem
+            for line, value in enumerate((photo_label, local_label,
                                           ellipsize_text(reason_line, self._fonts['small'].measure,
                                                          max(20, x1 - x0 - 16 - self._fonts['small'].measure(extra))) + extra)):
                 self.detail_canvas.create_text(
@@ -742,6 +1124,7 @@ class GroupEditor(WorkspacePage):
         self.detail_status_var.set(f"G{self.selected_group_id:03d} · {len(members)} 张 · {summary}{suffix}")
 
     def _select_group(self, group_id: int) -> None:
+        self._invalidate_af_request()
         self.selected_group_id = group_id
         self.selected_stem = None
         self._selected_subject_asset = None
@@ -750,6 +1133,7 @@ class GroupEditor(WorkspacePage):
         self._redraw_detail()
 
     def _select_asset(self, stem: str, exact_asset=None) -> None:
+        self._invalidate_af_request()
         self.selected_stem = stem
         asset = exact_asset if any(item is exact_asset for item in self.assets) else next((a for a in self.assets if a.stem == stem), None)
         self._selected_subject_asset = exact_asset if asset is exact_asset else None
@@ -804,6 +1188,8 @@ class GroupEditor(WorkspacePage):
         """Refresh group membership and visible thumbnails after page switches."""
         if self._closed or not self.winfo_exists():
             return
+        self._invalidate_af_request()
+        self._af_suspended = False
         self._groups = grouped_assets(self.assets)
         self._members_by_group = {group_id: members for group_id, members in self._groups}
         if self.selected_group_id not in self._members_by_group:
@@ -871,6 +1257,7 @@ class GroupEditor(WorkspacePage):
         if getattr(self, "_closed", False):
             return
         self._closed = True
+        self._invalidate_af_request()
         for token_name in ("_redraw_token", "_detail_redraw_token", "_thumb_poll_token"):
             token = getattr(self, token_name, None)
             if token is not None:
@@ -882,4 +1269,7 @@ class GroupEditor(WorkspacePage):
         loader = getattr(self, "_thumbnail_loader", None)
         if loader is not None:
             loader.close()
+        af_loader = getattr(self, '_af_loader', None)
+        if af_loader is not None:
+            af_loader.close()
         super().destroy()
