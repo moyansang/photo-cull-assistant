@@ -31,6 +31,7 @@ dev = [
 
 [project.scripts]
 aicull = "ai_cull_assistant.app:main"
+aicull-af = "ai_cull_assistant.af_inspect:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
