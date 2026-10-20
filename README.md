@@ -113,7 +113,7 @@ py -3.12 -m venv .venv
 
 打包脚本会先构建 EXE，再生成 ZIP 和 `update.json`；首次构建需要联网安装依赖；模型直接使用仓库中的固定文件并离线校验。已有完整打包环境时可使用 `-UseExistingEnvironment`。开发数据与便携版数据分离；源码同步用 Git，程序升级用 Release，两者不会自动互相同步。
 
-[开发与打包说明](docs/development.md) · [构建工作流](.github/workflows/build-windows.yml)
+[开发与打包说明](docs/development.md) · [Dot／Windows 开发接续](docs/development-handoff.md) · [共享开发契约](docs/development-contract.md) · [构建工作流](.github/workflows/build-windows.yml)
 
 ## 文档与反馈
 

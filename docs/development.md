@@ -63,11 +63,14 @@ GitHub Actions 在版本标签或手动触发时构建并自检，上传 workflo
 
 ## 换电脑继续开发
 
-先在该电脑已有源码仓库运行 `git status --short --branch`，检查未提交/未跟踪文件。把本地修改保存在仓库外备份或明确的本地提交中，再更新；不要把私人交接和工作区提交进 Git。确认干净且处于 `main` 后：
+先读 [共享开发契约](development-contract.md) 与 [Dot／Windows 接续手册](development-handoff.md)。在该电脑已有源码仓库运行 `git status --short --branch`，检查未提交／未跟踪文件。把本地修改保存在仓库外备份或明确的本地提交中，再更新；不要把私人交接和工作区提交进 Git。
+
+当前开发分支与旧远端 main 无共同祖先。首次使用精确单分支 bootstrap，后续按明确 base/head 接收增量；不要直接拉取旧 main。只有目标分支已被明确选定且具有共同历史时，才使用正常 fetch 与快进流程，例如：
 
 ```powershell
 git fetch origin
-git pull --ff-only origin main
+git log -1 --oneline origin/<已确认的功能分支>
+git merge --ff-only origin/<已确认的功能分支>
 git log -1 --oneline
 ```
 
@@ -84,4 +87,4 @@ git log -1 --oneline
 
 HEIC/HEIF 解码属于可选 `codecs` extra；运行 `python -m pip install -e ".[raw,codecs,dev]"` 配置开发环境。AVIF 依赖当前 Pillow 构建实际功能，扩展名可扫描不代表该构建可解码所有压缩变体。详见 `research-decode.md` 的本地实测、依赖维护与再分发限制。
 
-GUI 测试需要真实 Tk 显示环境。无 DISPLAY 的云机器不能把 UI 失败算通过；Windows 更新器/文件属性测试还需 Windows。应先跑完整套件保留阻塞证据，再单独报告可运行子集。
+GUI 测试需要真实 Tk 显示环境。无 DISPLAY 的云机器不能把 UI 失败算通过；Windows 更新器／文件属性测试还需 Windows。先运行 `tools/check_dev.py` 的明确快速范围；业务变更另跑对应测试，候选交付再做完整适用回归。记录失败、跳过及未执行项，不把快速检查当成完整回归。

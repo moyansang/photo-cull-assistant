@@ -1,0 +1,51 @@
+name: Developer checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches:
+      - "topic/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable-fast-checks:
+    name: Python 3.12 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev-checks.txt
+      - name: Install developer-check dependency
+        run: python -m pip install --disable-pip-version-check -r requirements-dev-checks.txt
+      - name: Run selected portable checks
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'dev-check-report.json'
+          python -X utf8 tools/check_dev.py --report $report
+      - name: Save machine-readable check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-checks-${{ matrix.os }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/dev-check-report.json
+            ${{ runner.temp }}/dev-check-report.junit.xml
