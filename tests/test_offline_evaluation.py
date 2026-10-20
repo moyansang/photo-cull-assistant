@@ -278,35 +278,36 @@ def test_duplicate_json_keys_rejected(tmp_path):
 def test_cli_report_and_read_only_inputs(tmp_path):
     docs = envelopes(2)
     before = {}
-    args = [sys.executable, str(PATH), "evaluate"]
+    args = [sys.executable, "-X", "utf8", str(PATH), "evaluate"]
     for name, doc in zip(("samples", "predictions", "annotations", "catalog"), docs):
         path = tmp_path / (name + ".json")
         path.write_text(json.dumps(doc), encoding="utf-8")
         before[path] = path.read_bytes()
         args.extend(["--" + name, str(path)])
     out = tmp_path / "report"
-    result = subprocess.run([*args, "--output", str(out)], text=True, capture_output=True)
+    result = subprocess.run([*args, "--output", str(out)], text=True, encoding="utf-8", capture_output=True)
     assert result.returncode == 0, result.stderr
-    summary = json.loads((out / "summary.json").read_text())
-    assert len((out / "cases.jsonl").read_text().splitlines()) == 2
+    assert "尚未测量" in result.stdout
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert len((out / "cases.jsonl").read_text(encoding="utf-8").splitlines()) == 2
     assert summary["real_world_accuracy"]["value"] is None
     assert all(path.read_bytes() == raw for path, raw in before.items())
-    again = subprocess.run([*args, "--output", str(out)], text=True, capture_output=True)
+    again = subprocess.run([*args, "--output", str(out)], text=True, encoding="utf-8", capture_output=True)
     assert again.returncode == 2
 
 
 def test_cli_invalid_inputs_write_no_metrics(tmp_path):
     docs = envelopes()
     docs[1]["rows"].append(deepcopy(docs[1]["rows"][0]))
-    args = [sys.executable, str(PATH), "evaluate"]
+    args = [sys.executable, "-X", "utf8", str(PATH), "evaluate"]
     for name, doc in zip(("samples", "predictions", "annotations", "catalog"), docs):
         path = tmp_path / (name + ".json")
         path.write_text(json.dumps(doc), encoding="utf-8")
         args.extend(["--" + name, str(path)])
     out = tmp_path / "invalid"
-    result = subprocess.run([*args, "--output", str(out)], text=True, capture_output=True)
+    result = subprocess.run([*args, "--output", str(out)], text=True, encoding="utf-8", capture_output=True)
     assert result.returncode == 2
-    assert json.loads((out / "validation-errors.json").read_text())["metrics"] is None
+    assert json.loads((out / "validation-errors.json").read_text(encoding="utf-8"))["metrics"] is None
     assert not (out / "summary.json").exists()
 
 
@@ -407,16 +408,17 @@ def test_cli_synthetic_demo_repeats_identical_counts(tmp_path):
     reports = []
     for suffix in ("a", "b"):
         out = tmp_path / suffix
-        result = subprocess.run([sys.executable, str(PATH), "synthetic-demo", "--output", str(out)], text=True, capture_output=True)
+        result = subprocess.run([sys.executable, "-X", "utf8", str(PATH), "synthetic-demo", "--output", str(out)], text=True, encoding="utf-8", capture_output=True)
         assert result.returncode == 0, result.stderr
-        reports.append(json.loads((out / "report" / "summary.json").read_text()))
+        assert "尚未测量" in result.stdout
+        reports.append(json.loads((out / "report" / "summary.json").read_text(encoding="utf-8")))
     assert reports[0]["overall"] == reports[1]["overall"]
     assert reports[0]["input_sha256"] == reports[1]["input_sha256"]
 
 
 def test_blank_templates_contain_no_labels_and_require_freeze():
     root = PATH.parents[1] / "docs" / "offline-evaluation-templates"
-    docs = [json.loads((root / f"{kind}.blank.json").read_text()) for kind in ("samples", "predictions", "annotations")]
+    docs = [json.loads((root / f"{kind}.blank.json").read_text(encoding="utf-8")) for kind in ("samples", "predictions", "annotations")]
     assert all(not d["rows"] for d in docs)
     assert docs[2]["annotation_version"] is None
     with pytest.raises(oe.ContractError):
