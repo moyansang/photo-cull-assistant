@@ -1,0 +1,11 @@
+{
+  "schema_version": "offline-evaluation-v1",
+  "dataset_id": null,
+  "dataset_version": null,
+  "guideline_version": null,
+  "manifest_version": null,
+  "kind": "annotations",
+  "manifest_sha256": null,
+  "annotation_version": null,
+  "rows": []
+}

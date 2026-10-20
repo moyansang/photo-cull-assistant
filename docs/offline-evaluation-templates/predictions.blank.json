@@ -1,0 +1,16 @@
+{
+  "schema_version": "offline-evaluation-v1",
+  "dataset_id": null,
+  "dataset_version": null,
+  "guideline_version": null,
+  "manifest_version": null,
+  "kind": "predictions",
+  "manifest_sha256": null,
+  "prediction_version": null,
+  "source_git": null,
+  "dependency_lock_sha256": null,
+  "configuration_sha256": null,
+  "decode_configuration_sha256": null,
+  "run_id": null,
+  "rows": []
+}

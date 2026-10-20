@@ -1,0 +1,12 @@
+{
+  "schema_version": "offline-evaluation-v1",
+  "dataset_id": null,
+  "dataset_version": null,
+  "guideline_version": null,
+  "manifest_version": null,
+  "kind": "samples",
+  "evaluation_kind": null,
+  "rows": [],
+  "split_registry": [],
+  "declared_overlaps": []
+}

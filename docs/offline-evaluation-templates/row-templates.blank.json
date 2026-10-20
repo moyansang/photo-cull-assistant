@@ -1,0 +1,71 @@
+{
+  "sample_row": {
+    "asset_id": null,
+    "sample_version": null,
+    "capture_id": null,
+    "variant_family_id": null,
+    "comparison_group_id": null,
+    "scene_family_id": null,
+    "session_id": null,
+    "burst_id": null,
+    "person_ids": [],
+    "split": null,
+    "scene_type": "unknown",
+    "source_authorization": null,
+    "historical_exposure": null,
+    "evaluation_source_id": null,
+    "sources": [
+      {
+        "source_id": null,
+        "sha256": null,
+        "format": null,
+        "width": null,
+        "height": null,
+        "orientation": null,
+        "camera": null,
+        "lens": null,
+        "iso": null
+      }
+    ],
+    "exception_tags": [],
+    "ai_temporary_labels": null
+  },
+  "prediction_row": {
+    "asset_id": null,
+    "sample_version": null,
+    "evaluated_source_id": null,
+    "input_sha256": null,
+    "status": null,
+    "recommendation": null,
+    "reasons": [],
+    "failure_reason": null,
+    "face_found": null
+  },
+  "annotation_row": {
+    "asset_id": null,
+    "sample_version": null,
+    "evaluated_source_id": null,
+    "input_sha256": null,
+    "label_source": "human",
+    "annotator_id": null,
+    "technical_label": null,
+    "culling_label": null,
+    "final_selection": null,
+    "evidence_adequacy": null,
+    "intent": null,
+    "exclusion_reason": null,
+    "original_ratings": [],
+    "adjudication_reason": null,
+    "regions": [
+      {
+        "region_id": null,
+        "role": null,
+        "required_for_delivery": null,
+        "visibility": null,
+        "technical_label": null,
+        "evidence_adequacy": null,
+        "reason": null
+      }
+    ]
+  }
+}
