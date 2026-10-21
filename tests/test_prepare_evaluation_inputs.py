@@ -49,12 +49,14 @@ def test_no_photo_access_and_preserve_unknown(docs, monkeypatch):
     before = deepcopy(docs)
     def forbidden(*args, **kwargs):
         raise AssertionError('metadata preparation accessed filesystem/images')
-    for method in ('open', 'stat', 'resolve', 'glob', 'rglob', 'iterdir', 'read_bytes'):
-        monkeypatch.setattr(Path, method, forbidden)
-    samples, paths, report = prepare.prepare(docs[0], docs[1], registration=docs[2])
+    # Restore pathlib before assertions so failures cannot break pytest reporting.
+    with monkeypatch.context() as guard:
+        for method in ('open', 'stat', 'resolve', 'glob', 'rglob', 'iterdir', 'read_bytes'):
+            guard.setattr(Path, method, forbidden)
+        samples, paths, report = prepare.prepare(docs[0], docs[1], registration=docs[2])
     assert docs == before
     assert samples == docs[0]
-    assert paths['bindings']['a']['sources']['s'].endswith('中文/同名.png')
+    assert Path(paths['bindings']['a']['sources']['s']).parts[-2:] == ('中文', '同名.png')
     assert report['sample_count'] == 1 and report['image_files_read'] == 0
     assert report['status'] == 'blocked'
     gaps = report['rows'][0]['problems']

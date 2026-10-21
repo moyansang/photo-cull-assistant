@@ -2,7 +2,7 @@
 
 `tools/prepare_evaluation_inputs.py` 只读取明确给定的 **JSON 元数据文件**，把声明支持的 `sample-bindings-v1` 路径记录转换为 `real-sample-path-map-v1`，并生成新的 samples 与缺项报告。不打开、解码、哈希、扫描或测量照片，不下载内容，不创建标签，不修改旧清单或其哈希，不替用户登记主体。输出目录必须不存在且位于源码和照片 roots 之外；已有输出拒绝覆盖。
 
-**兼容边界：** 本轮没有读取本机真实 28 张清单。下列精确定义的旧结构已用合成 JSON 模板验证；真实旧清单的字段结构兼容性仍待 Windows 只读核对。不同结构、未知字段会拒绝，而不是猜测关联或默默丢弃。不要直接改原清单；如实际结构不同，应另行补明确映射并测试。
+**兼容边界：** 本轮没有读取本机真实 28 张清单。下列精确定义的旧结构及 Windows 回传的合成采集形状已用合成 JSON 模板验证；真实旧清单的完整登记与可测量性仍待 Windows 只读核对。不同结构、未知字段会拒绝，而不是猜测关联或默默丢弃。不要直接改原清单；如实际结构不同，应另行补明确映射并测试。
 
 ## 输入形状（占位模板，不是许可或真实来源证明）
 
@@ -19,7 +19,9 @@
 }
 ```
 
-可选 `manifest_sha256` 必须匹配旧 samples 的规范 JSON SHA-256。`--roots` 可传一个独立的 `root_id → 本机绝对路径` JSON 对象，完整替代旧 roots；不会搜索电脑寻找文件。支持 Windows 盘符/UNC 与 POSIX 绝对路径的纯文本拼接；禁止绝对 relative_path、盘符相对路径及 `..`。不同盘符/目录同名文件不混淆。这里只能拒绝文本路径重复；符号链接、Junction、原生路径解析与实际文件存在性仍须正式入口在目标机器检查。
+绑定顶层显式支持可选字符串 `note`，entry 显式支持 `root`（`root_id` 的别名）、`sha256` 和非负整数字节数 `bytes`。两种 root 字段同时出现必须相同，否则拒绝；不按字段优先级悄悄忽略冲突。保留原字段、说明、来源 ID 与原始 roots 文档到私有报告 `acquisition_provenance`，不向清单猜填身份值。
+
+可选 `manifest_sha256` 必须匹配旧 samples 的规范 JSON SHA-256。缺失时 `manifest_binding_check=unverified_missing_binding_hash`。逐 entry 将绑定 `sha256/bytes` 与同一个 asset_id/source_id 的 samples 来源字段比较：声明不合法或双方值冲突拒绝；双方都有且相同仅记 `metadata_match`，不表示文件核验通过；任意一端缺值或为 null，保留双方值、字段是否存在和缺值来源，记 `unverified`。例如清单没有 bytes 而绑定有 bytes=123，保留 123，不冒称已核验。`identity_checks` 中的 `file_identity` 始终为 `not_verified_no_photo_access`。`--roots` 可传一个独立的 `root_id → 本机绝对路径` JSON 对象，或显式版本外层 `{"schema_version":"sample-local-roots-v1","roots":{"root-id":"绝对路径"}}`，完整替代旧 roots；不会搜索电脑寻找文件。支持 Windows 盘符/UNC 与 POSIX 绝对路径的纯文本拼接；禁止绝对 relative_path、盘符相对路径及 `..`。不同盘符/目录同名文件不混淆。这里只能拒绝文本路径重复；符号链接、Junction、原生路径解析与实际文件存在性仍须正式入口在目标机器检查。
 
 ## 显式补缺登记（可选）
 
@@ -54,4 +56,4 @@ python -X utf8 -W error tools/prepare_evaluation_inputs.py `
 
 `scene_type=unknown/mixed` 原样保留并阻塞；待冻结指南、缺来源/版本/原始身份/处理历史、待确认主体/角色不会被自动修成可运行数据。转换报告明确 `preflight=not_run`、`native_path_validation=not_run`、`image_files_read=0`、`measurement_performed=false`、`authorization_granted=false`。
 
-仅在用户另外确认测量范围、补齐真实登记且明确授权运行后，才将新 samples/paths 和用户明确配置交给 [批量入口](real-sample-evaluation.md)。不要用本转换的退出码替代正式预检、Windows 原生测试、人工试标或主体确认。真实准确率：**尚未测量**。路径/来源登记文件是私有输入，不进 Git 或交付证据包。
+仅在用户另外确认测量范围、补齐真实登记且明确授权运行后，才将新 samples/paths 和用户明确配置交给 [批量入口](real-sample-evaluation.md)。不要用本转换的退出码替代正式预检、Windows 原生测试、人工试标或主体确认。真实准确率：**尚未测量**。路径/来源登记文件以及含 `acquisition_provenance` 的 preparation-report.json 都是私有材料（报告包含原始 roots、entries、说明），不进 Git 或对外交付证据包。工程证据仅使用合成数据，并独立移除合成路径清单。

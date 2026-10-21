@@ -15,6 +15,7 @@ import evaluation_inputs as inputs
 import offline_evaluation as oe
 
 LEGACY_SCHEMA = 'sample-bindings-v1'
+LOCAL_ROOTS_SCHEMA = 'sample-local-roots-v1'
 REGISTRATION_SCHEMA = 'evaluation-input-registration-v1'
 SOURCE_FIELDS = {'dataset_id', 'dataset_version', 'original_file_id', 'original_sha256',
                  'preprocessing_history', 'width', 'height'}
@@ -51,6 +52,48 @@ def lexical_path(root, relative):
     return str(base / path_type(relative))
 
 
+def normalize_roots(document):
+    """Unwrap only the explicit acquisition version; never inspect root files."""
+    require(isinstance(document, dict), 'roots must be root_id to absolute path object')
+    if 'schema_version' in document:
+        keys(document, {'schema_version', 'roots'}, 'local roots')
+        require(document['schema_version'] == LOCAL_ROOTS_SCHEMA, 'unsupported local roots schema')
+        document = document.get('roots')
+        require(isinstance(document, dict), 'local roots.roots must be an object')
+    result = deepcopy(document)
+    for rid, value in result.items():
+        require(text(rid), 'root_id required')
+        lexical_path(value, 'metadata-only-placeholder')
+    return result
+
+
+def identity_check(entry, source, aid, sid):
+    """Compare declared metadata only, preserving missing values as unverified."""
+    checks = {}
+    for field in ('sha256', 'bytes'):
+        bound, declared = entry.get(field), source.get(field)
+        for value in (bound, declared):
+            if value is None:
+                continue
+            if field == 'sha256':
+                require(isinstance(value, str) and len(value) == 64 and
+                        all(c in '0123456789abcdefABCDEF' for c in value),
+                        aid + '/' + sid + ': invalid sha256')
+            else:
+                require(type(value) is int and value >= 0, aid + '/' + sid + ': invalid bytes')
+        if bound is not None and declared is not None:
+            equal = bound.lower() == declared.lower() if field == 'sha256' else bound == declared
+            require(equal, aid + '/' + sid + ': binding ' + field + ' mismatch')
+            status = 'metadata_match'
+        else:
+            status = 'unverified'
+        checks[field] = {'status': status, 'binding_value': bound, 'manifest_value': declared,
+                         'binding_field_present': field in entry, 'manifest_field_present': field in source,
+                         'missing': [origin for origin, value in [('binding', bound), ('manifest', declared)] if value is None]}
+    return {'asset_id': aid, 'source_id': sid, 'checks': checks,
+            'file_identity': 'not_verified_no_photo_access'}
+
+
 def add_missing(target, additions, allowed, name):
     keys(additions, allowed, name)
     for key, value in additions.items():
@@ -65,8 +108,10 @@ def prepare(samples, legacy, *, roots=None, registration=None):
     filenames: entries is a list of asset_id/source_id/root_id/relative_path.
     Unknown legacy/registration fields fail rather than silently losing data.
     """
-    keys(legacy, {'schema_version', 'manifest_sha256', 'roots', 'entries'}, 'legacy bindings')
+    keys(legacy, {'schema_version', 'manifest_sha256', 'roots', 'entries', 'note'}, 'legacy bindings')
     require(legacy.get('schema_version') == LEGACY_SCHEMA, 'unsupported legacy bindings schema')
+    if 'note' in legacy:
+        require(isinstance(legacy['note'], str), 'legacy note must be a string')
     if 'manifest_sha256' in legacy:
         require(legacy['manifest_sha256'] == oe.canonical_hash(samples), 'legacy manifest_sha256 mismatch')
     require(isinstance(samples, dict) and samples.get('schema_version') == oe.SCHEMA and
@@ -98,22 +143,24 @@ def prepare(samples, legacy, *, roots=None, registration=None):
         for sid, value in additions.items():
             add_missing(sources[sid], value, SOURCE_FIELDS, aid + '/' + sid)
         keys(roles.get(aid, {}), ROLES, aid + ': member roles')
-    local_roots = deepcopy(legacy.get('roots', {}) if roots is None else roots)
-    require(isinstance(local_roots, dict), 'roots must be root_id to absolute path object')
-    for rid, value in local_roots.items():
-        require(text(rid), 'root_id required')
-        lexical_path(value, 'metadata-only-placeholder')
+    roots_document = legacy.get('roots', {}) if roots is None else roots
+    local_roots = normalize_roots(roots_document)
     entries = legacy.get('entries')
     require(isinstance(entries, list), 'legacy entries must be an array')
-    mapped, seen = {}, set()
+    mapped, seen, identity_checks = {}, set(), []
     for entry in entries:
-        keys(entry, {'asset_id', 'source_id', 'root_id', 'relative_path'}, 'legacy entry')
+        keys(entry, {'asset_id', 'source_id', 'root_id', 'root', 'relative_path', 'sha256', 'bytes'}, 'legacy entry')
+        if 'root_id' in entry and 'root' in entry:
+            require(entry['root_id'] == entry['root'], 'entry root and root_id conflict')
         aid, sid, rid = (entry.get(k) for k in ('asset_id', 'source_id', 'root_id'))
+        rid = entry.get('root_id', entry.get('root'))
         require(text(aid) and aid in rows, 'entry asset_id is not listed')
         require(text(sid) and sid in {s['source_id'] for s in rows[aid]['sources']}, 'entry source_id is not listed')
         require(text(rid) and rid in local_roots, 'entry root_id is not registered')
         require((aid, sid) not in seen, 'duplicate source binding')
         seen.add((aid, sid))
+        source = next(s for s in rows[aid]['sources'] if s['source_id'] == sid)
+        identity_checks.append(identity_check(entry, source, aid, sid))
         mapped.setdefault(aid, {})[sid] = lexical_path(local_roots[rid], entry.get('relative_path'))
     # Reject duplicate lexical paths without touching the filesystem. Native
     # preflight will additionally check symlink/real-path aliasing on that host.
@@ -197,14 +244,24 @@ def prepare(samples, legacy, *, roots=None, registration=None):
               'sample_count': len(rows), 'bound_sample_count': len(bindings), 'rows': reports,
               'global_problems': global_gaps, 'image_files_read': 0, 'measurement_performed': False,
               'authorization_granted': False, 'preflight': 'not_run', 'native_path_validation': 'not_run',
+              'acquisition_provenance': {'bindings': deepcopy(legacy), 'roots_document': deepcopy(roots_document)},
+              'identity_checks': identity_checks,
+              'manifest_binding_check': 'metadata_match' if 'manifest_sha256' in legacy else 'unverified_missing_binding_hash',
               'note': 'Metadata conversion only. No photos read, labels made, permissions granted, or readiness certified.'}
     return result, paths, report
 
 
 def run(samples_path, bindings_path, output, *, roots_path=None, registration_path=None):
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, 'duplicate JSON field: ' + key)
+            result[key] = value
+        return result
+
     def read(path):
         with Path(path).open(encoding='utf-8') as stream:
-            return json.load(stream)
+            return json.load(stream, object_pairs_hook=unique_object)
     samples, legacy = read(samples_path), read(bindings_path)
     roots = read(roots_path) if roots_path else None
     registration = read(registration_path) if registration_path else None
@@ -212,7 +269,7 @@ def run(samples_path, bindings_path, output, *, roots_path=None, registration_pa
     output = oe.outside_repository(Path(output))
     # Exclusive new directory creation protects all prior inputs and outputs.
     require(not output.exists(), 'output already exists')
-    actual_roots = roots if roots is not None else legacy.get('roots', {})
+    actual_roots = normalize_roots(roots if roots is not None else legacy.get('roots', {}))
     for root in actual_roots.values():
         if PureWindowsPath(root).is_absolute():
             require(not PureWindowsPath(str(output)).is_relative_to(PureWindowsPath(root)), 'output overlaps photo root')
