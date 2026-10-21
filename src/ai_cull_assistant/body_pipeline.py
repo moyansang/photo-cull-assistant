@@ -16,6 +16,7 @@ def apply_body_check(asset, screened, settings, cache_dir):
         return screened
     from .subject import detail_features, detail_features_list
     from .shared_decode import full_image
+    from .measurement_receipts import stage, cache_hit
     from .body_focus import assess_body_focus, VERSION
     from .ai_project import atomic_json
     explicit = 'selected_faces' in settings.photos.get(settings.key(asset), {})
@@ -40,10 +41,14 @@ def apply_body_check(asset, screened, settings, cache_dir):
                 if asset_source_signature(asset)!=source_signatures:body=None
             except (OSError,ValueError):pass
         if not isinstance(body,dict) or body.get('version')!=VERSION or body.get('state') not in {'clear','uncertain','severe_blur'}:
-            with full_image(asset) as image:body=assess_body_focus(image,tuple(subject.face))
+            with full_image(asset) as image:
+                with stage(asset, "body_focus", image, options={}, regions=[tuple(subject.face)]):
+                    body=assess_body_focus(image,tuple(subject.face))
             if (target and 'body_models_unavailable' not in body.get('reasons',[])
                     and asset_source_signature(asset)==source_signatures):
                 atomic_json(target,body)
+        else:
+            cache_hit(asset, "body_focus")
         bodies.append(dict(body,participant=index))
     if len(bodies)==1:
         body={key:value for key,value in bodies[0].items() if key!='participant'}

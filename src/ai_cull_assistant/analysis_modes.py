@@ -275,11 +275,13 @@ def _assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=
     mode = normalize_mode(mode)
     settings = crop_settings or CropSettings()
     from .shared_decode import full_image
+    from .measurement_receipts import stage, cache_hit
     if mode == 'landscape':
         asset.person_review_pending = False
         try:
             with full_image(asset) as image:
-                evidence = landscape_evidence(image)
+                with stage(asset, "landscape", image, options={}):
+                    evidence = landscape_evidence(image)
                 decode = image.info.get('decode_evidence')
                 if decode:
                     evidence['decode'] = dict(decode)
@@ -303,6 +305,7 @@ def _assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=
     if face.reason == 'person_selection_pending':
         prior = getattr(asset, 'clarity_evidence', None) or {}
         if prior.get('selection_pending') and prior.get('body_candidates'):
+            cache_hit(asset, 'pending_body_candidates')
             bodies = [item for item in prior.get('subjects', []) if item.get('evidence_kind') == 'body']
             result = _portrait_result(face, bodies=bodies, include_face=False)
             result.rejected = False
@@ -320,12 +323,14 @@ def _assess_asset_mode(asset, *, mode='portrait', crop_settings=None, cache_dir=
             try:
                 body_decode = dict(evidence_regions=[candidate['box'] for candidate in candidates], min_region_pixels=96) if asset.raw_path else {}
                 with full_image(asset, **body_decode) as image:
-                    if 'selected_bodies' in entry:
-                        bodies = [assess_body_region(image, tuple(candidate['box'])) for candidate in candidates]
-                    else:
-                        bodies = detect_body_candidates(image)
-                        if not bodies:
-                            bodies = [dict(candidate,state='uncertain',reasons=['body_pose_unreliable_at_analysis_resolution']) for candidate in candidates]
+                    with stage(asset, "body_regions", image, options=body_decode,
+                               regions=[candidate["box"] for candidate in candidates]):
+                        if 'selected_bodies' in entry:
+                            bodies = [assess_body_region(image, tuple(candidate['box'])) for candidate in candidates]
+                        else:
+                            bodies = detect_body_candidates(image)
+                            if not bodies:
+                                bodies = [dict(candidate,state='uncertain',reasons=['body_pose_unreliable_at_analysis_resolution']) for candidate in candidates]
             except (OSError, ValueError, cv2.error):
                 bodies = [dict(candidate,state='uncertain',reasons=['body_source_unreadable']) for candidate in candidates]
     if reliable_face and body_check and 'selected_bodies' not in entry:

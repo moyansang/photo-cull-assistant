@@ -17,6 +17,7 @@ from .subject import detail_features, detail_features_list
 from .scan_timing import measure, timed
 from .scan_diagnostics import operation
 from .shared_decode import full_image
+from .measurement_receipts import stage, cache_hit
 
 VERSION = "native-face-v6-effective-region"
 # Derived local cache format only; do not invalidate persisted paid AI identities.
@@ -164,6 +165,7 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
             try:
                 cached_result = ScreeningResult(**json.loads(cache.read_text('utf-8')))
                 if asset_source_signature(asset) == source_signatures:
+                    cache_hit(asset, "face")
                     return cached_result
             except (OSError, ValueError, TypeError):
                 pass
@@ -188,7 +190,8 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
                 pw, ph = ImageOps.exif_transpose(preview).size
             if abs((width / height) / (pw / ph) - 1) > .05:
                 return ScreeningResult(False, "source_preview_geometry_mismatch", True, analysis_version=VERSION)
-            participant_results = _measure_participants(image, participant_inputs)
+            with stage(asset, "face", image, options=decode_options, regions=participant_inputs):
+                participant_results = _measure_participants(image, participant_inputs)
         insufficient_reasons = {'face_too_small_for_focus', 'insufficient_native_eye_pixels',
                                 'insufficient_local_contrast', 'high_frequency_noise_or_artifacts'}
         needs_more_detail = any(insufficient_reasons.intersection(item.get('reasons', []))
@@ -203,7 +206,9 @@ def assess_asset_focus(asset, *, crop_settings=None, cache_dir=None):
                 decode_evidence = dict(image.info.get('decode_evidence') or {})
                 if abs((width / height) / (pw / ph) - 1) > .05:
                     return ScreeningResult(False, 'source_preview_geometry_mismatch', True, analysis_version=VERSION)
-                participant_results = _measure_participants(image, participant_inputs)
+                with stage(asset, "face_raw_upgrade", image,
+                           options=dict(decode_options, insufficient_evidence=True), regions=participant_inputs):
+                    participant_results = _measure_participants(image, participant_inputs)
         for subject, item in zip(faces, participant_results):
             if getattr(subject, 'head_source', None) == 'manual_ambiguous':
                 item['state'] = 'uncertain'

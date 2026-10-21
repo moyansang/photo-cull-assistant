@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
@@ -133,38 +134,42 @@ def screen_assets(
     cache_dir=None,
     body_check=False,
     analysis_mode=None,
+    evaluation_recorder=None,
 ) -> dict[str, ScreeningResult]:
     results: dict[str, ScreeningResult] = {}
     for asset in assets:
         from .shared_decode import shared_decode
-        with shared_decode(asset):
-            if asset.preview_path is None:
-                result = ScreeningResult(False, "preview_unavailable", False)
-            elif analysis_mode is not None and face_provider is None:
-                from .analysis_modes import assess_asset_mode
-                result = assess_asset_mode(asset, mode=analysis_mode, crop_settings=crop_settings,
-                                           cache_dir=cache_dir, body_check=body_check)
-            elif face_provider is not None:
-                result = assess_subject_blur(asset.preview_path, face_boxes=face_provider(asset), config=config)
-            else:
-                from .face_focus import assess_asset_focus
-                result = assess_asset_focus(asset, crop_settings=crop_settings, cache_dir=cache_dir)
-            if body_check and analysis_mode is None:
-                from .body_pipeline import apply_body_check
-                from .crop_settings import CropSettings
-                result = apply_body_check(asset, result, crop_settings or CropSettings(), cache_dir)
-            asset.auto_rejected = result.rejected
-            asset.screening_reason = result.reason
-            asset.focus_score = result.laplacian_variance
-            asset.face_found = result.face_found
-            asset.clarity_version = "clarity-v2"
-            asset.clarity_evidence = result.focus_evidence
-            if analysis_mode is not None:
-                asset.analysis_mode = analysis_mode
-                asset.local_recommendation = (result.focus_evidence or {}).get('recommendation', 'review')
-            if cache_dir and face_provider is None and analysis_mode != 'landscape':
-                from .focus_image_cache import warm_focus_images
-                warm_focus_images(asset, crop_settings, cache_dir)
+        capture = (evaluation_recorder.measure(asset, crop_settings, analysis_mode, body_check)
+                   if evaluation_recorder is not None else nullcontext())
+        with capture:
+            with shared_decode(asset):
+                if asset.preview_path is None:
+                    result = ScreeningResult(False, "preview_unavailable", False)
+                elif analysis_mode is not None and face_provider is None:
+                    from .analysis_modes import assess_asset_mode
+                    result = assess_asset_mode(asset, mode=analysis_mode, crop_settings=crop_settings,
+                                               cache_dir=cache_dir, body_check=body_check)
+                elif face_provider is not None:
+                    result = assess_subject_blur(asset.preview_path, face_boxes=face_provider(asset), config=config)
+                else:
+                    from .face_focus import assess_asset_focus
+                    result = assess_asset_focus(asset, crop_settings=crop_settings, cache_dir=cache_dir)
+                if body_check and analysis_mode is None:
+                    from .body_pipeline import apply_body_check
+                    from .crop_settings import CropSettings
+                    result = apply_body_check(asset, result, crop_settings or CropSettings(), cache_dir)
+                asset.auto_rejected = result.rejected
+                asset.screening_reason = result.reason
+                asset.focus_score = result.laplacian_variance
+                asset.face_found = result.face_found
+                asset.clarity_version = "clarity-v2"
+                asset.clarity_evidence = result.focus_evidence
+                if analysis_mode is not None:
+                    asset.analysis_mode = analysis_mode
+                    asset.local_recommendation = (result.focus_evidence or {}).get('recommendation', 'review')
+                if cache_dir and face_provider is None and analysis_mode != 'landscape':
+                    from .focus_image_cache import warm_focus_images
+                    warm_focus_images(asset, crop_settings, cache_dir)
         results[asset.stem] = result
     return results
 

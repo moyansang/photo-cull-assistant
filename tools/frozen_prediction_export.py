@@ -24,6 +24,7 @@ except ModuleNotFoundError:
 
 REPO = Path(__file__).resolve().parents[1]
 PROVENANCE_SCHEMA = "frozen-prediction-provenance-v1"
+CAPTURE_SCHEMA = "frozen-prediction-provenance-v2"
 ContractError = oe.ContractError
 VERSION_FIELDS = {
     "analysis_modes": ("analysis_modes", "VERSION"),
@@ -106,13 +107,14 @@ def receipt_records(provenance):
     records = provenance.get("records")
     require(isinstance(records, dict), "receipt: existing frozen records required")
     hashes = {}
-    for name in ("dependency_lock", "configuration", "decode_configuration"):
+    dependency = "dependency_snapshot" if provenance.get("schema_version") == CAPTURE_SCHEMA else "dependency_lock"
+    for name in (dependency, "configuration", "decode_configuration"):
         record = records.get(name)
         require(isinstance(record, dict), f"receipt: missing {name} record")
         content = oe.text_field(record, "content", name)
         supplied = sha(record.get("sha256"), name)
         require(oe.digest(content.encode("utf-8")) == supplied, f"receipt: {name} record hash mismatch")
-        hashes[name + "_sha256"] = supplied
+        hashes[("dependency_lock" if name == "dependency_snapshot" else name) + "_sha256"] = supplied
     return hashes
 
 
@@ -263,7 +265,217 @@ def check_portrait(asset, evidence, inputs, versions):
     return policy["recommendation"]
 
 
-def map_row(mapping, sample, asset, session, versions, recorded_at):
+def check_capture(mapping, sample, asset, versions, recorded_at):
+    """Validate only new, complete capture records; never retrofit old evidence."""
+    capture = mapping.get("capture")
+    require(isinstance(capture, dict) and capture.get("status") == "complete"
+            and capture.get("kind") == "new_measurement", "measurement capture incomplete, cached or unavailable")
+    start = timestamp(capture.get("measured_at"), "capture start")
+    finish = timestamp(capture.get("finished_at"), "capture finish")
+    require(start <= finish <= recorded_at and mapping.get("measured_at") == capture["measured_at"],
+            "capture measurement/freeze times disagree")
+    dependency = capture.get("dependency_snapshot")
+    require(isinstance(dependency, dict) and dependency.get("kind") == "actual_dependency_snapshot"
+            and dependency.get("production_dependency_lock") is False
+            and isinstance(dependency.get("installed"), dict) and isinstance(dependency.get("loaded"), dict)
+            and isinstance(dependency.get("python"), str) and isinstance(dependency.get("platform"), str),
+            "actual measurement dependency snapshot missing")
+    before, after = capture.get("state_before"), capture.get("state_after")
+    require(isinstance(before, dict) and before and before == after, "capture input state changed or missing")
+    require(before.get("settings") == capture.get("settings_snapshot")
+            and before.get("confirmation") == capture.get("confirmation_snapshot"),
+            "capture settings/confirmation snapshots disagree")
+    require(before.get("mode") == asset.get("analysis_mode"), "capture analysis mode changed")
+    require(capture.get("evidence_sha256") == oe.canonical_hash(asset.get("clarity_evidence"))
+            and capture.get("focus_scope_sha256") == oe.canonical_hash(asset.get("focus_scope")),
+            "captured evidence/scope differs from frozen result")
+    hashes = before.get("source_hashes")
+    require(isinstance(hashes, dict) and hashes, "capture source hashes missing")
+    paths = {asset.get(k) for k in ("primary_path", "jpg_path", "raw_path") if asset.get(k)}
+    require(set(hashes) == paths, "capture source member set mismatch")
+    for path, value in hashes.items():
+        sha(value, "capture member")
+    members = mapping.get("source_members")
+    require(isinstance(members, dict) and set(members) == {s["source_id"] for s in sample["sources"]},
+            "capture manifest member mapping incomplete")
+    require(len(set(members.values())) == len(members), "ambiguous source member mapping")
+    sources = {members[s["source_id"]]: s for s in sample["sources"]}
+    require(set(sources) == paths, "sample source members differ from captured exposure")
+    require(all(hashes[p] == source["sha256"] for p, source in sources.items()), "captured source content hash mismatch")
+    require(members.get(mapping["evaluated_source_id"]) == mapping["source_member"], "capture selected source member mismatch")
+    stages = capture.get("stages")
+    require(isinstance(stages, list) and stages, "no actual measurement stage")
+    for stage in stages:
+        require(isinstance(stage, dict) and stage.get("name") in ("face", "body", "landscape")
+                and stage.get("status") == "complete", "incomplete or unknown measurement stage")
+        require(start <= timestamp(stage.get("measured_at"), "stage start")
+                <= timestamp(stage.get("finished_at"), "stage finish") <= finish, "stage times outside measurement")
+        require(stage.get("settings_before") == stage.get("settings_after") == capture.get("settings_snapshot")
+                and stage.get("confirmation_before") == stage.get("confirmation_after") == capture.get("confirmation_snapshot"),
+                "stage effective settings/confirmation changed")
+        path = stage.get("source_member")
+        require(path in hashes and stage.get("input_sha256") == hashes[path], "stage source content binding mismatch")
+        decode = stage.get("decode")
+        require(isinstance(decode, dict) and decode.get("version") == versions["decode"]
+                and decode.get("source_path") == path and decode.get("source_kind") == stage.get("source_kind"),
+                "independent stage decoder binding mismatch")
+        require(stage.get("coordinate_space") == "normalized_display", "unsupported stage coordinate space")
+        size = stage.get("image_size")
+        require(isinstance(size, list) and len(size) == 2 and all(type(n) is int and n > 0 for n in size),
+                "stage native image size missing")
+        require(isinstance(stage.get("options"), dict), "stage decoder options missing")
+        configuration = stage.get("decoder_configuration")
+        require(isinstance(configuration, dict) and configuration.get("kind") == "actual_decoder_call"
+                and configuration.get("status") not in ("unverifiable", "unverifiable_cached_decode"), "actual decoder configuration missing")
+        kind = stage.get("source_kind")
+        require(configuration.get("source_kind") == ("standard_image" if kind == "paired_jpeg" else kind)
+                and isinstance(configuration.get("backend"), str) and bool(configuration["backend"])
+                and isinstance(configuration.get("backend_version"), str), "decoder implementation/source configuration missing")
+        if kind == "raw_full_decode":
+            post = configuration.get("postprocess")
+            require(isinstance(post, dict) and {"use_camera_wb", "half_size", "no_auto_bright", "output_bps"} <= set(post)
+                    and all(type(post[k]) is bool for k in ("use_camera_wb", "half_size", "no_auto_bright"))
+                    and type(post["output_bps"]) is int and isinstance(configuration.get("orientation"), str)
+                    and type(configuration.get("unpack")) is bool, "RAW postprocess configuration incomplete")
+        fmt = sources[path]["format"].upper().lstrip(".")
+        require(fmt in {"RAW", "RW2", "ARW", "CR2", "CR3", "NEF", "ORF", "RAF", "DNG",
+                        "JPEG", "JPG", "IMAGE/JPEG", "PNG", "WEBP", "TIF", "TIFF", "BMP", "HEIC", "HEIF", "AVIF"},
+                "unsupported stage source format")
+        raw = fmt in {"RAW", "RW2", "ARW", "CR2", "CR3", "NEF", "ORF", "RAF", "DNG"}
+        require(kind in ("paired_jpeg", "standard_image", "raw_full_decode", "raw_embedded_jpeg", "raw_embedded_bitmap")
+                and raw == kind.startswith("raw_"), "stage format/decoder mismatch")
+        if kind == "paired_jpeg":
+            require(asset.get("raw_path") and path == asset.get("jpg_path") and fmt in {"JPEG", "JPG", "IMAGE/JPEG"},
+                    "stage paired JPEG source mismatch")
+        elif raw:
+            require(path == asset.get("raw_path"), "stage RAW member mismatch")
+        else:
+            require(path != asset.get("raw_path"), "stage standard member mismatch")
+    if asset.get("analysis_mode") == "landscape":
+        require(all(s["name"] == "landscape" for s in stages), "landscape stage identity mismatch")
+    return capture
+
+
+def _valid_regions(regions):
+    require(isinstance(regions, list) and bool(regions), "captured selected regions missing")
+    ids = set()
+    for region in regions:
+        require(isinstance(region, dict) and region.get("kind") in ("face", "body"), "invalid selected region")
+        identity = region.get("id")
+        require(isinstance(identity, str) and identity.startswith(region["kind"] + ":") and identity not in ids,
+                "invalid/duplicate selected region identity")
+        ids.add(identity)
+        box = region.get("box")
+        require(isinstance(box, list) and len(box) == 4 and all(type(v) in (int, float) and math.isfinite(v) for v in box),
+                "invalid captured normalized region")
+        x, y, w, h = box
+        require(x >= 0 and y >= 0 and w > 0 and h > 0 and x + w <= 1 + 1e-9 and y + h <= 1 + 1e-9,
+                "captured region outside source")
+    return ids
+
+
+def check_portrait_v2(asset, evidence, inputs, versions, capture):
+    """Use independently recorded stages and complete confirmation, no scoring."""
+    policy, scope = evidence.get("primary_quality"), asset.get("focus_scope")
+    require(isinstance(policy, dict) and isinstance(scope, dict), "portrait policy/scope missing")
+    # Automatic face-only retains every old validation. Merely having a new
+    # envelope is not permission to relax its detector provenance checks.
+    if policy.get("selection_origin") == "automatic":
+        require(inputs.get("enabled_parts") == ["face"], "automatic body scope not yet supported")
+        require(all(s["name"] == "face" for s in capture["stages"]), "automatic face-only stage identity mismatch")
+        require(capture.get("confirmation_snapshot") is None, "automatic result carries confirmation snapshot")
+        proof = evidence.get("automatic_subject", {})
+        for stage in capture["stages"]:
+            regions = stage.get("regions")
+            require(isinstance(regions, list) and len(regions) == 1 and isinstance(regions[0], list)
+                    and len(regions[0]) == 2 and regions[0][0] == proof.get("box"),
+                    "automatic stage region differs from saved detector")
+        return check_portrait(asset, evidence, inputs, versions)
+    require(policy.get("selection_origin") == scope.get("selection_origin") == "human", "unsupported selection origin")
+    confirmation = capture.get("confirmation_snapshot")
+    require(isinstance(confirmation, dict) and confirmation.get("human_confirmed") is True
+            and confirmation.get("version") == versions["primary_quality"], "complete human confirmation missing")
+    digest = sha(confirmation.get("digest"), "confirmation digest")
+    require(oe.canonical_hash({k: v for k, v in confirmation.items() if k != "digest"}) == digest,
+            "confirmation snapshot digest mismatch")
+    require(confirmation.get("source_signature") == inputs.get("source_signature"), "confirmation source mismatch")
+    require(policy.get("confirmation_digest") == policy.get("selection_digest") == scope.get("confirmation_digest")
+            == scope.get("selection_digest") == evidence.get("measurement_confirmation_digest") == digest,
+            "human confirmation/policy/scope stamp mismatch")
+    require(evidence.get("version") == versions["analysis_modes"] and evidence.get("measurement_inputs") == inputs,
+            "portrait measurement input/version mismatch")
+    parts = inputs.get("enabled_parts")
+    require(parts in (["face"], ["face", "body"]) and evidence.get("enabled_parts") == policy.get("enabled_parts")
+            == scope.get("enabled_parts") == parts, "portrait enabled parts mismatch")
+    require(policy.get("version") == versions["primary_quality"] and scope.get("version") == versions["focus_protocol"]
+            and scope.get("mode") == "portrait", "portrait scope/policy version mismatch")
+    require(scope.get("digest") == oe.canonical_hash({k: v for k, v in scope.items() if k != "digest"}),
+            "portrait scope digest mismatch")
+    source_digest = oe.canonical_hash(inputs["source_signature"])
+    require(scope.get("source_digest") == source_digest and scope.get("photo_identity") == "photo:" + source_digest,
+            "portrait scope source mismatch")
+    regions = confirmation.get("regions")
+    ids = _valid_regions(regions)
+    settings = capture.get("settings_snapshot")
+    require(isinstance(settings, dict) and isinstance(settings.get("global"), dict)
+            and isinstance(settings.get("photo"), dict) and isinstance(settings.get("versions"), dict),
+            "effective settings snapshot incomplete")
+    require(settings["photo"].get("primary_subject_confirmation") == confirmation, "saved human confirmation snapshot mismatch")
+    photo = {k: v for k, v in settings["photo"].items() if k != "primary_subject_confirmation"}
+    expected = oe.canonical_hash({"global": settings["global"], "photo": photo, "versions": settings["versions"]})
+    require(confirmation.get("parameters_digest") == expected, "human confirmation effective parameters mismatch")
+    v = settings["versions"]
+    require(set(v) == {"roi", "detection", "face", "body"} and v["face"] == versions["face"],
+            "effective settings version snapshot mismatch")
+    measured = {"global": settings["global"], "photo": photo, "confirmation": confirmation,
+                "versions": [v[k] for k in ("roi", "detection", "face", "body")], "enabled_parts": parts}
+    if "selected_bodies" in photo:
+        measured["manual_body_scope"] = "explicit-body-scope-v1"
+    require(inputs.get("parameters_digest") == oe.canonical_hash(measured), "measured effective parameters mismatch")
+    has_face = any(r["kind"] == "face" for r in regions)
+    expected_scope_settings = oe.canonical_hash([expected, versions["manual_face_scope"]]) if has_face else expected
+    require(scope.get("settings_digest") == expected_scope_settings, "human scope settings mismatch")
+    if has_face:
+        require(inputs.get("manual_face_scope_contract") == scope.get("manual_face_scope_contract")
+                == versions["manual_face_scope"], "manual face uniqueness contract missing")
+    boxes = {kind: sorted([r["box"] for r in regions if r["kind"] == kind]) for kind in ("face", "body")}
+    for stage in capture["stages"]:
+        actual = stage.get("regions")
+        require(isinstance(actual, list), "stage regions missing")
+        if stage["name"] == "face":
+            require(all(isinstance(r, list) and len(r) == 2 for r in actual), "face stage participant geometry missing")
+            actual_boxes = [r[0] for r in actual]
+            expected_boxes = boxes["face"]
+        else:
+            actual_boxes = actual
+            expected_boxes = boxes["face"] if stage.get("operation") == "body_focus" else boxes["body"]
+        require(actual_boxes and sorted(actual_boxes) == expected_boxes, "stage regions differ from confirmed manual range")
+    needed = {r["kind"] for r in regions}
+    if "body" in parts:
+        needed.add("body")
+    require(needed <= {s["name"] for s in capture["stages"]}, "independent required face/body stage missing")
+    require(all(s["name"] in needed for s in capture["stages"]), "measurement stages disagree with requested portrait scope")
+    subjects = scope.get("subjects")
+    require(isinstance(subjects, list) and subjects and all(isinstance(s, dict) and s.get("id") in ids
+            and s.get("kind") in ("face", "body") for s in subjects), "human scope subject mismatch")
+    require(len({s["id"] for s in subjects}) == len(subjects), "duplicate human scope subjects")
+    # A merged face/body scope is only accepted when the saved policy explicitly
+    # accounts for every selected region. Do not recompute the association.
+    people = policy.get("subjects")
+    require(isinstance(people, list) and people, "saved human policy subjects missing")
+    represented = {rid for person in people if isinstance(person, dict)
+                   for rid in person.get("region_ids", [person.get("id")])}
+    require(represented == ids and {p.get("id") for p in people} == {s["id"] for s in subjects},
+            "saved policy does not account for complete manual range")
+    recommendation = policy.get("recommendation")
+    require(recommendation == evidence.get("recommendation") and recommendation in ("keep", "review", "reject"),
+            "saved manual recommendation mismatch")
+    state = {"keep": "clear", "review": "uncertain", "reject": "severe_blur"}[recommendation]
+    require(policy.get("state") == evidence.get("state") == state, "saved manual state mismatch")
+    return recommendation
+
+
+def map_row(mapping, sample, asset, session, versions, recorded_at, *, capture_schema=False):
     result = {"asset_id": sample["asset_id"], "sample_version": sample["sample_version"],
               "evaluated_source_id": sample["evaluation_source_id"], "input_sha256": mapping["input_sha256"],
               "status": "failed", "recommendation": None, "reasons": []}
@@ -295,7 +507,16 @@ def map_row(mapping, sample, asset, session, versions, recorded_at):
         require(not evidence.get("selection_pending"), "saved subject selection pending")
         mode = asset.get("analysis_mode")
         require(mode in ("portrait", "landscape") and evidence.get("mode") == mode, "unsupported/ambiguous analysis mode")
+        capture = check_capture(mapping, sample, asset, versions, recorded_at) if capture_schema else None
         decode = evidence.get("decode")
+        if capture is not None:
+            stage = next((s for s in capture["stages"] if s["source_member"] == mapping.get("source_member")
+                          and s["source_kind"] == mapping.get("source_kind")), None)
+            require(stage is not None, "evaluated source has no actual measurement stage")
+            # Body-only outputs may not carry the face decoder field. The v2
+            # independent stage is the authority, never a guessed face source.
+            if decode is None:
+                decode = stage["decode"]
         require(isinstance(decode, dict) and decode.get("version") == versions["decode"], "missing/unsupported measurement decode provenance")
         member = oe.text_field(mapping, "source_member", "row")
         require(member in [asset.get(role) for role in ("primary_path", "jpg_path", "raw_path")], "actual source member absent from frozen asset")
@@ -316,7 +537,8 @@ def map_row(mapping, sample, asset, session, versions, recorded_at):
         else:
             require(member != asset.get("raw_path"), "standard decode ambiguously identifies RAW")
         if mode == "portrait":
-            recommendation = check_portrait(asset, evidence, inputs, versions)
+            recommendation = (check_portrait_v2(asset, evidence, inputs, versions, capture)
+                              if capture is not None else check_portrait(asset, evidence, inputs, versions))
         else:
             require(evidence.get("version") == versions["landscape"], "unsupported landscape evidence version")
             recommendation = evidence.get("recommendation")
@@ -328,6 +550,9 @@ def map_row(mapping, sample, asset, session, versions, recorded_at):
             require(asset["local_recommendation"] == recommendation, "saved local recommendation field disagreement")
         require(recommendation == "review" or evidence.get("reliability") == "adequate", "automatic saved decision lacks adequate reliability")
         require(decode.get("evidence_sufficient") is not False or recommendation == "review", "insufficient decoded evidence carries automatic decision")
+        if capture is not None and recommendation != "review":
+            require(all(s["decode"].get("evidence_sufficient") is not False for s in capture["stages"]),
+                    "insufficient independent stage carries automatic decision")
         result.update(status="ok", recommendation=recommendation)
     except ContractError as exc:
         result["failure_reason"] = str(exc)
@@ -336,7 +561,7 @@ def map_row(mapping, sample, asset, session, versions, recorded_at):
     return result, diagnostic
 
 
-def build_export(session, samples, provenance, *, session_sha256, repo=REPO):
+def build_export(session, samples, provenance, *, session_sha256, repo=REPO, completion_proof=None):
     """Produce evaluator documents from a supplied immutable receipt.
 
     Document/source bindings are fatal on mismatch; unsupported saved evidence
@@ -345,14 +570,47 @@ def build_export(session, samples, provenance, *, session_sha256, repo=REPO):
     require(isinstance(session, dict) and type(session.get("version")) is int and session["version"] == 1,
             "unsupported scan-session version")
     require(isinstance(session.get("assets"), list) and all(isinstance(a, dict) for a in session["assets"]), "session assets array required")
-    require(isinstance(provenance, dict) and provenance.get("schema_version") == PROVENANCE_SCHEMA
+    require(isinstance(provenance, dict) and provenance.get("schema_version") in (PROVENANCE_SCHEMA, CAPTURE_SCHEMA)
             and provenance.get("kind") == "measurement_time_receipt", "external measurement-time provenance receipt required")
     require(type(provenance.get("synthetic")) is bool, "receipt synthetic flag required")
     require(not provenance["synthetic"] or samples.get("evaluation_kind") == "synthetic", "synthetic receipt cannot support real evaluation")
     require(provenance.get("session_sha256") == sha(session_sha256, "session bytes"), "receipt frozen session byte hash mismatch")
     require(provenance.get("manifest_sha256") == oe.canonical_hash(samples), "receipt sample manifest binding mismatch")
     recorded_at = timestamp(provenance.get("recorded_at"), "receipt recorded_at")
+    capture_schema = provenance.get("schema_version") == CAPTURE_SCHEMA
+    if capture_schema:
+        require(isinstance(completion_proof, dict)
+                and completion_proof.get("session_sha256") == session_sha256
+                and completion_proof.get("samples_sha256") == oe.canonical_hash(samples)
+                and completion_proof.get("provenance_sha256") == oe.canonical_hash(provenance),
+                "v2 requires independently loaded completed-set proof")
+        identity = provenance.get("code_identity")
+        require(isinstance(identity, dict) and identity.get("verified") is True
+                and identity.get("dirty") is False
+                and identity.get("source_git") == provenance.get("source_git"),
+                "v2 code/build identity is not verifiable and clean")
+        complete = provenance.get("completion")
+        require(isinstance(complete, dict) and complete.get("status") == "complete"
+                and complete.get("session_sha256") == provenance["session_sha256"]
+                and complete.get("manifest_sha256") == provenance["manifest_sha256"],
+                "v2 frozen publication incomplete or bindings mismatch")
+        require(provenance.get("recording_status") in ("complete", "partial"), "invalid v2 recording status")
     hashes = receipt_records(provenance)
+    if capture_schema:
+        captures = [r.get("capture", {}) for r in provenance.get("rows", [])]
+        expected_records = {
+            "configuration": [c.get("settings_snapshot") for c in captures],
+            "decode_configuration": [{"stages": c.get("stages"),
+                "contract": "image_decode.source-first-v1:actual-decode-evidence"} for c in captures],
+            "dependency_snapshot": {"kind": "actual_dependency_snapshot", "production_dependency_lock": False,
+                "measurements": [c.get("dependency_snapshot") for c in captures]},
+        }
+        for name, expected in expected_records.items():
+            try:
+                actual = json.loads(provenance["records"][name]["content"])
+            except (ValueError, TypeError) as exc:
+                raise oe.ContractError(f"invalid v2 {name} JSON") from exc
+            require(actual == expected, f"v2 {name} is not bound to captured measurements")
     versions = expected_versions(repo, provenance.get("source_git"))
     catalog = oe.make_catalog(repo, provenance["source_git"])
     envelope = {key: samples.get(key) for key in ("dataset_id", "dataset_version", "guideline_version", "manifest_version")}
@@ -390,18 +648,47 @@ def build_export(session, samples, provenance, *, session_sha256, repo=REPO):
         members.add(member)
         owners = [i for i, row in enumerate(session["assets"]) if member in [row.get(role) for role in ("primary_path", "jpg_path", "raw_path")]]
         require(owners == [index], "ambiguous or unmatched frozen source member")
-        prediction, diagnostic = map_row(mapping, sample, asset, session, versions, recorded_at)
+        prediction, diagnostic = map_row(mapping, sample, asset, session, versions, recorded_at, capture_schema=capture_schema)
         predictions["rows"].append(prediction)
         diagnostics.append(diagnostic)
     report = oe.evaluate(samples, predictions, annotations, catalog)
     cases = report.pop("cases")
-    diagnostics_document = {"schema_version": PROVENANCE_SCHEMA, "kind": "export_diagnostics", "status": "exported",
+    diagnostics_document = {"schema_version": provenance["schema_version"], "kind": "export_diagnostics", "status": "exported",
                             "receipt_authentication": "not independently authenticated", "freshness": "saved frozen-record coherence only",
                             "synthetic": provenance["synthetic"], "rows": diagnostics,
-                            "missing_asset_ids": sorted(set(srows) - mapped), "limitations": LIMITATIONS,
+                            "dependency_record_kind": "actual_runtime_snapshot_not_production_lock" if capture_schema else "supplied_dependency_lock_record",
+                            "missing_asset_ids": sorted(set(srows) - mapped),
+                            "limitations": [line for line in LIMITATIONS if not capture_schema or not line.startswith("Only automatic")]
+                                + (["V2 manual scopes require full captured confirmation and independent stages; automatic body scopes and historical cache reconstruction remain unsupported."] if capture_schema else []),
                             "real_world_accuracy": {"value": None, "status": "尚未测量"}}
     return {"predictions": predictions, "catalog": catalog, "annotations": annotations,
             "diagnostics": diagnostics_document, "summary": report, "cases": cases}
+
+
+def completed_set_documents(directory):
+    """Read only the four fixed local files; never follow receipt-provided paths."""
+    directory = Path(directory).resolve()
+    require(not any(".staging-" in part for part in directory.parts), "staging directories are not completed freezes")
+    names = ("scan-session.json", "samples.json", "measurement-receipt.json")
+    raw_marker = (directory / "complete.json").read_bytes()
+    marker = parse_json(raw_marker)
+    require(marker.get("schema_version") == "measurement-freeze-v1" and marker.get("status") == "complete"
+            and isinstance(marker.get("files"), dict) and set(marker["files"]) == set(names),
+            "invalid completed-set marker")
+    raw = {name: (directory / name).read_bytes() for name in names}
+    require(all(oe.digest(raw[name]) == marker["files"][name] for name in names), "completed-set file hash mismatch")
+    documents = {key: parse_json(raw[name]) for key, name in zip(("session", "samples", "provenance"), names)}
+    proof = {"session_sha256": oe.digest(raw["scan-session.json"]),
+             "samples_sha256": oe.canonical_hash(documents["samples"]),
+             "provenance_sha256": oe.canonical_hash(documents["provenance"])}
+    require((directory / "complete.json").read_bytes() == raw_marker
+            and all((directory / name).read_bytes() == raw[name] for name in names), "completed set changed while reading")
+    return documents, proof
+
+
+def load_completed_set(directory, *, repo=REPO):
+    documents, proof = completed_set_documents(directory)
+    return build_export(**documents, session_sha256=proof["session_sha256"], repo=repo, completion_proof=proof)
 
 
 def main(argv=None):
@@ -419,7 +706,15 @@ def main(argv=None):
         # Parse exactly the bytes hashed; no data-supplied path is followed.
         raw = {name: path.read_bytes() for name, path in paths.items()}
         documents = {name: parse_json(value) for name, value in raw.items()}
-        result = build_export(**documents, session_sha256=oe.digest(raw["session"]))
+        proof = None
+        if documents["provenance"].get("schema_version") == CAPTURE_SCHEMA:
+            directory = paths["provenance"].resolve().parent
+            expected_names = {"session": "scan-session.json", "samples": "samples.json", "provenance": "measurement-receipt.json"}
+            require(all(paths[key].resolve() == directory / name for key, name in expected_names.items()),
+                    "v2 CLI inputs must be one completed frozen set")
+            completed, proof = completed_set_documents(directory)
+            require(completed == documents, "completed set changed before export")
+        result = build_export(**documents, session_sha256=oe.digest(raw["session"]), completion_proof=proof)
         require(all(path.read_bytes() == raw[name] for name, path in paths.items()), "inputs changed during export")
         hashes = {name: oe.digest(value) for name, value in raw.items()}
         result["diagnostics"].update(input_sha256=hashes, generated_at=datetime.now(timezone.utc).isoformat(),

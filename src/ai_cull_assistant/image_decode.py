@@ -290,6 +290,17 @@ def asset_source_signature(asset) -> tuple:
     return tuple(sources)
 
 
+def _observe_decode(path, configuration):
+    # Observation is explicit opt-in; this hook never alters pixels or metadata.
+    from .measurement_receipts import observe_decode, recording_active
+    if recording_active():
+        try:
+            value = configuration()
+        except (OSError, TypeError, ValueError, AttributeError):
+            value = {"kind": "configuration_unverifiable", "status": "unverifiable"}
+        observe_decode(path, value)
+
+
 def _cached_load(path, stage, loader):
     global _cache_bytes
     with _decode_slots:
@@ -309,6 +320,9 @@ def _cached_load(path, stage, loader):
             if key in _cache:
                 _cache.move_to_end(key)
                 note("decode_cache", "hit")
+                _observe_decode(path, lambda: {"kind": "decode_cache_reuse",
+                    "status": "unverifiable_cached_decode",
+                    "source_kind": _cache[key].info.get("decode_evidence", {}).get("source_kind")})
                 return _owned_copy(_cache[key])
         image = loader()
         retained = None
@@ -456,6 +470,10 @@ def load_standard_image(path: Path) -> Image.Image:
                 _check_dimensions(source.size)
                 source.load()  # Detect truncated data before considering JPG usable.
                 image = _normalize_rgb(source, warnings)
+            _observe_decode(path, lambda: {"kind": "actual_decoder_call", "source_kind": "standard_image",
+                "backend": "Pillow", "backend_version": getattr(Image, "__version__", "unknown"),
+                "orientation": "exif_transpose", "normalization": "ICC-to-sRGB-or-warning;white-alpha;RGB8",
+                "warnings": list(warnings)})
             return _mark(image, path, "standard_image", warnings)
         except DecodeError:
             raise
@@ -493,6 +511,14 @@ def _raw_full(raw, path, warnings, backend, unpack=False):
     try:
         _check_dimensions(image.size)
         # LibRaw postprocess already applies orientation; never transpose again.
+        _observe_decode(path, lambda: {"kind": "actual_decoder_call", "source_kind": "raw_full_decode",
+            "backend": getattr(backend, "__name__", type(backend).__name__),
+            "backend_version": str(getattr(backend, "__version__", "unknown")),
+            "libraw_version": list(getattr(backend, "libraw_version", ())),
+            "injected_backend": backend is not rawpy,
+            "postprocess": {key: (value if isinstance(value, (str, int, float, bool, type(None)))
+                else str(value)) for key, value in kwargs.items()},
+            "unpack": unpack, "orientation": "LibRaw-postprocess-only", "warnings": list(warnings)})
         return _mark(image, path, "raw_full_decode", warnings)
     except BaseException:
         image.close()
@@ -535,6 +561,14 @@ def load_raw_image(path: Path, *, full_raw=False, apply_orientation=True, backen
                             normalized = _normalize_rgb(image, warnings, orient=False)
                         finally:
                             image.close()
+                        _observe_decode(path, lambda: {"kind": "actual_decoder_call", "source_kind": kind,
+                            "backend": getattr(backend, "__name__", type(backend).__name__),
+                            "backend_version": str(getattr(backend, "__version__", "unknown")),
+                            "libraw_version": list(getattr(backend, "libraw_version", ())),
+                            "injected_backend": backend is not rawpy,
+                            "extract_thumb": True, "apply_orientation": apply_orientation,
+                            "orientation": "EXIF-else-LibRaw-flip" if apply_orientation else "none",
+                            "normalization": "ICC-to-sRGB-or-warning;white-alpha;RGB8", "warnings": list(warnings)})
                         return _mark(normalized, path, kind, warnings)
                 except DecodeError:
                     raise
