@@ -369,3 +369,15 @@ def test_tool_identity_change_since_import_rejected_before_output(tmp_path, monk
     with pytest.raises(batch.oe.ContractError, match='tool source changed since import'):
         batch.run_batch(*docs, output)
     assert not output.exists()
+
+
+def test_formal_synthetic_fixture_is_native_evidence_sized(tmp_path):
+    import real_sample_fixture
+    directory = real_sample_fixture.generate(tmp_path / 'fixture')
+    samples = read(directory / 'samples.json')
+    paths = read(directory / 'paths.json')
+    config = read(directory / 'config.json')
+    audit = batch.run_batch(samples, paths, config, tmp_path / 'fixture-batch')
+    assert audit['status'] == 'complete'
+    assert len(audit['rows']) == 3
+    assert all(row['status'] == 'success' for row in audit['rows'])

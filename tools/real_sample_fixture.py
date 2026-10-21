@@ -20,8 +20,8 @@ def generate(output):
     for i in range(3):
         path = output / 'inputs' / f'场景 {i}' / '同名 样本.png'
         path.parent.mkdir(parents=True)
-        image = Image.new('RGB', (640, 480))
-        image.putdata([((255-i*30,)*3 if (x//(5+i)+y//5)%2 else (0,0,0)) for y in range(480) for x in range(640)])
+        image = Image.new('RGB', (640, 640))
+        image.putdata([((255-i*30,)*3 if (x//(5+i)+y//5)%2 else (0,0,0)) for y in range(640) for x in range(640)])
         image.save(path); image.close()
         sha = hashlib.sha256(path.read_bytes()).hexdigest()
         aid, sid = f'generated-asset-{i}', f'generated-source-{i}'
@@ -32,7 +32,7 @@ def generate(output):
             'evaluation_source_id': sid, 'person_ids': [], 'session_id': 'fixture-session', 'burst_id': None,
             'exception_tags': ['synthetic_checker'], 'sources': [{'source_id': sid, 'sha256': sha, 'format': 'PNG',
                 'dataset_id': 'generated-checkers', 'dataset_version': '1', 'original_file_id': aid,
-                'original_sha256': sha, 'width': 640, 'height': 480, 'preprocessing_history': []}]})
+                'original_sha256': sha, 'width': 640, 'height': 640, 'preprocessing_history': []}]})
         bindings[aid] = {'primary_path': str(path), 'sources': {sid: str(path)}, 'jpeg_source_id': sid, 'raw_source_id': None}
     samples = {'schema_version': oe.SCHEMA, 'kind': 'samples', 'dataset_id': 'synthetic-batch-fixture', 'dataset_version': '1',
         'guideline_version': 'synthetic-engineering-only-v1', 'manifest_version': '1', 'evaluation_kind': 'synthetic',
