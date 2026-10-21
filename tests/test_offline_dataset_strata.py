@@ -90,3 +90,35 @@ def test_invalid_optional_dataset_registration_rejected(level, value):
     (row if level == "sample" else row["sources"][0])["dataset_id"] = value
     with pytest.raises(oe.ContractError, match="optional dataset_id"):
         run(docs)
+
+
+@pytest.mark.parametrize("level", ["source", "sample"])
+@pytest.mark.parametrize("missing", ["dataset_id", "dataset_version"])
+def test_partial_identity_rejected_not_spliced_across_levels(level, missing):
+    docs = envelopes()
+    row = docs[0]["rows"][0]
+    row.update(dataset_id="sample-B", dataset_version="sample-v2")
+    source = row["sources"][0]
+    if level == "source":
+        source.update(dataset_id="source-A", dataset_version="source-v1")
+    target = source if level == "source" else row
+    target.pop(missing)
+    with pytest.raises(oe.ContractError, match="complete identity pair"):
+        run(docs)
+
+
+@pytest.mark.parametrize("level", [0, 1, 2])
+@pytest.mark.parametrize("missing", ["dataset_id", "dataset_version"])
+def test_pair_resolver_rejects_half_identity_at_each_level(level, missing):
+    records = [{}, {}, {}]
+    records[level] = {"dataset_id": "registered", "dataset_version": "v1"}
+    records[level].pop(missing)
+    with pytest.raises(oe.ContractError, match="complete identity pair"):
+        oe.dataset_identity(*records)
+
+
+@pytest.mark.parametrize("level", [0, 1, 2])
+def test_pair_resolver_falls_back_only_as_complete_pair(level):
+    records = [{"dataset_id": None, "dataset_version": None} for _ in range(3)]
+    records[level] = {"dataset_id": "registered", "dataset_version": "v1"}
+    assert oe.dataset_identity(*records) == ("registered", "v1")

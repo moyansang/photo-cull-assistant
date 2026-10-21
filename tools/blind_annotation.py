@@ -167,8 +167,29 @@ class AnnotationSession:
             raise
 
     def latest(self, asset_id, annotator_id):
-        ratings = [r for r in self.state['ratings'] if r['asset_id'] == asset_id and r['annotator_id'] == annotator_id]
+        ratings = [r for r in self.state['ratings'] if r['asset_id'] == asset_id and r['annotator_id'] == annotator_id and r['status'] != 'withdrawn']
         return deepcopy(ratings[-1]) if ratings else None
+
+    def latest_draft(self, asset_id, annotator_id):
+        ratings = [r for r in self.state['ratings'] if r['asset_id'] == asset_id
+                   and r['annotator_id'] == annotator_id and r['status'] == 'draft']
+        return deepcopy(ratings[-1]) if ratings else None
+
+    def effective_submission(self, asset_id, annotator_id):
+        return next((deepcopy(r) for r in self._submitted(asset_id)
+                     if r['annotator_id'] == annotator_id), None)
+
+    def withdraw(self, asset_id, annotator_id, reason):
+        require(isinstance(annotator_id, str) and annotator_id.strip(), 'annotator ID required')
+        annotator_id = annotator_id.strip()
+        require(isinstance(reason, str) and reason.strip(), 'withdrawal reason required')
+        require(self.effective_submission(asset_id, annotator_id) is not None, 'no effective submission to withdraw')
+        state = deepcopy(self.state)
+        state['revision'] += 1
+        state['ratings'].append({'asset_id': asset_id, 'annotator_id': annotator_id,
+                                 'status': 'withdrawn', 'withdrawal_reason': reason,
+                                 'revision': state['revision'], 'timestamp': _now()})
+        self._write(state)
 
     def _validate_boxes(self, asset_id, opinion):
         width, height = self.viewed[asset_id]['decoded_dimensions']
@@ -213,7 +234,7 @@ class AnnotationSession:
         state = deepcopy(self.state)
         state['revision'] += 1
         record = _copy(opinion)
-        record.update(asset_id=asset_id, annotator_id=annotator_id, reason=reason,
+        record.update(asset_id=asset_id, annotator_id=annotator_id.strip(), adjudication_reason=reason,
                       rating_revisions=sorted(r['revision'] for r in latest), revision=state['revision'], timestamp=_now())
         state['adjudications'].append(record)
         self._write(state)
@@ -221,7 +242,7 @@ class AnnotationSession:
     def _submitted(self, asset_id):
         latest = {}
         for rating in self.state['ratings']:
-            if rating['asset_id'] == asset_id:
+            if rating['asset_id'] == asset_id and rating['status'] in ('submitted', 'withdrawn'):
                 latest[rating['annotator_id']] = rating
         return [r for r in latest.values() if r['status'] == 'submitted']
 
@@ -238,20 +259,63 @@ class AnnotationSession:
                 continue
             _, source = self.source(aid)
             revisions = sorted(r['revision'] for r in ratings)
-            decisions = {oe.canonical_hash({k: r.get(k) for k in ('technical_label', 'culling_label', 'regions')}) for r in ratings}
-            adjudications = [a for a in self.state['adjudications'] if a['asset_id'] == aid and a['rating_revisions'] == revisions]
+            fields = ('technical_label', 'culling_label', 'final_selection', 'evidence_adequacy',
+                      'regions', 'aesthetic_preference')
+            def comparable(rating, field):
+                value = rating.get(field)
+                if field == 'regions':
+                    # Wording is attributed evidence, not a technical vote.
+                    value = [{k: v for k, v in region.items() if k != 'reason'}
+                             for region in value or []]
+                return value
+            conflicts = [field for field in fields if len({oe.canonical_hash(comparable(r, field))
+                                                          for r in ratings}) > 1]
+            last_effective_change = max(r['revision'] for r in self.state['ratings']
+                                        if r['asset_id'] == aid and r['status'] in ('submitted', 'withdrawn'))
+            adjudications = [a for a in self.state['adjudications'] if a['asset_id'] == aid
+                             and a['rating_revisions'] == revisions and a['revision'] > last_effective_change]
             adjudication = adjudications[-1] if adjudications else None
-            selected = adjudication or ratings[0]
-            row = {k: deepcopy(selected.get(k)) for k in ('technical_label', 'culling_label', 'final_selection',
-                    'evidence_adequacy', 'regions', 'reason', 'exclusion_reason', 'aesthetic_preference')}
-            unresolved = len(decisions) > 1 and adjudication is None
-            if unresolved:
-                row.update(technical_label=None, culling_label=None, final_selection=None,
-                           evidence_adequacy='unknown', regions=[])
+            unresolved = bool(conflicts) and adjudication is None
+            legacy_adjudication = adjudication is not None and 'adjudication_reason' not in adjudication
+            row = {}
+            for field in (*fields, 'reason', 'exclusion_reason'):
+                values = [r.get(field) for r in ratings]
+                common = all(value == values[0] for value in values)
+                row[field] = deepcopy(adjudication.get(field) if adjudication else values[0] if common else None)
+            if adjudication is None:
+                if 'regions' not in conflicts:
+                    row['regions'] = deepcopy(ratings[0]['regions'])
+                    for index, region in enumerate(row['regions']):
+                        reasons = [r['regions'][index].get('reason') for r in ratings]
+                        region['reason'] = reasons[0] if all(x == reasons[0] for x in reasons) else None
+                else:
+                    row['regions'] = []
+                if 'evidence_adequacy' in conflicts:
+                    row['evidence_adequacy'] = 'unknown'
+                if unresolved:
+                    row['reason'] = None
+                # Preserve the evaluator's X reason contract without inventing consensus.
+                if row['culling_label'] == 'X' and row['exclusion_reason'] is None:
+                    row['exclusion_reason'] = json.dumps([
+                        {'annotator_id': r['annotator_id'], 'reason': r.get('exclusion_reason')}
+                        for r in ratings], ensure_ascii=False)
+            if legacy_adjudication:
+                # Older journals overwrote technical reason; do not fabricate recovery.
+                row['reason'] = None
             row.update(asset_id=aid, sample_version=sample['sample_version'], evaluated_source_id=source['source_id'],
-                       input_sha256=source['sha256'], label_source='human', annotator_id=selected['annotator_id'],
-                       original_ratings=deepcopy(ratings), disagreement=len(decisions) > 1,
-                       unresolved_disagreement=unresolved, adjudication_reason=adjudication.get('reason') if adjudication else None,
+                       input_sha256=source['sha256'], label_source='human',
+                       annotator_id=adjudication['annotator_id'] if adjudication else
+                           ratings[0]['annotator_id'] if len(ratings) == 1 else f"aggregate:{self.state['session_id']}",
+                       original_ratings=deepcopy(ratings), disagreement=bool(conflicts),
+                       disagreement_fields=conflicts, unresolved_disagreement=unresolved,
+                       unresolved_fields=conflicts if unresolved else [],
+                       summary_basis='adjudication' if adjudication else 'fieldwise_agreement',
+                       exclusion_reason_basis='per_rater_attribution' if adjudication is None and
+                           row['culling_label'] == 'X' and not all(r.get('exclusion_reason') == ratings[0].get('exclusion_reason') for r in ratings)
+                           else 'adjudication' if adjudication else 'agreement',
+                       adjudication_reason=adjudication.get('reason') if legacy_adjudication else
+                           adjudication.get('adjudication_reason') if adjudication else None,
+                       legacy_technical_reason_unavailable=legacy_adjudication,
                        independent_rater_count=len(ratings), expert_consensus=False)
             document['rows'].append(row)
         output = safe_annotation_output(output, self.paths)
@@ -269,7 +333,8 @@ def validate_opinion(opinion, *, complete):
         if complete and key != 'final_selection':
             require(opinion.get(key) in allowed, f'explicit {key} required before submit')
     require(isinstance(opinion.get('regions', []), list), 'regions array required')
-    require(isinstance(opinion.get('reason', ''), str), 'reason must be text')
+    for field in ('reason', 'exclusion_reason', 'aesthetic_preference'):
+        require(isinstance(opinion.get(field, ''), str), f'{field} must be text')
     if complete:
         require(bool(opinion.get('reason', '').strip()), 'reason required')
         require(bool(opinion.get('regions')), 'at least one explicitly inspected region required')
@@ -278,13 +343,16 @@ def validate_opinion(opinion, *, complete):
     seen = set()
     for region in opinion.get('regions', []):
         require(isinstance(region, dict), 'region must be object')
-        require(region.get('role') in ROLES, 'invalid region role')
+        require(region.get('role') in (*ROLES, None, '') if not complete else region.get('role') in ROLES, 'invalid region role')
+        require(isinstance(region.get('reason', ''), str), 'region reason must be text')
+        if complete:
+            require(bool(region.get('reason', '').strip()), 'region reason required')
         rid = oe.text_field(region, 'region_id', 'region')
         require(rid not in seen, 'duplicate region ID'); seen.add(rid)
-        require(type(region.get('required')) is bool, 'region required must be explicitly true/false')
-        require(region.get('visibility') in VISIBILITY, 'invalid region visibility')
-        require(region.get('technical_label') in TECHNICAL, 'invalid regional technical label')
-        require(region.get('evidence_adequacy') in ADEQUACY, 'invalid regional evidence adequacy')
+        require(type(region.get('required')) is bool or not complete and region.get('required') is None, 'region required must be explicitly true/false')
+        require(region.get('visibility') in (VISIBILITY if complete else (*VISIBILITY, None, '')), 'invalid region visibility')
+        require(region.get('technical_label') in (TECHNICAL if complete else (*TECHNICAL, None, '')), 'invalid regional technical label')
+        require(region.get('evidence_adequacy') in (ADEQUACY if complete else (*ADEQUACY, None, '')), 'invalid regional evidence adequacy')
         require(region.get('coordinate_space') == 'oriented_native_decoded_pixels', 'region coordinate space required')
         box = region.get('box')
         require(box is None or isinstance(box, list) and len(box) == 4 and all(type(v) is int and v >= 0 for v in box)
@@ -325,7 +393,7 @@ class AnnotationWindow:
         buttons = ttk.Frame(self.root); buttons.pack(fill='x')
         for label, callback in [('Previous', lambda: self.navigate(-1)), ('Next', lambda: self.navigate(1)),
                                 ('Save draft', lambda: self.save(False)), ('Submit blind opinion', lambda: self.save(True)),
-                                ('Add region template', self.region_template), ('Adjudicate submitted opinions', self.adjudicate),
+                                ('Withdraw own submission', self.withdraw), ('Add region template', self.region_template), ('Adjudicate submitted opinions', self.adjudicate),
                                 ('Export submitted labels', self.export)]:
             ttk.Button(buttons, text=label, command=callback).pack(side='left')
         self.load()
@@ -356,7 +424,8 @@ class AnnotationWindow:
             self.status.set(f'{self.index+1}/{len(self.ids)} · {aid} · source={info["source_id"]} '
                             f'· {info["decode"].get("source_kind")} · native={self.image.size} '
                             f'· warnings={info["decode"].get("warnings", [])} · oriented native pixels · full view={self.scale*100:.1f}% · click full image for native 100% detail '
-                            f'· guideline={self.session.samples["guideline_version"]} · annotator={self.annotator}')
+                            f'· guideline={self.session.samples["guideline_version"]} · annotator={self.annotator} '
+                            f'· effective submission={bool(self.session.effective_submission(aid, self.annotator))}')
             self.show_crop(self.image.width//2, self.image.height//2)
         except (OSError, ValueError, RuntimeError) as exc:
             self.status.set(f'{aid}: unable to inspect source; no technical truth inferred'); self.error(exc)
@@ -387,14 +456,25 @@ class AnnotationWindow:
             for key in ('reason','exclusion_reason','aesthetic_preference'): opinion[key]=opinion[key] or ''
             opinion['regions']=json.loads(self.regions.get('1.0','end'))
             self.session.save(self.ids[self.index],self.annotator,opinion,submit=submit)
-            self.status.set('Saved submitted opinion' if submit else 'Saved draft; not exported as truth')
+            self.status.set('Saved submitted opinion' if submit else 'Saved draft; earlier submitted opinion remains effective until resubmission or explicit withdrawal')
             return True
         except (OSError,ValueError,RuntimeError) as exc: self.error(exc); return False
+
+    def withdraw(self):
+        from tkinter import simpledialog
+        reason = simpledialog.askstring('Withdraw own submitted opinion',
+                 'This removes your effective opinion from future exports and invalidates its adjudication. '
+                 'History is retained. Enter a reason; Cancel makes no change.', parent=self.root)
+        if not reason: return
+        try:
+            self.session.withdraw(self.ids[self.index], self.annotator, reason)
+            self.status.set('Submission explicitly withdrawn; history and drafts retained')
+        except (OSError, ValueError, RuntimeError) as exc: self.error(exc)
 
     def adjudicate(self):
         from tkinter import messagebox, simpledialog
         aid = self.ids[self.index]
-        own = self.session.latest(aid, self.annotator)
+        own = self.session.effective_submission(aid, self.annotator)
         if own is None or own['status'] != 'submitted':
             self.error(ValueError('Submit your own blind opinion before revealing other opinions.')); return
         ratings = self.session._submitted(aid)

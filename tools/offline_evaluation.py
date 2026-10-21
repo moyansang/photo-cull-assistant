@@ -360,6 +360,18 @@ def summarize(rows):
             "warnings": dict(sorted(Counter(w for row in rows for w in row["warnings"]).items()))}
 
 
+def dataset_identity(source, sample, samples):
+    """A dataset release is a same-level pair, never a per-field fallback."""
+    for level, record in (("source", source), ("sample", sample), ("dataset", samples)):
+        pair = (record.get("dataset_id"), record.get("dataset_version"))
+        if pair == (None, None):
+            continue
+        require(all(isinstance(value, str) and value.strip() for value in pair),
+                f"{level} dataset_id/dataset_version must be a complete identity pair")
+        return pair
+    raise ContractError("dataset identity pair missing")
+
+
 def evaluate(samples, predictions, annotations, catalog):
     srows, prows, arows, overlaps = validate_inputs(samples, predictions, annotations, catalog)
     rows = []
@@ -368,8 +380,7 @@ def evaluate(samples, predictions, annotations, catalog):
         selected_source = next(s for s in sample["sources"] if s["source_id"] == sample["evaluation_source_id"])
         # Registration is supplied metadata, not inferred from filenames or image labels.
         # Keep identity strings global: dataset boundaries must not hide leakage.
-        dataset_id = selected_source.get("dataset_id") or sample.get("dataset_id") or samples["dataset_id"]
-        dataset_version = selected_source.get("dataset_version") or sample.get("dataset_version") or samples["dataset_version"]
+        dataset_id, dataset_version = dataset_identity(selected_source, sample, samples)
         warnings = []
         if prediction is None:
             decision, failure = "missing", None

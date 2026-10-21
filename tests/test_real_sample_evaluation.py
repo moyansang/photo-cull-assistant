@@ -381,3 +381,30 @@ def test_formal_synthetic_fixture_is_native_evidence_sized(tmp_path):
     assert audit['status'] == 'complete'
     assert len(audit['rows']) == 3
     assert all(row['status'] == 'success' for row in audit['rows'])
+
+
+def test_small_native_image_keeps_strict_export_boundary_and_denominator(tmp_path):
+    """640x480 is intentionally NOT enlarged to make the success fixture pass."""
+    samples, paths, config = inputs(tmp_path, 1)
+    path = Path(paths['bindings']['asset-0']['primary_path'])
+    yy, xx = np.indices((480, 640))
+    pixels = np.repeat((((xx // 5 + yy // 5) % 2) * 255).astype(np.uint8)[..., None], 3, axis=2)
+    Image.fromarray(pixels).save(path)
+    source = samples['rows'][0]['sources'][0]
+    source.update(width=640, height=480)
+    source['sha256'] = source['original_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+    paths['manifest_sha256'] = batch.oe.canonical_hash(samples)
+    before = path.read_bytes()
+    output = tmp_path / 'small-boundary'
+    audit = batch.run_batch(samples, paths, config, output)
+    assert audit['status'] == 'partial'
+    assert audit['measurement_seconds'] > 0
+    assert audit['rows'][0]['status'] == 'provenance_insufficient'
+    assert audit['rows'][0]['prediction_status'] == 'failed'
+    assert 'insufficient decoded evidence carries automatic decision' in audit['rows'][0]['reasons']
+    summary = read(output / 'export/summary.json')
+    assert summary['overall']['n'] == 1
+    assert summary['overall']['run_status_counts']['failed'] == 1
+    assert summary['real_world_accuracy']['status'] == '尚未测量'
+    assert read(output / 'export/predictions.json')['rows'][0]['recommendation'] is None
+    assert path.read_bytes() == before

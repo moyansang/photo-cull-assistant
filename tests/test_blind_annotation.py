@@ -51,7 +51,8 @@ def opinion():
             'aesthetic_preference':'independently recorded preference', 'regions':[
                 {'region_id':'r1','role':'landscape_subject','required':True,'visibility':'visible',
                  'technical_label':'clear','evidence_adequacy':'adequate',
-                 'coordinate_space':'oriented_native_decoded_pixels','box':[1,1,20,20]}]}
+                 'coordinate_space':'oriented_native_decoded_pixels','box':[1,1,20,20],
+                 'reason':'SYNTHETIC inspected region evidence'}]}
 
 
 def test_save_resume_export_native_source(tmp_path):
@@ -262,3 +263,157 @@ def test_export_into_photo_or_active_directory_refused(tmp_path):
     workspace=tmp_path/'workspace';workspace.mkdir()
     (workspace/'processing-settings.json').write_text('{}',encoding='utf-8')
     with pytest.raises(ValueError,match='active/existing workspace'):s.export(workspace/'labels.json')
+
+
+def test_draft_preserves_submission_across_resume_and_resubmit(tmp_path):
+    s, samples, paths, _ = session(tmp_path); viewed(s)
+    first = s.save('asset-1', 'one', opinion(), submit=True)
+    other = opinion(); other['technical_label'] = 'unusable'
+    s.save('asset-1', 'two', other, submit=True)
+    draft = {'regions': [], 'reason': 'SYNTHETIC unfinished revision'}
+    s.save('asset-1', 'two', draft)
+    row = s.export(tmp_path/'draft.json')['rows'][0]
+    assert row['independent_rater_count'] == 2 and row['unresolved_disagreement']
+    assert row['technical_label'] is None
+    reopened = ba.AnnotationSession(samples, paths, s.directory, resume=True)
+    assert reopened.latest_draft('asset-1', 'two')['reason'] == draft['reason']
+    assert reopened.effective_submission('asset-1', 'two')['technical_label'] == 'unusable'
+    viewed(reopened); reopened.save('asset-1', 'two', opinion(), submit=True)
+    row = reopened.export(tmp_path/'resubmitted.json')['rows'][0]
+    assert not row['disagreement'] and row['technical_label'] == 'clear'
+    assert reopened.effective_submission('asset-1', 'one')['revision'] == first['revision']
+    assert len(reopened.state['ratings']) == 4
+
+
+def test_draft_preserves_adjudication_but_withdrawal_does_not_resurrect_it(tmp_path):
+    s, samples, paths, _ = session(tmp_path); viewed(s)
+    s.save('asset-1', 'one', opinion(), submit=True)
+    other = opinion(); other['technical_label'] = 'unusable'
+    s.save('asset-1', 'two', other, submit=True)
+    s.adjudicate('asset-1', 'reviewer', opinion(), 'SYNTHETIC process rationale')
+    s.save('asset-1', 'two', {'regions': []})
+    assert s.export(tmp_path/'still-adjudicated.json')['rows'][0]['adjudication_reason'] == 'SYNTHETIC process rationale'
+    s.save('asset-1', 'three', opinion(), submit=True)
+    s.withdraw('asset-1', 'three', 'SYNTHETIC explicit withdrawal')
+    row = s.export(tmp_path/'withdrawn.json')['rows'][0]
+    assert row['unresolved_disagreement'] and row['adjudication_reason'] is None
+    assert len(s.state['adjudications']) == 1
+    assert s.state['ratings'][-1]['status'] == 'withdrawn'
+    s.withdraw('asset-1', 'one', 'SYNTHETIC explicit withdrawal')
+    s.withdraw('asset-1', 'two', 'SYNTHETIC explicit withdrawal')
+    assert s.export(tmp_path/'none.json')['rows'] == []
+    reopened = ba.AnnotationSession(samples, paths, s.directory, resume=True)
+    assert reopened.effective_submission('asset-1', 'two') is None
+    viewed(reopened); reopened.save('asset-1', 'two', opinion(), submit=True)
+    assert len(reopened._submitted('asset-1')) == 1
+
+
+@pytest.mark.parametrize('field,value', [('technical_label','unusable'), ('culling_label','D'),
+    ('final_selection','keep'), ('evidence_adequacy','insufficient'), ('aesthetic_preference','other preference')])
+def test_conflicts_are_fieldwise_not_first_winner(tmp_path, field, value):
+    s,*_ = session(tmp_path); viewed(s)
+    s.save('asset-1','one',opinion(),submit=True)
+    other = opinion(); other[field] = value
+    s.save('asset-1','two',other,submit=True)
+    row = s.export(tmp_path/'field-conflict.json')['rows'][0]
+    assert row['disagreement_fields'] == [field]
+    assert row['unresolved_fields'] == [field]
+    assert row[field] == ('unknown' if field == 'evidence_adequacy' else None)
+    if field != 'technical_label': assert row['technical_label'] == 'clear'
+    if field != 'culling_label': assert row['culling_label'] == 'K'
+    assert row['reason'] is None
+    assert row['annotator_id'].startswith('aggregate:')
+    assert row['original_ratings'][1][field] == value
+
+
+def test_free_text_retained_without_technical_conflict(tmp_path):
+    s,*_ = session(tmp_path); viewed(s)
+    first = opinion(); first.update(culling_label='X', exclusion_reason='SYNTHETIC exclusion A')
+    other = deepcopy(first); other['reason'] = 'Different SYNTHETIC wording'
+    other['exclusion_reason'] = 'SYNTHETIC exclusion B'
+    other['regions'][0]['reason'] = 'Different SYNTHETIC regional wording'
+    s.save('asset-1','one',first,submit=True); s.save('asset-1','two',other,submit=True)
+    row = s.export(tmp_path/'wording.json')['rows'][0]
+    assert not row['disagreement'] and row['technical_label'] == 'clear'
+    assert row['reason'] is None and row['regions'][0]['reason'] is None
+    assert row['exclusion_reason_basis'] == 'per_rater_attribution'
+    assert json.loads(row['exclusion_reason']) == [{'annotator_id':'one','reason':first['exclusion_reason']},
+                                                   {'annotator_id':'two','reason':other['exclusion_reason']}]
+    assert row['original_ratings'][1]['regions'][0]['reason'] == other['regions'][0]['reason']
+
+
+def test_region_semantic_conflict_does_not_choose_first(tmp_path):
+    s,*_ = session(tmp_path); viewed(s)
+    s.save('asset-1','one',opinion(),submit=True)
+    other = opinion(); other['regions'][0]['technical_label'] = 'unjudgeable'
+    s.save('asset-1','two',other,submit=True)
+    row = s.export(tmp_path/'regions.json')['rows'][0]
+    assert row['disagreement_fields'] == ['regions'] and row['regions'] == []
+    assert row['technical_label'] == 'clear'
+
+
+def test_technical_and_adjudication_reasons_survive_resume_and_invalidation(tmp_path):
+    s,samples,paths,_ = session(tmp_path); viewed(s)
+    for who in ('one','two'): s.save('asset-1',who,opinion(),submit=True)
+    resolved = opinion(); resolved['reason'] = 'SYNTHETIC technical evidence'
+    s.adjudicate('asset-1','reviewer',resolved,'SYNTHETIC arbitration procedure')
+    reopened = ba.AnnotationSession(samples,paths,s.directory,resume=True)
+    row = reopened.export(tmp_path/'resolved-reasons.json')['rows'][0]
+    assert row['reason'] == resolved['reason']
+    assert row['adjudication_reason'] == 'SYNTHETIC arbitration procedure'
+    viewed(reopened); reopened.save('asset-1','one',opinion(),submit=True)
+    assert reopened.export(tmp_path/'invalidated.json')['rows'][0]['adjudication_reason'] is None
+    record = reopened.state['adjudications'][0]
+    assert record['reason'] == resolved['reason'] and record['adjudication_reason'] == 'SYNTHETIC arbitration procedure'
+
+
+@pytest.mark.parametrize('value', [None, 1, [], '', '   '])
+def test_complete_region_requires_nonempty_text_reason(value):
+    item = opinion(); item['regions'][0]['reason'] = value
+    with pytest.raises(ValueError,match='region reason'): ba.validate_opinion(item,complete=True)
+
+
+def test_missing_region_reason_rejected_but_draft_can_remain_unfinished():
+    item = opinion(); del item['regions'][0]['reason']
+    with pytest.raises(ValueError,match='region reason required'): ba.validate_opinion(item,complete=True)
+    ba.validate_opinion(item,complete=False)
+    region = item['regions'][0]
+    region.update(role='', required=None, visibility='', technical_label='', evidence_adequacy='')
+    ba.validate_opinion(item,complete=False)
+    with pytest.raises(ValueError): ba.validate_opinion(item,complete=True)
+
+
+def test_legacy_adjudication_does_not_misrepresent_lost_technical_reason(tmp_path):
+    s,samples,paths,_ = session(tmp_path); viewed(s)
+    for who in ('one','two'): s.save('asset-1',who,opinion(),submit=True)
+    s.adjudicate('asset-1','reviewer',opinion(),'SYNTHETIC legacy arbitration reason')
+    # Construct the old writer's journal shape explicitly; no human truth inferred.
+    state = deepcopy(s.state)
+    old = state['adjudications'][0]
+    old['reason'] = old.pop('adjudication_reason')
+    s._write(state)
+    reopened = ba.AnnotationSession(samples,paths,s.directory,resume=True)
+    row = reopened.export(tmp_path/'legacy.json')['rows'][0]
+    assert row['reason'] is None
+    assert row['adjudication_reason'] == 'SYNTHETIC legacy arbitration reason'
+    assert row['legacy_technical_reason_unavailable'] is True
+    assert reopened.state['adjudications'][0]['reason'] == old['reason']
+    viewed(reopened)
+    reopened.adjudicate('asset-1','reviewer',opinion(),'SYNTHETIC new procedure reason')
+    row = reopened.export(tmp_path/'legacy-revised.json')['rows'][0]
+    assert row['reason'] == opinion()['reason'] and not row['legacy_technical_reason_unavailable']
+
+
+def test_withdraw_requires_reason_and_preserves_stale_writer_safety(tmp_path):
+    s,samples,paths,_ = session(tmp_path); viewed(s)
+    s.save('asset-1','one',opinion(),submit=True)
+    stale = ba.AnnotationSession(samples,paths,s.directory,resume=True)
+    for reason in ('', ' ', None):
+        with pytest.raises(ValueError,match='withdrawal reason'):
+            s.withdraw('asset-1','one',reason)
+    s.withdraw('asset-1','one','SYNTHETIC explicit withdrawal')
+    before = s.journal.read_bytes()
+    with pytest.raises(ValueError,match='another process'):
+        stale.withdraw('asset-1','one','SYNTHETIC stale withdrawal')
+    assert s.journal.read_bytes() == before
+    assert stale.effective_submission('asset-1','one') is not None

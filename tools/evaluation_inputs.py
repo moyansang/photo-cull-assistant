@@ -11,6 +11,7 @@ import hashlib
 import importlib
 import json
 import os
+import stat
 from pathlib import Path
 import time
 import sys
@@ -108,20 +109,45 @@ def dependency_problems(sample, binding, config):
     return problems
 
 
+def _native_change_time(path):
+    """Require a reliable native mutation token on Windows, never ctime guessing."""
+    if sys.platform != "win32":
+        return None
+    from ai_cull_assistant.image_decode import _windows_change_time
+    changed = _windows_change_time(path)
+    if changed is None:
+        raise OSError("reliable_native_windows_change_time_unavailable")
+    return changed
+
+
 def hash_file(path):
-    """Hash only this explicit regular member; reject a change during reading."""
+    """Hash this explicit regular member, binding path and open-handle identities.
+
+    Windows path stat and fstat ctime have different semantics for new files.
+    Only that cross-API comparison omits ctime; same-API comparisons and native
+    ChangeTime retain mutation detection, including same-size/mtime rewrites.
+    """
+    from ai_cull_assistant.af_metadata import _path_matches_open_handle, _stat_identity
+
+    path = Path(path)
+    native_before = _native_change_time(path)
     before = path.stat()
-    if not path.is_file():
+    if not stat.S_ISREG(before.st_mode):
         raise OSError("not a regular file")
+    expected = _stat_identity(before)
     value = hashlib.sha256()
     size = 0
     with path.open("rb") as stream:
+        opened = _stat_identity(os.fstat(stream.fileno()))
+        if not _path_matches_open_handle(expected, opened):
+            raise OSError("input_changed_during_preflight")
         while chunk := stream.read(1024 * 1024):
             value.update(chunk)
             size += len(chunk)
-        after_handle = os.fstat(stream.fileno())
-    after = path.stat()
-    if _file_identity(before) != _file_identity(after_handle) or _file_identity(before) != _file_identity(after):
+        if _stat_identity(os.fstat(stream.fileno())) != opened:
+            raise OSError("input_changed_during_preflight")
+    if (_stat_identity(path.stat()) != expected or size != before.st_size
+            or _native_change_time(path) != native_before):
         raise OSError("input_changed_during_preflight")
     return value.hexdigest(), size
 

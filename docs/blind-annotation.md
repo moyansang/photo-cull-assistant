@@ -21,10 +21,10 @@ $env:PYTHONPATH = 'src'
 2. 左侧是适屏全图，右侧是原生解码栅格 100% 局部。点击左图移动右图区域。顶端显示实际来源 ID、解码来源、解码尺寸、方向处理、适屏缩放和解码警告。100% 指一个解码像素对应一个 Tk 图像像素，不承诺任意 Windows DPI 下物理屏幕像素一一对应；这必须在目标屏幕复验。
 3. 技术标签、K/D/U/X、人工最终选择、审美偏好分别填写。下拉项默认空，不从其它字段推导。技术标签有 `clear/unusable/borderline/unjudgeable`；证据为 `adequate/insufficient/unknown`；最终选择可留空。`X` 必须填写排除原因。
 4. `Add region template` 将当前 100% 裁块坐标加入区域 JSON。逐项明确填写 `role`、`required`、`visibility`、`technical_label`、`evidence_adequacy` 和理由。模板中空字符串/null 都有意不构成有效标签。区域坐标是方向归一化后的原生解码像素，不能越界。
-5. `Save draft` 保存草稿，不进入统计真值；`Submit blind opinion` 验证后提交。翻页和关闭会提示未保存内容将丢失，不会默默保存或填入标签。
+5. `Save draft` 保存草稿，不改变此前有效提交或裁决；未提交过的草稿不进入统计真值。`Submit blind opinion` 验证后显式替换自己的有效提交。`Withdraw own submission` 要求明确理由，可撤回自己的有效提交；取消不作更改，历史与草稿仍保留。翻页和关闭会提示未保存内容将丢失，不会默默保存或填入标签。
 6. 第二位标注者以自己的 ID 续开同一目录，独立提交。文件是本机私有数据而不是权限隔离保险库；独立性仍依赖真实人员及操作流程，不以不同 ID 自动认证双盲。
-7. 自己提交后才能点击 `Adjudicate submitted opinions` 查看已提交原始意见。至少两位标注者后，显式填写裁决理由并保存当前表单作为裁决。原始意见不覆盖。之后任何新意见使旧裁决失效，需要重新审查。单标、相同意见或已裁决均不自动称“专家共识”。
-8. `Export submitted labels` 写到新的、独立 JSON 文件，再交给已有离线统计入口。也可 `--resume --export 'C:\评估 输出\annotations-01.json'` 无窗口导出。未解决分歧保留原始意见，汇总技术/KDUX标签为空，不凭空选择一方；草稿不输出真值。
+7. 自己提交后才能点击 `Adjudicate submitted opinions` 查看已提交原始意见。至少两位标注者后，显式填写裁决理由并保存当前表单作为裁决。原始意见不覆盖。之后任何新提交或显式撤回使旧裁决失效，需要重新审查；仅保存草稿不使裁决失效。即使撤回使意见集合回到旧组合，旧裁决也不会复活。技术依据 `reason` 与过程理由 `adjudication_reason` 独立保存。单标、相同意见或已裁决均不自动称“专家共识”。
+8. `Export submitted labels` 写到新的、独立 JSON 文件，再交给已有离线统计入口。也可 `--resume --export 'C:\评估 输出\annotations-01.json'` 无窗口导出。各字段独立合并：技术标签、KDUX、区域结构/技术判断、证据充分性、最终选择、审美分别比较，冲突字段不采用首位意见（置 null，区域置 []，证据置 unknown），其余一致字段保留。例如仅审美冲突不抹掉一致的技术结论。`disagreement_fields`/`unresolved_fields` 明确冲突维度；多位意见的汇总身份为会话聚合身份，不冒充第一位标注者。逐人原文在 `original_ratings` 保留；技术或区域理由措辞差异不自动成为技术分歧，相同才放入共同理由，不同则为 null。未裁决冲突的总理由为 null。多位 X 的不同排除理由按标注者显式署名导出并标记 `per_rater_attribution`，不是共同理由。草稿不输出真值。
 
 区域示例（仅格式，不是已标注数据）：
 
@@ -41,6 +41,10 @@ $env:PYTHONPATH = 'src'
   "reason": "按冻结用途判断，必要身体区域像素不足"
 }
 ```
+
+草稿允许区域模板保留空的 role/visibility/technical_label/evidence_adequacy、required=null 和空/缺失理由；区域 ID、坐标系及坐标合法性仍校验。完整提交要求每个区域有非空字符串 reason；非文本理由即使草稿也拒绝，不自动填充。无法判断可显式填写 unjudgeable 并说明原因。
+
+旧版本 journal 若仅保存了被覆盖的裁决 reason，重开不会伪造丢失的技术理由：导出技术 reason=null、原理由作为 adjudication_reason，标记 legacy_technical_reason_unavailable=true；须重新人工裁决才能补齐。
 
 角色允许 `left_eye/right_eye/face_core/required_body/landscape_subject/texture`，可重复角色但区域 ID 必须唯一。可见性允许 `visible/not_visible/insufficient_pixels/unjudgeable`。不见或不足不等于模糊；应明确使用无法判断及理由。没有有效坐标时 `box=null`；不能伪造框。这里的区域只描述人工质量观察，不转换成生产人物选择、ROI 确认或其它人工决定。
 

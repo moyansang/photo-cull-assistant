@@ -54,3 +54,7 @@
 - [Open Images V7 官方下载说明](https://storage.googleapis.com/openimages/web/download_v7.html)：保留 ImageID、OriginalURL、OriginalLandingURL、License、Author 等原始登记。OriginalMD5 是 base64 编码 MD5，不是本工具 SHA-256；缩略图可能改变，须明确实际取得的文件/尺寸/Rotation/处理历史。类别、框标注和外部质量分不能直接当作技术清晰度真值。
 
 本轮不下载整库、不替用户接受申请协议、不上传照片。Linux 合成文件与占位 RAW 字节测试只验证工程契约，不证明真实 RAW 解码、人物判断或真实准确率。Windows 原生路径、锁、RAW 和本地盲标交互另验；真实准确率仍为“尚未测量”。
+
+## 旧采集清单的显式准备
+
+`sample-bindings-v1` 不直接交给批量测量入口。先按 [只读准备与转换契约](prepare-evaluation-inputs.md) 生成新文件和缺项报告；不读取图片、不扫描 roots，不覆盖原清单。现有 28 张未在本轮读取或实测，实际旧清单字段兼容需 Windows 只读复验，不能把合成模板通过当作该清单已就绪。

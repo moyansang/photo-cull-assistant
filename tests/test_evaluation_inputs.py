@@ -272,3 +272,158 @@ def test_single_raw_requires_explicit_raw_role(documents):
     assert "measurement_member_roles_incomplete" in run(documents)["rows"][0]["problems"]
     binding["raw_source_id"] = "s"
     assert run(documents)["rows"][0]["status"] == "ready"
+
+
+def test_hash_new_chinese_file_immediately(tmp_path):
+    path = tmp_path / "新建 原片.bin"
+    payload = b"synthetic immediate-read contract" * 32
+    path.write_bytes(payload)
+    assert inputs.hash_file(path) == (hashlib.sha256(payload).hexdigest(), len(payload))
+
+
+def _windows_hash_contract(monkeypatch):
+    """Linux interface simulation only; Windows native acceptance is separate."""
+    from types import SimpleNamespace
+    from ai_cull_assistant import af_metadata
+    monkeypatch.setattr(af_metadata, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(inputs, "_native_change_time", lambda path: 10)
+    original = inputs.os.fstat
+
+    def shifted(fd):
+        value = original(fd)
+        fields = {name: getattr(value, name) for name in
+                  ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")}
+        fields["st_ctime_ns"] += 1024000
+        return SimpleNamespace(**fields)
+
+    monkeypatch.setattr(inputs.os, "fstat", shifted)
+    return shifted
+
+
+def test_windows_cross_api_ctime_contract_accepts_stable_new_file(tmp_path, monkeypatch):
+    _windows_hash_contract(monkeypatch)
+    path = tmp_path / "刚创建 中文.bin"
+    path.write_bytes(b"synthetic")
+    assert inputs.hash_file(path) == (hashlib.sha256(b"synthetic").hexdigest(), 9)
+
+
+def test_windows_contract_keeps_handle_ctime_mutation_detection(tmp_path, monkeypatch):
+    shifted = _windows_hash_contract(monkeypatch)
+    calls = 0
+
+    def changing(fd):
+        nonlocal calls
+        value = shifted(fd)
+        calls += 1
+        value.st_ctime_ns += calls
+        return value
+
+    monkeypatch.setattr(inputs.os, "fstat", changing)
+    path = tmp_path / "file.bin"
+    path.write_bytes(b"synthetic")
+    with pytest.raises(OSError, match="input_changed"):
+        inputs.hash_file(path)
+
+
+def test_windows_contract_keeps_native_change_time_detection(tmp_path, monkeypatch):
+    _windows_hash_contract(monkeypatch)
+    changes = iter([10, 11])
+    monkeypatch.setattr(inputs, "_native_change_time", lambda path: next(changes))
+    path = tmp_path / "file.bin"
+    path.write_bytes(b"synthetic")
+    with pytest.raises(OSError, match="input_changed"):
+        inputs.hash_file(path)
+
+
+def test_hash_same_size_replacement_restored_mtime_before_open(tmp_path, monkeypatch):
+    path = tmp_path / "原片.bin"
+    path.write_bytes(b"original")
+    old_stat = path.stat()
+    replacement = tmp_path / "replacement.bin"
+    replacement.write_bytes(b"replaced")
+    inputs.os.utime(replacement, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
+    original_open = Path.open
+
+    def replace_then_open(target, *args, **kwargs):
+        if target == path:
+            inputs.os.replace(replacement, path)
+        return original_open(target, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", replace_then_open)
+    with pytest.raises(OSError, match="input_changed"):
+        inputs.hash_file(path)
+
+
+def test_hash_same_size_rewrite_restored_mtime_during_read(tmp_path, monkeypatch):
+    path = tmp_path / "读取中.bin"
+    path.write_bytes(b"original")
+    old_stat = path.stat()
+    original_sha = hashlib.sha256
+
+    class MutatingDigest:
+        def __init__(self):
+            self.digest = original_sha()
+
+        def update(self, chunk):
+            self.digest.update(chunk)
+            path.write_bytes(b"replaced")
+            inputs.os.utime(path, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
+
+        def hexdigest(self):
+            return self.digest.hexdigest()
+
+    monkeypatch.setattr(inputs.hashlib, "sha256", MutatingDigest)
+    with pytest.raises(OSError, match="input_changed"):
+        inputs.hash_file(path)
+
+
+def test_windows_contract_keeps_path_ctime_detection(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    _windows_hash_contract(monkeypatch)
+    path = tmp_path / "file.bin"
+    path.write_bytes(b"synthetic")
+    original_stat = Path.stat
+    calls = 0
+
+    def changed(target, *args, **kwargs):
+        nonlocal calls
+        value = original_stat(target, *args, **kwargs)
+        if target != path:
+            return value
+        calls += 1
+        fields = {name: getattr(value, name) for name in
+                  ("st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")}
+        if calls > 1:
+            fields["st_ctime_ns"] += 1
+        return SimpleNamespace(**fields)
+
+    monkeypatch.setattr(Path, "stat", changed)
+    with pytest.raises(OSError, match="input_changed"):
+        inputs.hash_file(path)
+
+
+@pytest.mark.parametrize("field", ["st_dev", "st_ino", "st_size", "st_mtime_ns"])
+def test_windows_contract_rejects_cross_api_non_ctime_mismatch(tmp_path, monkeypatch, field):
+    shifted = _windows_hash_contract(monkeypatch)
+
+    def mismatched(fd):
+        value = shifted(fd)
+        setattr(value, field, getattr(value, field) + 1)
+        return value
+
+    monkeypatch.setattr(inputs.os, "fstat", mismatched)
+    path = tmp_path / "file.bin"
+    path.write_bytes(b"synthetic")
+    with pytest.raises(OSError, match="input_changed"):
+        inputs.hash_file(path)
+
+
+def test_windows_native_change_time_unavailable_fails_closed(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from ai_cull_assistant import image_decode
+    monkeypatch.setattr(inputs, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(image_decode, "_windows_change_time", lambda path: None)
+    path = tmp_path / "file.bin"
+    path.write_bytes(b"synthetic")
+    with pytest.raises(OSError, match="reliable_native_windows_change_time_unavailable"):
+        inputs.hash_file(path)
