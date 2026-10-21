@@ -212,6 +212,21 @@ def effective_decision(photo):
         rating = final.get('rating')
         pick = final.get('pick_status')
         recommendation = 'reject' if pick == -1 else 'keep' if pick in (0, 1) else 'review'
+        # New scan-review actions can override stars without approving a pick,
+        # or override a pick while retaining a still-current photography star.
+        # Old final records have neither flag and keep their original semantics.
+        if not final.get('pick_confirmed', True) or not final.get('rating_confirmed', True):
+            from copy import copy
+            automatic = copy(photo)
+            if isinstance(automatic, dict):
+                automatic['final'] = {}
+            else:
+                automatic.final = {}
+            prior = effective_decision(automatic)
+            if not final.get('pick_confirmed', True):
+                pick, recommendation = prior['pick_status'], prior['recommendation']
+            if not final.get('rating_confirmed', True):
+                rating = prior['rating']
         source, reason = 'manual', '人工确认结果'
     elif quality == 'reject':
         rating = selection.get('rating') if selection else None
@@ -239,10 +254,10 @@ def effective_decision(photo):
         recommendation = local_recommendation(photo)
         pick = {'reject': -1, 'keep': 1}.get(recommendation)
         source, reason = 'local', _value(photo, 'screening_reason', '') or ''
-    if type(rating) is not int or not 1 <= rating <= 5:
+    if type(rating) is not int or not (0 if source == 'manual' else 1) <= rating <= 5:
         rating = None
     if type(pick) is not int or pick not in (-1, 0, 1):
         pick = None
     return dict(source=source, rating=rating, pick_status=pick,
                 recommendation=recommendation, reason=reason,
-                focus_review=False if source=='manual' else pending or quality == 'review' or recommendation == 'review')
+                focus_review=pending or quality == 'review' or (source != 'manual' and recommendation == 'review'))

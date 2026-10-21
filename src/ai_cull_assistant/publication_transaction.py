@@ -23,6 +23,7 @@ _locks = {}
 _locks_guard = threading.Lock()
 
 _PASSIVE = ('scan-session.json', 'processing-settings.json', '.source-location.json')
+_OPTIONAL_PASSIVE = ('scan-review.json', 'workspace-settings.json')
 
 
 class PublicationRecoveryError(RuntimeError):
@@ -121,12 +122,12 @@ def pending(root: Path) -> bool:
 def _paths(root, workspace, job_id, entry):
     name = entry.get('destination')
     allowed = {'contact_sheets', 'screening_results.json', 'previews',
-               'previews/' + job_id, 'groups.json', *_PASSIVE}
+               'previews/' + job_id, 'groups.json', *_PASSIVE, *_OPTIONAL_PASSIVE}
     if name not in allowed:
         raise PublicationRecoveryError('发布记录路径不匹配；保留现场')
     destination = workspace / name
     source_name = entry.get('source')
-    allowed_source = None if name in _PASSIVE else ('previews' if name.startswith('previews') else name)
+    allowed_source = None if name in (*_PASSIVE, *_OPTIONAL_PASSIVE) else ('previews' if name.startswith('previews') else name)
     if source_name != allowed_source:
         raise PublicationRecoveryError('发布暂存路径不匹配；保留现场')
     source = root / 'output' / source_name if source_name else None
@@ -140,11 +141,13 @@ def _paths(root, workspace, job_id, entry):
     return source, destination, backup
 
 
-def begin(root: Path, workspace: Path, job_id: str, destinations):
+def begin(root: Path, workspace: Path, job_id: str, destinations, *, passive=()):
     if pending(root):
         raise PublicationRecoveryError('存在未恢复的发布事务；保留现场')
+    if any(name not in _OPTIONAL_PASSIVE for name in passive) or len(set(passive)) != len(passive):
+        raise PublicationRecoveryError('不支持的发布JSON目标')
     entries = []
-    for index, (source, destination) in enumerate(list(destinations) + [(None, workspace / n) for n in _PASSIVE]):
+    for index, (source, destination) in enumerate(list(destinations) + [(None, workspace / n) for n in (*_PASSIVE, *passive)]):
         entry = {'index': index, 'source': source.relative_to(root / 'output').as_posix() if source else None,
                  'destination': destination.relative_to(workspace).as_posix(),
                  'old': _snapshot(destination), 'staged': _snapshot(source) if source else None}
@@ -194,7 +197,7 @@ def recover(root: Path, workspace: Path, job_id: str) -> str:
         if state.get('version') != 1 or state.get('job_id') != job_id:
             raise PublicationRecoveryError('发布记录身份错误；保留现场')
         entries = state['entries']
-        if not isinstance(entries, list) or not entries or len(entries) > 7:
+        if not isinstance(entries, list) or not entries or len(entries) > 9:
             raise PublicationRecoveryError('发布记录条目错误；保留现场')
         if len({e['destination'] for e in entries}) != len(entries) or [e['index'] for e in entries] != list(range(len(entries))):
             raise PublicationRecoveryError('发布记录重复或顺序错误；保留现场')

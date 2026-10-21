@@ -158,14 +158,20 @@ class App(EvidenceCleanupMixin, tk.Tk):
                 pass
         try:
             from .session_store import load_session, source_changes
-            added, removed = source_changes(workspace, self.input_var.get())
-            self.scan_result = load_session(workspace, self.input_var.get())
+            try:
+                added, removed = source_changes(workspace, self.input_var.get())
+            except (OSError, ValueError):
+                added, removed = [], []
+            self.scan_result = load_session(workspace, self.input_var.get(), preserve_unavailable=True)
             if self.scan_result:
                 self._log(f"已恢复上次分析：{len(self.scan_result.assets)} 张照片，请按推荐下一步继续。")
                 if removed:
-                    self._log(f"照片文件夹减少 {len(removed)} 个文件，已更新工作区，保留其余分析；请重新生成联系表。")
+                    self._log(f"照片文件夹减少 {len(removed)} 个文件；全部历史记录保留，仅只读查看，未更新工作区。")
                 # Recompute after removing a RAW whose JPEG still exists.
-                added, _ = source_changes(workspace, self.input_var.get())
+                try:
+                    added, _ = source_changes(workspace, self.input_var.get())
+                except (OSError, ValueError):
+                    added = []
                 if added:
                     self._set_sheets_ready(False)
                     self._log(f"发现新增 {len(added)} 个照片文件，点击“扫描图片”只扫描新增或配对变化的照片，保留原有分析和分组。")
@@ -523,6 +529,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
         workflow_bar = WrappingToolbar(first, gap=6)
         workflow_bar.grid(row=0, column=0, sticky="ew")
         workflow = [("scan_button", "扫描图片", self._run_scan_thread),
+                    ("scan_evidence_button", "扫描结果与依据", self._open_scan_review),
                     ("group_button", "编辑选片组", self._open_group_editor),
                     ("crop_button", "检测/调整人脸框", self._open_crop_settings),
                     ("focus_button", "AI 复核", lambda: self._navigate_workspace('focus')),
@@ -959,7 +966,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self.stop_button.configure(state="normal" if busy else "disabled")
         self._resize_shared_log()
 
-    def _start_processing(self, resume=False, mode="scan", regroup=False, focus_errors_skipped=False):
+    def _start_processing(self, resume=False, mode="scan", regroup=False, focus_errors_skipped=False, *, scan_review=None, crops_override=None):
         if self._review_busy():
             messagebox.showinfo('选片任务进行中', '请先停止或等待 AI 选片完成，再开始照片处理。', parent=self)
             return
@@ -978,8 +985,9 @@ class App(EvidenceCleanupMixin, tk.Tk):
             messagebox.showerror("设置无效", str(exc), parent=self)
             return
         input_dir, workspace = self.input_var.get(), self.workspace_var.get()
-        self._commit_detection_confidence()
-        crops = copy.deepcopy(self.crop_settings)
+        if scan_review is None:
+            self._commit_detection_confidence()
+        crops = copy.deepcopy(crops_override if crops_override is not None else self.crop_settings)
         if resume:
             try:
                 from .processing_job import load_job
@@ -1037,7 +1045,8 @@ class App(EvidenceCleanupMixin, tk.Tk):
         if mode != 'rescan' and not self._confirm_face_draft_reset():
             return
         self._discard_workspace_pages(keep=('focus', 'faces') if mode == 'rescan' else ('focus',))
-        self._save_preferences()
+        if scan_review is None:
+            self._save_preferences()
         self._workspace_cleared = False
         self._stop_event.clear()
         self._processing_mode = mode
@@ -1055,7 +1064,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
                 from .processing_job import start_job, load_job
                 job = load_job(workspace, input_dir) if resume else start_job(
                     input_dir, workspace, options, crops,
-                    result=previous, regroup=regroup, mode=mode,
+                    result=previous, regroup=regroup, mode=mode, scan_review=scan_review,
                 )
                 if job is None:raise ValueError("没有可继续的中断任务")
                 self._process_events.put(("job", job))
@@ -1072,6 +1081,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
                 self._process_events.put(("error", str(exc)))
         self._scan_thread = threading.Thread(target=work, daemon=True)
         self._scan_thread.start()
+        return True
 
     def _poll_processing(self):
         if hasattr(self, "evidence_cleanup_button"):
@@ -1119,6 +1129,8 @@ class App(EvidenceCleanupMixin, tk.Tk):
                     else:
                         mode = self._job_mode(job)
                         self.scan_result = result
+                        if getattr(job, "_data", {}).get("scan_review"):
+                            self.crop_settings = CropSettings.from_dict(job._data["created_crops"])
                         self.review_project = None
                         self._processing_job = None
                         self._set_progress(100)
@@ -1346,7 +1358,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
         if (self._processing_busy or self.updates.busy or self._review_busy()) and name != 'review':
             messagebox.showinfo('暂不能编辑', '当前任务仍在处理，请停止或等待完成后再编辑照片。', parent=self)
             return
-        {'groups': self._open_group_editor, 'faces': self._open_crop_settings,
+        {'scan_review': self._open_scan_review, 'groups': self._open_group_editor, 'faces': self._open_crop_settings,
          'review': self._open_ai_review}[name]()
 
     def _discard_workspace_pages(self, *, keep=()):
@@ -1484,6 +1496,116 @@ class App(EvidenceCleanupMixin, tk.Tk):
         else:
             self._log("人脸设置已保存，将在下次扫描时应用。")
             self.next_step_var.set("推荐下一步：扫描图片")
+
+    def _open_scan_review(self):
+        """Navigate only: no scoring, service requests or result reconciliation writes."""
+        if (getattr(self, '_processing_busy', False) or self.updates.busy or self._review_busy()):
+            messagebox.showinfo('任务进行中', '请等待或停止当前任务后查看扫描结果。', parent=self)
+            return
+        if not self._sync_selected_workspace():
+            self._open_offline_scan_review()
+            return
+        if not self.scan_result:
+            messagebox.showinfo('扫描结果与依据', '请先扫描照片或打开已有工作区。', parent=self)
+            return
+        if self._show_workspace_page('scan_review'):
+            return
+        from .scan_review_ui import ScanReviewPage
+        from .scan_review_decisions import ReviewDecisions
+        decisions = ReviewDecisions(self.scan_result.workspace_dir, self.scan_result.assets, self.crop_settings)
+        def invalidate_old_review():
+            old_page = getattr(self, '_workspace_pages', {}).get('review')
+            if old_page is not None and old_page.winfo_exists():
+                (getattr(old_page, 'dispose', None) or old_page.destroy)()
+            self.review_project = None
+        def decide(asset, pick_status, rating, clear=False):
+            if self._processing_busy or self._review_busy() or self.updates.busy:
+                raise RuntimeError('当前任务进行中，未应用人工修改')
+            if clear:
+                row = decisions.withdraw(asset)
+                invalidate_old_review()
+                return row
+            fields = {}
+            if pick_status is not None:
+                fields['pick_status'] = pick_status
+            if rating is not None:
+                fields['rating'] = rating
+            row = decisions.set(asset, **fields)
+            invalidate_old_review()
+            return row
+        def export():
+            target = decisions.export()
+            invalidate_old_review()
+            messagebox.showinfo('Lightroom 导出', f'已生成：{target}\n尚未在 Lightroom 应用；请用现有插件导入并核对。', parent=self)
+            return target
+        self._mount_workspace_page('scan_review', ScanReviewPage(
+            self._page_host, self.scan_result.assets, self.scan_result.workspace_dir,
+            on_apply_scope=self._apply_scan_review_scope, on_decision=decide,
+            on_cancel_recheck=self._cancel_scan_review_recheck,
+            on_read_decisions=decisions.rows, on_groups=self._open_group_editor,
+            on_ai_review=self._open_ai_review, on_lr_export=export, embedded=True))
+
+    def _open_offline_scan_review(self):
+        """Read the explicitly selected offline workspace without activating or pruning it."""
+        workspace = Path(self.workspace_var.get().strip())
+        session = workspace / 'scan-session.json'
+        if not session.is_file():
+            return False
+        try:
+            saved = json.loads(session.read_text('utf-8'))
+            input_dir = saved.get('input_dir')
+            if not input_dir or Path(input_dir).is_dir():
+                return False
+            from .session_store import load_session
+            result = load_session(workspace, input_dir, preserve_unavailable=True)
+            if result is None:
+                return False
+            settings_path = workspace / 'workspace-settings.json'
+            preferences = json.loads(settings_path.read_text('utf-8')) if settings_path.exists() else {}
+            crops = CropSettings.from_dict(preferences.get('face_crop', {}))
+            from .scan_review_decisions import ReviewDecisions
+            from .scan_review_ui import ScanReviewPage
+            decisions = ReviewDecisions(workspace, result.assets, crops)
+            page = ScanReviewPage(self._page_host, result.assets, workspace,
+                on_read_decisions=decisions.rows, embedded=True)
+            self._mount_workspace_page('scan_review_offline', page)
+            page.status.set('原照片目录离线：仅查看历史与保存问题反馈；不重算、不改组、不导出留弃。请恢复来源后继续选片。')
+            return True
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            messagebox.showerror('历史结果无法打开', str(exc), parent=self)
+            return False
+
+    def _cancel_scan_review_recheck(self, asset):
+        if self._processing_busy or self._review_busy() or self.updates.busy:
+            raise RuntimeError('请先停止处理并等待停止完成，再取消未发布的重查')
+        if not self.scan_result or not any(item is asset for item in self.scan_result.assets):
+            raise RuntimeError('照片或工作区已变化，请重新打开扫描结果')
+        from .scan_review_cancel import cancel_recheck
+        changed = cancel_recheck(self.scan_result.workspace_dir, asset, self.scan_result.input_dir)
+        if changed:
+            self._processing_job = None
+            self.continue_button.configure(state='disabled')
+            self.next_step_var.set('未发布的重查已取消；原结果与反馈保留，可重新框选')
+        return changed
+
+    def _apply_scan_review_scope(self, asset, draft):
+        if (self._processing_busy or self._processing_job is not None
+                or self._review_busy() or self.updates.busy):
+            raise RuntimeError('请先完成或恢复当前任务；本次范围未应用')
+        from .scan_review_actions import prepare_scope
+        from .scan_review_store import ScanReviewStore
+        self._commit_detection_confidence()
+        self._save_preferences()
+        settings, context = prepare_scope(self.scan_result, asset, self.crop_settings, draft)
+        try:
+            started = self._start_processing(mode='rescan', regroup=False,
+                scan_review=context, crops_override=settings)
+            if not started:
+                raise RuntimeError('未启动重新检查；原结果与范围保留')
+        except Exception as exc:
+            ScanReviewStore(self.scan_result.workspace_dir).interrupt_recheck(asset, context['operation_id'], str(exc))
+            raise
+        self._log('已明确启动当前照片整张重新检查；发布成功前原结果与范围保留，不重新分组、不调用 AI。')
 
     def _open_group_editor(self) -> None:
         if getattr(self, "_processing_busy", False) or getattr(self, "_processing_job", None) is not None:

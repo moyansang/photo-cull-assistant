@@ -1,6 +1,8 @@
 from .models import source_identity_path
 """Persistent AI suggestions and human decisions, with immutable review batches."""
 from collections import Counter, OrderedDict
+from contextlib import contextmanager
+import os
 import copy
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
@@ -108,6 +110,44 @@ def atomic_json(path, value):
     temporary.replace(path)
 
 
+_project_locks = {}
+_project_locks_guard = threading.Lock()
+
+
+def _project_revision(path):
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return None
+
+
+@contextmanager
+def _project_write_lock(path):
+    """Serialize separate review instances/processes, not only one UI object."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _project_locks_guard:
+        lock = _project_locks.setdefault(str(path.resolve()), threading.Lock())
+    with lock:
+        with path.with_suffix('.write-lock').open('a+b') as stream:
+            if stream.seek(0, 2) == 0:
+                stream.write(b'0'); stream.flush()
+            stream.seek(0)
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                yield
+            finally:
+                stream.seek(0)
+                if os.name == 'nt':
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
 def photo_id(asset):
     return 'P'+hashlib.sha256(source_identity_path(asset, asset.primary_path).casefold().encode()).hexdigest()[:12].upper()
 
@@ -200,14 +240,20 @@ def parse_answer(text,task_id,batch_id,expected,clarity_expected=()):
 
 
 class ReviewProject:
-    def __init__(self, workspace):
+    def __init__(self, workspace, *, read_only=False):
         self._state_lock=threading.RLock()
         self.workspace=Path(workspace).resolve()
         from .workspace_archive import restore_workspace
-        restore_workspace(self.workspace)
+        if not read_only:
+            restore_workspace(self.workspace)
+        elif (self.workspace / '.workspace-archive.zip').exists():
+            raise ValueError('工作区仍有旧归档，请先通过现有工作区恢复入口恢复；本次只读查看未写入。')
         self.path=self.workspace/'ai_project.json'
+        self._disk_revision = _project_revision(self.path)
         if self.path.exists():
-            self.data=json.loads(self.path.read_text('utf-8'))
+            payload = self.path.read_bytes()
+            self._disk_revision = hashlib.sha256(payload).hexdigest()
+            self.data=json.loads(payload.decode('utf-8'))
             if self.data.get('version')!=1: raise ValueError('不支持的 AI 项目版本')
         else:
             self.data=dict(version=1,photos={},tasks=[],preferences={},export_status='未导出')
@@ -222,10 +268,13 @@ class ReviewProject:
         # Cache reconstruction and task preparation run outside Tk's thread.
         # Serialize their durable writes with UI-triggered saves; atomic_json
         # uses one fixed temporary path and is not safe for concurrent writers.
-        with self._state_lock:
+        with self._state_lock, _project_write_lock(self.path):
+            if _project_revision(self.path) != self._disk_revision:
+                raise ValueError('选片项目已由另一个操作更新，未覆盖；请重新打开后操作。')
             atomic_json(self.path,self.data)
+            self._disk_revision = _project_revision(self.path)
 
-    def refresh(self,assets,crop_settings,*,stop_event=None):
+    def refresh(self,assets,crop_settings,*,stop_event=None,persist=True):
         self._assets=list(assets);self._crops=crop_settings
         active={}
         group_fingerprints={}
@@ -317,7 +366,8 @@ class ReviewProject:
         archived=self.data.setdefault('archived_photos',{})
         archived.update({k:v for k,v in self.data['photos'].items() if k not in active})
         self.data['photos']=active
-        self.save()
+        if persist:
+            self.save()
 
     def current_task(self):
         return next((t for t in self.data['tasks'] if t['id']==self.data.get('current_task_id')),self.data['tasks'][-1] if self.data['tasks'] else None)
@@ -836,13 +886,49 @@ clear 表示主体清晰；blur 只用于主体明确失焦或拖影；无可靠
         response['issues']=issues;self.save();return issues
 
 
-    def confirm(self,pid,rating,pick_status):
-        if rating is not None and (type(rating) is not int or not 1<=rating<=5):raise ValueError('星级必须为 1～5 或留空')
+    def confirm(self,pid,rating,pick_status,*,pick_confirmed=None,rating_confirmed=None):
+        # Zero explicitly clears a star; None continues to mean leave LR alone.
+        if rating is not None and (type(rating) is not int or not 0<=rating<=5):raise ValueError('星级必须为 0～5 或留空')
         if pick_status is not None and (type(pick_status) is not int or pick_status not in (-1,0,1)):raise ValueError('标记无效')
-        if self._crops is not None:self.refresh(self._assets,self._crops)
-        photo=self.data['photos'][pid]
-        photo['final']=dict(rating=rating,pick_status=pick_status,confirmed=True,fingerprint=photo['fingerprint'])
-        photo['stale']=False;self.data['export_dirty']=True;self.data['export_status']='待重新导出';self.save()
+        with self._state_lock:
+            previous=copy.deepcopy(self.data)
+            try:
+                if self._crops is not None:self.refresh(self._assets,self._crops,persist=False)
+                photo=self.data['photos'][pid]
+                final=dict(rating=rating,pick_status=pick_status,confirmed=True,fingerprint=photo['fingerprint'])
+                if pick_confirmed is not None:
+                    final['pick_confirmed']=bool(pick_confirmed)
+                if rating_confirmed is not None:
+                    final['rating_confirmed']=bool(rating_confirmed)
+                if photo.get('final') == final:
+                    return
+                photo.setdefault('final_history',[]).append(dict(
+                    action='confirm', at=datetime.now(timezone.utc).isoformat(),
+                    before=copy.deepcopy(photo.get('final')), after=copy.deepcopy(final)))
+                photo['final']=final
+                # A human decision never renews an expired AI suggestion.
+                self.data['export_dirty']=True;self.data['export_status']='待重新导出';self.save()
+            except Exception:
+                self.data=previous
+                raise
+
+    def withdraw_confirmation(self,pid):
+        with self._state_lock:
+            previous=copy.deepcopy(self.data)
+            try:
+                if self._crops is not None:self.refresh(self._assets,self._crops,persist=False)
+                photo=self.data['photos'][pid]
+                if not photo.get('final',{}).get('confirmed'):
+                    return
+                final=dict(rating=None,pick_status=None,confirmed=False)
+                photo.setdefault('final_history',[]).append(dict(
+                    action='withdraw', at=datetime.now(timezone.utc).isoformat(),
+                    before=copy.deepcopy(photo.get('final')), after=copy.deepcopy(final)))
+                photo['final']=final
+                self.data['export_dirty']=True;self.data['export_status']='待重新导出';self.save()
+            except Exception:
+                self.data=previous
+                raise
 
     def effective_decision(self, pid):
         return effective_decision(self.data['photos'][pid])

@@ -281,9 +281,9 @@ def _existing_screening_results(workspace: Path, assets: list[PhotoAsset]) -> di
     return results
 
 
-def start_job(input_dir, workspace, options, crops, result=None, regroup=False, *, mode=None):
+def start_job(input_dir, workspace, options, crops, result=None, regroup=False, *, mode=None, scan_review=None):
     with publication_transaction.operation(Path(workspace)):
-        return _start_job(input_dir, workspace, options, crops, result, regroup, mode=mode)
+        return _start_job(input_dir, workspace, options, crops, result, regroup, mode=mode, scan_review=scan_review)
 
 
 def _start_job(
@@ -295,6 +295,7 @@ def _start_job(
     regroup: bool = False,
     *,
     mode: str | None = None,
+    scan_review: dict | None = None,
 ) -> "ProcessingJob":
     """Create a persisted processing stage without touching live output.
 
@@ -323,8 +324,10 @@ def _start_job(
     if mode in {"rescan", "focus", "sheets"} and result is None:
         raise ValueError(f"{mode} 阶段需要已有扫描结果")
 
+    if scan_review is not None and (mode != 'rescan' or regroup or result is None):
+        raise ValueError('技术纠错只支持保留分组的显式整张重查')
     incremental = mode == 'scan' and result is not None
-    assets = list(result.assets) if result is not None else scan_folder(input_path)
+    assets = (deepcopy(result.assets) if scan_review is not None else list(result.assets)) if result is not None else scan_folder(input_path)
     new_indices = []
     if incremental:
         # Pair changes (RAW+JPEG) also need a new preview/local assessment.
@@ -375,6 +378,16 @@ def _start_job(
         work_indices = []
     else:
         work_indices = list(range(len(assets)))
+    if scan_review is not None:
+        from .scan_review_store import asset_key
+        wanted = scan_review['asset_key']
+        work_indices = [i for i, asset in enumerate(assets) if asset_key(asset) == wanted]
+        if len(work_indices) != 1:
+            raise ValueError('无法唯一定位重新检查的照片')
+        # Other old dirty flags remain untouched; this explicit action checks one photo.
+        for i, original in enumerate(result.assets):
+            if i not in work_indices:
+                assets[i] = deepcopy(original)
     completed_photos = 0
     preserve_groups = result is not None and (
         not regroup or mode in {"scan", "focus", "sheets"}
@@ -390,6 +403,7 @@ def _start_job(
         "created_options": normalised,
         "last_options": normalised,
         "created_crops": _crop_dict(crops),
+        "scan_review": deepcopy(scan_review),
         "regroup": bool(regroup),
         "groups_snapshot": (
             _group_store_snapshot(workspace_path) if mode == 'rescan' and regroup else None
@@ -604,10 +618,31 @@ class ProcessingJob:
             if current is None or current._data['id'] != self._data['id']:
                 raise ProcessingJobError('任务状态已变化，请重新加载工作区')
             self._data, self.assets = current._data, current.assets
-            return self._run_guarded(options, crops, stop_event, progress,
-                                     focus_profile=focus_profile, on_log=on_log)
+            try:
+                result = self._run_guarded(options, crops, stop_event, progress,
+                                           focus_profile=focus_profile, on_log=on_log)
+                if result is None and self._data.get('scan_review'):
+                    self._note_review_error('检查已暂停；原结果未发布，可继续处理')
+                return result
+            except Exception as exc:
+                if self._data.get('scan_review'):
+                    try:
+                        self._note_review_error(str(exc))
+                    except Exception as save_error:
+                        raise ProcessingJobError(f'{exc}；失败状态保存也未成功：{save_error}') from exc
+                raise
+
+    def _note_review_error(self, error):
+        from .scan_review_store import ScanReviewStore, asset_key
+        context = self._data['scan_review']
+        asset = next(a for a in self.assets if asset_key(a) == context['asset_key'])
+        ScanReviewStore(self.workspace).note_recheck_error(asset, context['operation_id'], error)
 
     def _run_guarded(self, options, crops, stop_event, progress, *, focus_profile=None, on_log=None):
+        if self._data.get('scan_review'):
+            # Resume the exact explicitly approved scope, never current UI settings.
+            crops = CropSettings.from_dict(self._data['created_crops'])
+            options = self._data['created_options']
         if self.mode == 'focus':
             from .focus_prefetch import FocusPrefetch
             settings = crops if isinstance(crops, CropSettings) else CropSettings.from_dict(crops or {})
@@ -666,11 +701,13 @@ class ProcessingJob:
                     override = crops.photos.get(crops.key(asset), {})
                     legacy = bool(override.get('manual_face') and override.get('preview_version', 'v04') == 'v04')
                     build_preview(asset, self.output / 'previews', **({'legacy_orientation': True} if legacy else {}))
-                elif self.mode == 'rescan' and self._data.get('regroup'):
+                elif self.mode == 'rescan' and (self._data.get('regroup') or self._data.get('scan_review')):
                     self._stage_rescan_preview(asset)
                 else:
                     ensure_preview(asset, self.workspace / 'previews')
                 asset.notes = [n for n in asset.notes if not str(n).startswith('decode_error:')]
+                if self._data.get('scan_review'):
+                    asset.notes = [n for n in asset.notes if not str(n).startswith(('source_changed', 'source_unavailable'))]
             except (OSError, ValueError, RuntimeError) as exc:
                 decode_error = str(exc)
                 asset.notes = [n for n in asset.notes if not n.startswith('decode_error:')]
@@ -1307,6 +1344,15 @@ class ProcessingJob:
             raise ProcessingJobError('已保存分组发生变化，旧任务已取消；已保存结果保留，请重新扫描')
 
     def _publish(self, progress: ProgressCallback | None) -> ScanResult:
+        if self._data.get('scan_review'):
+            from .evidence_cleanup import evidence_operation
+            from .scan_review_actions import validate_review_publication
+            with evidence_operation(self.workspace):
+                validate_review_publication(self)
+                return self._publish_locked(progress)
+        return self._publish_locked(progress)
+
+    def _publish_locked(self, progress: ProgressCallback | None) -> ScanResult:
         self._validate_group_snapshot()
         output = self.output
         publish_staged_previews = (output / 'previews').is_dir()
@@ -1352,7 +1398,9 @@ class ProcessingJob:
             destinations.append((output / "groups.json", self.workspace / "groups.json"))
 
         original_assets = [_asset_to_dict(asset) for asset in self.assets]
-        state = publication_transaction.begin(self.root, self.workspace, self._data['id'], destinations)
+        extra_passive = ({'passive': ('scan-review.json', 'workspace-settings.json')}
+                         if self._data.get('scan_review') else {})
+        state = publication_transaction.begin(self.root, self.workspace, self._data['id'], destinations, **extra_passive)
         try:
             self.workspace.mkdir(parents=True, exist_ok=True)
             for entry in state['entries']:
@@ -1398,12 +1446,23 @@ class ProcessingJob:
             )
             def write_published_json(path, value):
                 publication_transaction.write_json(self.root, self.workspace, state, path, value, writer=atomic_json)
-            save_session(result, fresh=True, writer=write_published_json)
+            session_options = {}
+            if self._data.get('scan_review'):
+                from .scan_review_store import asset_key
+                target = next(a for a in self.assets
+                              if asset_key(a) == self._data['scan_review']['asset_key'])
+                checked = {str(p.resolve()) for p in target.rating_target_paths}
+                session_options['retained_source_stats'] = {
+                    path: stats for path, stats in self._review_old_inventory.items() if path not in checked}
+            save_session(result, fresh=True, writer=write_published_json, **session_options)
             write_published_json(self.workspace / "processing-settings.json", {
                 "version": 1,
                 "grouping_preset": self.actual_grouping_preset,
                 "last_options": self._data["last_options"],
             })
+            if self._data.get('scan_review'):
+                from .scan_review_actions import publish_review_result
+                publish_review_result(self, result, write_published_json)
             publication_transaction.commit(self.root, self.workspace, self._data['id'], state)
         except Exception:
             # Uses the same durable rollback path as the next-process recovery.

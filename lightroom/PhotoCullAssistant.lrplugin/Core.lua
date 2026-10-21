@@ -39,7 +39,7 @@ function M.validate(data)
             '缺少评级、标记、清晰度状态或 AI 元数据')
         if row.focus_review~=nil then assert(type(row.focus_review)=='boolean', '清晰度待确认必须为布尔值') end
         if row.rating~=nil then
-            assert(type(row.rating)=='number' and row.rating%1==0 and row.rating>=1 and row.rating<=5, '无效星级')
+            assert(type(row.rating)=='number' and row.rating%1==0 and row.rating>=0 and row.rating<=5, '无效星级')
         end
         if row.pick_status~=nil then
             assert(row.pick_status==-1 or row.pick_status==0 or row.pick_status==1, '无效留用/弃置标记')
