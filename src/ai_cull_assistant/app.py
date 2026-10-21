@@ -967,6 +967,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
         self._resize_shared_log()
 
     def _start_processing(self, resume=False, mode="scan", regroup=False, focus_errors_skipped=False, *, scan_review=None, crops_override=None):
+        if not self._confirm_scan_feedback_leave():return
         if self._review_busy():
             messagebox.showinfo('选片任务进行中', '请先停止或等待 AI 选片完成，再开始照片处理。', parent=self)
             return
@@ -1317,6 +1318,10 @@ class App(EvidenceCleanupMixin, tk.Tk):
         page = self._home_page if name == 'home' else self._workspace_pages.get(name)
         if page is None or not page.winfo_exists():
             return False
+        current=self._workspace_pages.get(getattr(self,'_visible_page',None))
+        if current is not None and current is not page:
+            guard=getattr(current,'can_leave',None)
+            if guard and not guard():return True  # Navigation handled, but cancelled.
         self._home_page.grid_remove()
         for cached in self._workspace_pages.values():
             if cached.winfo_exists():
@@ -1369,7 +1374,14 @@ class App(EvidenceCleanupMixin, tk.Tk):
                 close = getattr(page, 'dispose', None) or page.destroy
                 close()
 
+    def _confirm_scan_feedback_leave(self):
+        for page in self._workspace_pages.values():
+            guard=getattr(page,'can_leave',None)
+            if guard and page.winfo_exists() and not guard():return False
+        return True
+
     def _confirm_face_draft_reset(self):
+        if not self._confirm_scan_feedback_leave():return False
         page = self._workspace_pages.get('faces')
         if page is None or not page.winfo_exists():
             return True
@@ -1627,6 +1639,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
                 return
             if getattr(self, "_processing_busy", False) or getattr(self, "_processing_job", None) is not None:
                 raise RuntimeError("处理任务尚未完成，不能覆盖其人工分组快照。")
+            if not self._confirm_scan_feedback_leave():return
             persist_manual_groups(self.scan_result)
             self._workspace_cleared = False
             self._set_sheets_ready(False)
@@ -1639,6 +1652,7 @@ class App(EvidenceCleanupMixin, tk.Tk):
                                                         on_select_subject=self._open_group_subject, embedded=True))
 
     def _clear_workspace(self):
+        if not self._confirm_scan_feedback_leave():return
         if self._review_busy():
             messagebox.showinfo('暂不能清理', 'AI 选片仍在处理，请停止并等待保存完成。', parent=self)
             return

@@ -344,6 +344,14 @@ def _start_job(
                 assets.append(candidate)
     if not assets:
         raise ValueError("照片文件夹中没有支持的照片")
+    # This inventory belongs to the saved measurement, not the files observed
+    # when a contact-sheet / focus job happens to start. Persist it with the job
+    # so pause/resume cannot silently re-sign untouched historical evidence.
+    measurement_source_stats = {}
+    if result is not None:
+        session = workspace_path / 'scan-session.json'
+        if session.exists():
+            measurement_source_stats = json.loads(session.read_text('utf-8'))['source_stats']
     identifier = uuid.uuid4().hex
     root = processing_root / identifier
     (root / "output").mkdir(parents=True, exist_ok=False)
@@ -409,6 +417,7 @@ def _start_job(
             _group_store_snapshot(workspace_path) if mode == 'rescan' and regroup else None
         ),
         "source_stats": _source_inventory(input_path),
+        "measurement_source_stats": measurement_source_stats,
         "assets": [_asset_to_dict(asset) for asset in assets],
         "completed_photos": completed_photos,
         "photo_options": {},
@@ -1354,6 +1363,13 @@ class ProcessingJob:
 
     def _publish_locked(self, progress: ProgressCallback | None) -> ScanResult:
         self._validate_group_snapshot()
+        prior = self._data.get('measurement_source_stats')
+        if prior is None:
+            # Pre-upgrade checkpoints (including incremental scans) need their
+            # old inventory before the publication transaction moves the session.
+            previous_session = self.workspace / 'scan-session.json'
+            prior = (json.loads(previous_session.read_text('utf-8'))['source_stats']
+                     if previous_session.exists() else {})
         output = self.output
         publish_staged_previews = (output / 'previews').is_dir()
         screening = {
@@ -1446,15 +1462,24 @@ class ProcessingJob:
             )
             def write_published_json(path, value):
                 publication_transaction.write_json(self.root, self.workspace, state, path, value, writer=atomic_json)
-            session_options = {}
-            if self._data.get('scan_review'):
-                from .scan_review_store import asset_key
-                target = next(a for a in self.assets
-                              if asset_key(a) == self._data['scan_review']['asset_key'])
-                checked = {str(p.resolve()) for p in target.rating_target_paths}
-                session_options['retained_source_stats'] = {
-                    path: stats for path, stats in self._review_old_inventory.items() if path not in checked}
-            save_session(result, fresh=True, writer=write_published_json, **session_options)
+            # Rendering and AI review do not replace local measurements. Even
+            # completed work can be a failed decode or disabled screening: only
+            # successful local checks may advance an existing source signature.
+            checked = set()
+            if self.mode not in {'sheets', 'focus'}:
+                indices = self._data.get('work_indices', list(range(len(self.assets))))
+                for index in indices[:int(self._data['completed_photos'])]:
+                    asset = self.assets[index]
+                    measured = self._data['photo_options'].get(str(index), {}).get('technical_screening')
+                    unavailable = (asset.screening_reason in {'decode_unavailable', 'preview_unavailable',
+                                                            'preview_unreadable', 'processing_failed', 'analysis_failed'}
+                                   or any(str(n).startswith(('source_changed', 'source_unavailable', 'decode_error:'))
+                                          for n in asset.notes))
+                    if measured and not unavailable:
+                        checked.update(str(p.resolve()) for p in asset.rating_target_paths)
+            retained = {path: stats for path, stats in prior.items() if path not in checked}
+            save_session(result, fresh=True, writer=write_published_json,
+                         retained_source_stats=retained)
             write_published_json(self.workspace / "processing-settings.json", {
                 "version": 1,
                 "grouping_preset": self.actual_grouping_preset,

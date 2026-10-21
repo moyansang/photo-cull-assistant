@@ -15,10 +15,12 @@ def save_session(result, fresh=False, *, writer=None, retained_source_stats=None
     data['version']=1
     data['source_stats']={}
     for asset in result.assets:
+        stale = any(str(note).startswith(('source_changed', 'source_unavailable'))
+                    for note in asset.notes)
         for path in asset.rating_target_paths:
             identity = str(path.resolve())
             if retained_source_stats is not None and identity in retained_source_stats:
-                # Explicit partial recheck: untouched members keep the OLD
+                # Nonmeasurement / partial publication keeps the OLD
                 # inventory signature, never bless changed/missing bytes as new.
                 expected = retained_source_stats[identity]
                 if (not isinstance(expected, (list, tuple)) or len(expected) != 2
@@ -26,6 +28,11 @@ def save_session(result, fresh=False, *, writer=None, retained_source_stats=None
                     raise ValueError('保留的原片签名无效，未保存扫描记录')
                 data['source_stats'][identity] = list(expected)
             else:
+                # A restored read-only result is not a newly measured result.
+                # fresh=True only bypasses comparison with an older session;
+                # it must not bless replacement bytes with historical evidence.
+                if stale:
+                    raise ValueError('原片已变化或不可读，历史分析不能更新来源签名；请重新扫描')
                 st=path.stat()
                 data['source_stats'][identity]=[st.st_size,st.st_mtime_ns]
     cache=result.workspace_dir/"scan-session.json"

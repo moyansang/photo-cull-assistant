@@ -1,6 +1,7 @@
 """Read-only comparison and attention drafts; no scoring or source writes."""
 from __future__ import annotations
 import math
+from copy import deepcopy
 import json
 import tkinter as tk
 from tkinter import ttk
@@ -88,6 +89,7 @@ class InspectionPane(ttk.Frame):
     def __init__(self,parent,asset,*,on_region=None):
         super().__init__(parent)
         self.asset,self.on_region=asset,on_region
+        self.attention_region=None
         self.frame=None; self.viewport=Viewport(); self.photo=None; self._drag=None
         self.draft_mode=tk.BooleanVar(value=False)
         bar=ttk.Frame(self);bar.pack(fill='x')
@@ -112,6 +114,30 @@ class InspectionPane(ttk.Frame):
         except Exception as exc:
             self.status.set(f'原图不可读：{type(exc).__name__}；原记录保留')
         self.bind('<Destroy>',self._destroyed,add='+')
+
+    def attention_is_current(self):
+        region=self.attention_region
+        if not isinstance(region,dict) or not self.frame:return False
+        from .image_decode import asset_source_signature
+        decode=self.frame.image.info.get('decode_evidence') or {}
+        box=region.get('box')
+        return (isinstance(box,(list,tuple)) and len(box)==4
+            and all(type(v) in (int,float) and math.isfinite(v) for v in box)
+            and valid_rect([box[0],box[1],box[2]-box[0],box[3]-box[1]])
+            and region.get('coordinate_space')=='normalized_display'
+            and region.get('preview_version')=='v05'
+            and region.get('source_path')==decode.get('source_path')
+            and region.get('source_kind')==self.frame.source_kind
+            and region.get('source_size')==list(self.frame.image.size)
+            and region.get('source_signature')==self._loaded_signature
+            and self._loaded_signature==json.loads(json.dumps(asset_source_signature(self.asset))))
+    def set_attention_region(self,region):
+        self.attention_region=deepcopy(region)
+        self.render()
+        return self.attention_is_current()
+    def _canvas_point(self,x,y):
+        return ((x-self.viewport.center_x)*self.viewport.image_width*self.viewport.scale+self.viewport.width/2,
+                (y-self.viewport.center_y)*self.viewport.image_height*self.viewport.scale+self.viewport.height/2)
 
     def _destroyed(self,event):
         if event.widget is self and self.frame:
@@ -144,6 +170,7 @@ class InspectionPane(ttk.Frame):
                     source_kind=self.frame.source_kind,source_size=list(self.frame.image.size),
                     source_signature=self._loaded_signature))
         self._drag=None
+        if hasattr(self,'render'):self.render()
     def render(self):
         if not self.frame:return
         rendered=self.viewport.render(self.frame.image)
@@ -158,10 +185,17 @@ class InspectionPane(ttk.Frame):
             color={'candidate':'#e0bc56','selected':'#49b8ff','confirmed':'#66d391'}.get(item.get('role'),'#d286ed')
             self.canvas.create_polygon(*points,outline=color,fill='',width=2)
             self.canvas.create_text(*points[:2],text=item.get('label','已记录范围'),anchor='sw',fill=color)
+        if self.attention_is_current():
+            x1,y1,x2,y2=self.attention_region['box']
+            start=self._canvas_point(x1,y1);end=self._canvas_point(x2,y2)
+            self.canvas.create_rectangle(*start,*end,outline='#e99e3d',width=3,dash=(6,3),tags='draft')
+            self.canvas.create_text(*start,text='关注草稿（非测量范围）',anchor='sw',fill='#e99e3d',tags='draft-label')
         w,h=self.frame.image.size
         self.status.set(f'{self.asset.stem} · {SOURCE_LABELS.get(self.frame.source_kind,self.frame.source_kind)} · '
             f'{w}×{h} 实际像素 · {self.viewport.scale*100:.0f}%\n{decode.get("source_path","来源成员未记录")}\n'
-            +('历史已记录范围（来源尺寸匹配）；候选≠人工确认' if overlays else '无可映射的历史测量范围；不按当前参数补画')+'；放大不增加细节')
+            +('历史已记录范围（来源尺寸匹配）；候选≠人工确认' if overlays else '无可映射的历史测量范围；不按当前参数补画')+'；放大不增加细节'+('；关注区域已过期／来源不可验证，禁止应用' if self.attention_region and not self.attention_is_current() else ''))
+        notify=getattr(self,'on_attention_state',None)
+        if notify:notify()
 
 
 class ComparisonWindow(tk.Toplevel):

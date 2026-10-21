@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 from ai_cull_assistant.models import PhotoAsset
-from ai_cull_assistant.scan_review_ui import result_state, evidence_text, ScanReviewPage
+from ai_cull_assistant.scan_review_ui import result_state, evidence_text, ScanReviewPage, FILTERS
 from ai_cull_assistant.scan_review_viewer import valid_rect, recorded_overlays, InspectionPane, ComparisonWindow
 
 
@@ -153,7 +153,11 @@ def test_real_tk_apply_callback_destroys_page(root,tmp_path,monkeypatch):
     monkeypatch.setattr('ai_cull_assistant.scan_review_ui.messagebox.askokcancel',lambda *a,**k:True)
     monkeypatch.setattr('ai_cull_assistant.scan_review_ui.messagebox.showerror',lambda *a,**k:errors.append(a))
     page=ScanReviewPage(root,[a],workspace);page.pack(fill='both',expand=True);root.update()
-    page.region={'box':[.1,.1,.5,.5]};page.on_apply_scope=lambda *args:page.destroy()
+    decode=page.pane.frame.image.info['decode_evidence']
+    page._region_drawn(dict(box=[.1,.1,.5,.5],coordinate_space='normalized_display',preview_version='v05',
+        source_path=decode['source_path'],source_kind=page.pane.frame.source_kind,
+        source_size=list(page.pane.frame.image.size),source_signature=page.pane._loaded_signature))
+    page._save_feedback('region');page.on_apply_scope=lambda *args:page.destroy()
     page._apply();root.update()
     assert not errors and not page.winfo_exists()
 
@@ -264,3 +268,23 @@ def test_cancel_recheck_guard_requires_current_pending_record(tmp_path):
     page._document['photos'][asset_key(a)]['rechecks'].append({'status':'pending'})
     assert ScanReviewPage._pending_recheck(page)
     page.selected=None;assert not ScanReviewPage._pending_recheck(page)
+
+
+def test_real_tk_draft_cancel_switch_filter_and_failed_save(root,tmp_path,monkeypatch):
+    a=asset(tmp_path);b=deepcopy(a);b.primary_path=tmp_path/'B.jpg';b.jpg_path=b.display_path=b.primary_path
+    Image.new('RGB',(80,60),'blue').save(b.primary_path)
+    workspace=tmp_path/'workspace';workspace.mkdir()
+    page=ScanReviewPage(root,[a,b],workspace);page.pack(fill='both',expand=True);root.update()
+    monkeypatch.setattr('ai_cull_assistant.scan_review_ui.messagebox.askyesnocancel',lambda *a,**k:None)
+    monkeypatch.setattr('ai_cull_assistant.scan_review_ui.messagebox.showerror',lambda *a,**k:None)
+    page.note.insert('1.0','请看手部')
+    page.tree.selection_set('1');root.update()
+    assert page.selected is a and page.tree.selection()==('0',) and '请看手部' in page.note.get('1.0','end')
+    page.filter_var.set('建议保留');page._populate();root.update()
+    assert page.selected is a and page.filter_var.get()==FILTERS[0]
+    monkeypatch.setattr('ai_cull_assistant.scan_review_ui.messagebox.askyesnocancel',lambda *a,**k:True)
+    monkeypatch.setattr(page.store,'record_feedback',lambda *a,**k:(_ for _ in ()).throw(OSError('disk full')))
+    page.tree.selection_set('1');root.update()
+    assert page.selected is a and '请看手部' in page.note.get('1.0','end')
+    assert not page.store.photo(a)
+    page.destroy()

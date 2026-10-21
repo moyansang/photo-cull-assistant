@@ -52,9 +52,32 @@ def test_feedback_is_separate_and_durable(tmp_path, asset):
 
 def test_identity_not_stem_or_casefold(tmp_path, asset):
     other = copy.deepcopy(asset)
-    other.primary_path = tmp_path / '原片 空格.jpg'
+    # Real different files with the same name must not share an identity.
+    directory = tmp_path / '另一目录'
+    directory.mkdir()
+    other.primary_path = directory / asset.primary_path.name
+    other.primary_path.write_bytes(b'different synthetic source')
     assert other.stem == asset.stem
+    assert not other.primary_path.samefile(asset.primary_path)
     assert asset_key(other) != asset_key(asset)
+
+    # Probe the actual filesystem, not sys.platform: case variants can be an
+    # existing file alias (Windows defaults) or independently creatable files.
+    variant = tmp_path / '原片 空格.jpg'
+    case_asset = copy.deepcopy(asset)
+    case_asset.primary_path = variant
+    if variant.exists() and variant.samefile(asset.primary_path):
+        assert asset_key(case_asset) == asset_key(asset)
+    else:
+        variant.write_bytes(b'independent case-sensitive synthetic source')
+        assert not variant.samefile(asset.primary_path)
+        assert asset_key(case_asset) != asset_key(asset)
+
+    # A spelling alias that resolves to the same real file is never split.
+    alias = copy.deepcopy(asset)
+    alias.primary_path = directory / '..' / asset.primary_path.name
+    assert alias.primary_path.samefile(asset.primary_path)
+    assert asset_key(alias) == asset_key(asset)
 
 
 def test_cas_and_failed_save_preserve_file(tmp_path, asset):

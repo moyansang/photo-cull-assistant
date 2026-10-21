@@ -1,6 +1,7 @@
 """Local scan evidence, small corrections and human culling in one surface."""
 from __future__ import annotations
 import json
+from copy import deepcopy
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from .ui_page import WorkspacePage
@@ -71,7 +72,7 @@ class ScanReviewPage(WorkspacePage):
         self.selected=None;self.pane=None;self.region=None;self.feedback_id=None;self._rows={};self._document={};self._read_errors={}
         self.filter_var=tk.StringVar(value=FILTERS[0]);self.status=tk.StringVar(value='查看、翻页、筛选与反馈不重算、不上传、不调用 AI。')
         self.kind=tk.StringVar(value='face');self.pick=tk.StringVar(value='沿用建议（不覆盖）');self.rating=tk.StringVar(value='不设置')
-        self._build();self.refresh_assets(assets)
+        self._build();self._saved_editor=self._editor_state();self._filter_value=self.filter_var.get();self.refresh_assets(assets)
         if not embedded:self.title('扫描结果与依据');self.geometry('1250x850');self.deiconify()
 
     def _build(self):
@@ -81,7 +82,7 @@ class ScanReviewPage(WorkspacePage):
         selector=ttk.Combobox(toolbar,textvariable=self.filter_var,values=FILTERS,state='readonly',width=16)
         toolbar.add(selector);selector.bind('<<ComboboxSelected>>',lambda e:self._populate())
         for label,command in [('组选片／拆合组',self.on_groups),('AI 摄影选片',self.on_ai_review),('Lightroom 导出',self.on_lr_export)]:
-            if command:toolbar.add(ttk.Button(toolbar,text=label,command=command))
+            if command:toolbar.add(ttk.Button(toolbar,text=label,command=lambda command=command:self._leave_for(command)))
         toolbar.add(ttk.Button(toolbar,text='重新读取记录',command=lambda:self.refresh_assets(self.assets)))
         self.count=ttk.Label(toolbar);toolbar.add(self.count)
         body=ttk.Panedwindow(self,orient='horizontal');body.pack(fill='both',expand=True)
@@ -149,6 +150,8 @@ class ScanReviewPage(WorkspacePage):
             for child in widget.winfo_children():
                 if isinstance(child,ttk.Button) and child.cget('text') in blocked:
                     enabled=not errors
+                    if child.cget('text')=='应用范围并重新检查':
+                        enabled=enabled and bool(self.region) and bool(self.pane) and self.pane.attention_is_current()
                     if child.cget('text')=='取消未发布的重查':
                         enabled=enabled and bool(self.on_cancel_recheck) and self._pending_recheck()
                     child.configure(state='normal' if enabled else 'disabled')
@@ -163,7 +166,31 @@ class ScanReviewPage(WorkspacePage):
             self._update_read_health()
             return False
         return True
+    def _editor_state(self):
+        return (self.note.get('1.0','end').strip(),deepcopy(self.region),self.kind.get(),self.feedback_id)
+    def can_leave(self):
+        if self.selected is None or self._editor_state()==self._saved_editor:return True
+        answer=messagebox.askyesnocancel('尚未保存反馈草稿',
+            '保存当前疑问／关注区域后继续？\n是：保存；否：放弃修改；取消：留在当前照片。',parent=self)
+        if answer is None:return False
+        if answer:
+            kind='region' if self.region else 'question'
+            if self.feedback_id:
+                kind=next((f['kind'] for f in self.feedback_items if f['id']==self.feedback_id),kind)
+            return bool(self._save_feedback(kind))
+        text,region,kind,feedback_id=self._saved_editor
+        self.note.delete('1.0','end');self.note.insert('1.0',text)
+        self.region=deepcopy(region);self.kind.set(kind);self.feedback_id=feedback_id
+        self._sync_region()
+        return True
+    def _leave_for(self,command):
+        if self.can_leave():return command()
+    def return_home(self):
+        if self.can_leave():super().return_home()
+    def close_page(self):
+        if self.can_leave():super().close_page()
     def refresh_assets(self,assets):
+        if hasattr(self,'_saved_editor') and not self.can_leave():return False
         self.assets=list(assets)
         self._load()
         if not self._read_errors:
@@ -172,6 +199,10 @@ class ScanReviewPage(WorkspacePage):
         self._update_read_health()
     def on_activate(self):self.refresh_assets(self.assets)
     def _populate(self):
+        if hasattr(self,'_saved_editor') and not self.can_leave():
+            self.filter_var.set(self._filter_value)
+            return
+        self._filter_value=self.filter_var.get()
         selected=self.selected;self.tree.delete(*self.tree.get_children())
         mode=self.filter_var.get();shown=0
         for index,asset in enumerate(self.assets):
@@ -197,9 +228,14 @@ class ScanReviewPage(WorkspacePage):
         if not ids:return
         asset=self.assets[int(ids[0])]
         if asset is not self.selected:
-            self.selected=asset;self._new_feedback()
+            if not self.can_leave():
+                old=next((str(i) for i,a in enumerate(self.assets) if a is self.selected),None)
+                if old is not None:self.tree.selection_set(old)
+                return
+            self.selected=asset;self._reset_feedback()
             if self.pane:self.pane.destroy()
             self.pane=InspectionPane(self.image_host,asset,on_region=self._region_drawn);self.pane.pack(fill='both',expand=True)
+            self.pane.on_attention_state=self._update_read_health
         self._detail()
     def _detail(self):
         if self.selected is None:return
@@ -214,21 +250,37 @@ class ScanReviewPage(WorkspacePage):
         rating=final.get('rating');self.rating.set('清除星级' if rating==0 else str(rating) if rating in range(1,6) else '不设置')
         self._update_read_health()
     def _region_drawn(self,region):
-        self.region=region;self.region_label.configure(text=f'未保存草稿：{region["box"]}；不会自动测量')
+        self.region=region;self._sync_region()
+    def _sync_region(self):
+        valid=self.pane.set_attention_region(self.region) if self.pane else False
+        text=('关注草稿（非测量范围）：'+str(self.region.get('box')) if valid else '关注区域已过期／来源不可验证；禁止应用，请重新打开原图框选') if self.region else '新反馈；在图上框选后保存，或只写一句疑问。'
+        self.region_label.configure(text=text)
+        self._update_read_health()
     def _new_feedback(self):
+        if not self.can_leave():return False
+        self._reset_feedback()
+        return True
+    def _reset_feedback(self):
         self.feedback_id=None;self.region=None;self.note.delete('1.0','end');self.feedback_list.set('')
-        self.region_label.configure(text='新反馈；在图上框选后保存，或只写一句疑问。')
+        self._sync_region();self._saved_editor=self._editor_state()
     def _edit_feedback(self,_event=None):
         i=self.feedback_list.current()
         if i<0:return
-        item=self.feedback_items[i];self.feedback_id=item['id'];self.region=item.get('region')
+        if not self.can_leave():
+            old=next((j for j,f in enumerate(self.feedback_items) if f['id']==self.feedback_id),None)
+            if old is None:self.feedback_list.set('')
+            else:self.feedback_list.current(old)
+            return
+        item=self.feedback_items[i];self.feedback_id=item['id'];self.region=None if item.get('withdrawn') else deepcopy(item.get('region'))
         self.note.delete('1.0','end');self.note.insert('1.0',item.get('text',''))
         if self.region:self.kind.set(self.region.get('kind','face'))
+        self._sync_region();self._saved_editor=self._editor_state()
     def _save_feedback(self,kind):
         if getattr(self,'_read_errors',{}) and not self._can_mutate():return
         if self.selected is None:return
         try:
             if kind=='region' and not self.region:raise ValueError('请先在图片上框选关注区域。')
+            if kind=='question' and self.region:raise ValueError('当前含关注区域；请保存关注区域草稿，或新建纯文字疑问，避免丢失区域。')
             if self.feedback_id and next(f for f in self.feedback_items if f['id']==self.feedback_id)['kind'] != kind:
                 raise ValueError('编辑须保持反馈类型；请点新建反馈创建另一类型。')
             region=dict(self.region,kind=self.kind.get()) if kind=='region' else None
@@ -238,21 +290,29 @@ class ScanReviewPage(WorkspacePage):
             if self.feedback_id is None:
                 saved=self._document.get('photos',{}).get(asset_key(self.selected),{}).get('feedback',[])
                 if saved:self.feedback_id=saved[-1]['id']
+            self._saved_editor=self._editor_state()
             self._detail();self.status.set('反馈已保存；未重算、未改组、未改变人工留弃。');self._update_read_health()
+            return True
         except Exception as exc:self._error('反馈未保存',exc)
+        return False
     def _withdraw_feedback(self):
         if getattr(self,'_read_errors',{}) and not self._can_mutate():return
+        if not self.feedback_id:return
+        if not self.can_leave():return
         if not self.feedback_id:return
         item=next(f for f in self.feedback_items if f['id']==self.feedback_id)
         try:
             self.store.record_feedback(self.selected,kind=item['kind'],feedback_id=self.feedback_id,withdraw=True,
                 expected_revision=self._document.get('revision',0))
-            self._load();self._detail();self._new_feedback();self.status.set('反馈已撤回，历史保留。');self._update_read_health()
+            self._load();self._detail();self._reset_feedback();self.status.set('反馈已撤回，历史保留。');self._update_read_health()
         except Exception as exc:self._error('撤回未保存',exc)
     def _apply(self):
         if getattr(self,'_read_errors',{}) and not self._can_mutate():return
         if self.selected is None or not self.on_apply_scope:return
+        if hasattr(self,'_saved_editor') and not self.can_leave():return
         if not self.region:messagebox.showinfo('未选范围','请先框选或选择已保存的区域反馈。',parent=self);return
+        if getattr(self,'pane',None) is not None and not self.pane.attention_is_current():
+            self._sync_region();self.status.set('关注区域来源已过期；未应用，请重新打开原图框选。');return
         if self.kind.get() != 'face':
             messagebox.showinfo('待支持','该检查部位尚未支持；可保存草稿，不会假装完成测量。',parent=self);return
         if not messagebox.askokcancel('应用范围并重新检查',f'{self.selected.primary_path}\n{self.kind.get()}：{self.region["box"]}\n此框替换当前照片已选人脸，并确认其为本次主要人物。已有身体范围保留，请确认仍属于本次主体。\n本入口仅单个人脸；多人请取消，使用原有多人编辑。\n保存改前证据，整张重测，旧 AI 证据失效；人工决定与分组保持，不调用 AI。取消不应用。',parent=self):return
