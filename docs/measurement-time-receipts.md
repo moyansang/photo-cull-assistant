@@ -39,6 +39,10 @@ python tools/offline_evaluation.py evaluate \
 
 正式评估调用者须提供已有授权的 samples 清单，以及明确的 `asset_id → primary_path / source_id → 成员路径` 绑定；不得猜测人工标签、来源授权、同一曝光成员或训练/验证划分。示例中的清单只代表合成像素。
 
+## 显式真实清单与盲标入口
+
+正式清单入口及隔离本地标注见 [批量评估流程](real-sample-evaluation.md)。原合成演示保留；新入口显式提供 `prepare_asset`，让原预览生成和同步测量共享本次解码观察与像素。默认 None，不改变旧调用或 GUI。
+
 ## 字段从哪里来
 
 | 字段 | 实际来源与限制 |

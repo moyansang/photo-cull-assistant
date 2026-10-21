@@ -256,9 +256,12 @@ class MeasurementRecorder:
     measurement timestamp and cannot be retrospectively attested. The recorder
     is intentionally not implicitly propagated to GUI worker threads.
     """
-    def __init__(self, *, synthetic=False):
+    def __init__(self, *, synthetic=False, prepare_asset=None):
         if type(synthetic) is not bool:
             raise TypeError("synthetic must be a boolean")
+        if prepare_asset is not None and not callable(prepare_asset):
+            raise TypeError("prepare_asset must be callable")
+        self.prepare_asset = prepare_asset
         self.synthetic = synthetic
         self.run_id = str(uuid.uuid4())
         self.started_at = now()
@@ -334,13 +337,40 @@ class MeasurementRecorder:
                    "observed_at": now(), "stages": [], "cache_reuse": [], "versions": versions()}
         self._assets[key] = (asset, settings, mode, body_check)
         try:
-            capture["state_before"] = self._state(asset, settings, mode, body_check)
+            if self.prepare_asset is not None:
+                # Explicit batch-only preparation shares the active decoder
+                # observation and pixels with scoring. Default callers do not
+                # prepare anything or gain any extra reads.
+                source_state = self._state(asset, settings, mode, body_check)
+                preparation_token = _active.set((self, asset, capture))
+                try:
+                    self.prepare_asset(asset)
+                except BaseException as exc:
+                    capture.update(status="cancelled" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed",
+                                   preparation_error=f"{type(exc).__name__}: {exc}", finished_at=now())
+                    self.history.append(copy_json(capture))
+                    self.rows[key] = capture
+                    raise
+                finally:
+                    _active.reset(preparation_token)
+                prepared_state = self._state(asset, settings, mode, body_check)
+                stable_fields = ("source_hashes", "settings", "confirmation", "mode", "body_check")
+                if (any(source_state[k] != prepared_state[k] for k in stable_fields)
+                        or any(prepared_state["source_stats"].get(p) != signature
+                               for p, signature in source_state["source_stats"].items())):
+                    raise ValueError("source/settings changed during preview preparation")
+                capture["preparation"] = {"kind": "explicit_batch_preview", "source_state": source_state}
+                capture["state_before"] = prepared_state
+            else:
+                capture["state_before"] = self._state(asset, settings, mode, body_check)
             capture["settings_snapshot"] = capture["state_before"]["settings"]
             capture["confirmation_snapshot"] = capture["state_before"]["confirmation"]
             from .image_decode import asset_source_signature
             capture["measurement_inputs_at_start"] = {"source_signature": copy_json(asset_source_signature(asset)),
                 "parameters_digest": digest(canonical(capture["settings_snapshot"]).encode()), "enabled_parts": ["scene"]}
         except (OSError, ValueError, TypeError) as exc:
+            if capture.get("preparation_error"):
+                raise
             capture["recording_error"] = type(exc).__name__
         token = _active.set((self, asset, capture))
         try:

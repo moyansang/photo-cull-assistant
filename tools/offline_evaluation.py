@@ -203,6 +203,9 @@ def validate_inputs(samples, predictions, annotations, catalog):
             text_field(sample, field, asset_id)
         require(sample["capture_id"] not in captures, f"duplicate capture_id {sample['capture_id']}: combine RAW+JPG sources")
         captures.add(sample["capture_id"])
+        for field in ("dataset_id", "dataset_version"):
+            require(sample.get(field) is None or isinstance(sample[field], str) and bool(sample[field].strip()),
+                    f"{asset_id}: optional {field} must be nonempty string or null")
         for field in ("session_id", "burst_id"):
             require(sample.get(field) is None or isinstance(sample[field], str) and bool(sample[field].strip()),
                     f"{asset_id}: {field} must be nonempty string or null")
@@ -216,6 +219,9 @@ def validate_inputs(samples, predictions, annotations, catalog):
             sid = text_field(source, "source_id", asset_id)
             sha = hash_field(source, "sha256", asset_id)
             text_field(source, "format", asset_id)
+            for field in ("dataset_id", "dataset_version"):
+                require(source.get(field) is None or isinstance(source[field], str) and bool(source[field].strip()),
+                        f"{asset_id} source: optional {field} must be nonempty string or null")
             require(sid not in source_ids, f"duplicate source_id {sid}")
             require(sha not in hashes, f"duplicate source bytes {sid}: register one statistical unit")
             source_ids.add(sid); hashes.add(sha); local_sources[sid] = sha
@@ -359,6 +365,11 @@ def evaluate(samples, predictions, annotations, catalog):
     rows = []
     for asset_id, sample in srows.items():
         prediction, annotation = prows.get(asset_id), arows.get(asset_id)
+        selected_source = next(s for s in sample["sources"] if s["source_id"] == sample["evaluation_source_id"])
+        # Registration is supplied metadata, not inferred from filenames or image labels.
+        # Keep identity strings global: dataset boundaries must not hide leakage.
+        dataset_id = selected_source.get("dataset_id") or sample.get("dataset_id") or samples["dataset_id"]
+        dataset_version = selected_source.get("dataset_version") or sample.get("dataset_version") or samples["dataset_version"]
         warnings = []
         if prediction is None:
             decision, failure = "missing", None
@@ -392,7 +403,15 @@ def evaluate(samples, predictions, annotations, catalog):
         rows.append({"asset_id": asset_id, "capture_id": sample["capture_id"], "split": sample["split"],
                      "scene_type": sample["scene_type"], "scene_family_id": sample["scene_family_id"],
                      "comparison_group_id": sample["comparison_group_id"],
-                     "source_format": next(s["format"] for s in sample["sources"] if s["source_id"] == sample["evaluation_source_id"]),
+                     "source_format": selected_source["format"],
+                     "dataset_id": dataset_id, "dataset_version": dataset_version,
+                     "dataset_release": json.dumps([dataset_id, dataset_version], ensure_ascii=False),
+                     "session_id": sample.get("session_id") or "UNREGISTERED",
+                     "burst_id": sample.get("burst_id") or "UNREGISTERED",
+                     "source_registration_raw": {"selected_source": selected_source,
+                         "sources": sample["sources"], "source_authorization": sample["source_authorization"],
+                         "dataset_id": sample.get("dataset_id"), "dataset_version": sample.get("dataset_version"),
+                         "source_registration": sample.get("source_registration")},
                      "technical_label": technical, "culling_label": culling,
                      "evidence_adequacy": (annotation.get("evidence_adequacy") or "unknown") if annotation else "unknown",
                      "historical_exposure": sample["historical_exposure"],
@@ -403,7 +422,8 @@ def evaluate(samples, predictions, annotations, catalog):
                      "ai_temporary_labels": sample.get("ai_temporary_labels"),
                      "exception_tags": sample.get("exception_tags", []), "attributions": attributions, "warnings": warnings})
     strata = {}
-    for field in ("split", "scene_type", "scene_family_id", "comparison_group_id", "source_format", "evidence_adequacy", "historical_exposure"):
+    for field in ("split", "scene_type", "scene_family_id", "comparison_group_id", "source_format", "evidence_adequacy", "historical_exposure",
+                  "dataset_id", "dataset_version", "dataset_release", "session_id", "burst_id"):
         groups = defaultdict(list)
         for row in rows:
             groups[row[field]].append(row)
